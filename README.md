@@ -152,9 +152,87 @@ The app communicates exclusively with `https://cdn.tigertag.io`. No data is coll
 |---|---|
 | `GET /pingbyapikey?ApiKey=XXX` | Validate API key, returns display name |
 | `GET /exportInventory?ApiKey=XXX&email=XXX` | Fetch full inventory JSON |
-| `GET /setSpoolWeightByRfid?ApiKey=XXX&uid=XXX&weight=XXX` | Update spool weight |
+| `GET /setSpoolWeightByRfid?ApiKey=XXX&uid=XXX&weight=XXX[&container_weight=0]` | Update spool weight |
 
 **Your API key and email are stored locally only** (browser `localStorage`) and used solely to authenticate requests to the TigerTag API.
+
+---
+
+## Weight update — three modes
+
+The `setSpoolWeightByRfid` endpoint supports three distinct workflows controlled by the `container_weight` parameter.
+
+### Mode 1 — Direct filament weight
+
+Use this when you already know the **exact net remaining filament weight** (e.g. you weighed the filament alone, or you are entering the value manually).
+
+```
+GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=750&container_weight=0
+```
+
+| Parameter | Value | Effect |
+|---|---|---|
+| `weight` | Net filament weight in grams | Stored as-is |
+| `container_weight` | `0` | No subtraction — the value you send **is** the filament weight |
+
+> In the app: use the **slider** or the **"Edit manually"** field. `container_weight=0` is added automatically.
+
+---
+
+### Mode 2 — Custom container weight
+
+Use this when you weigh **spool + container** on the scale and want to **specify your own container weight**, ignoring the one stored in the database (e.g. your physical container differs from what was registered).
+
+```
+GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=965&container_weight=215
+```
+
+| Parameter | Value | Effect |
+|---|---|---|
+| `weight` | Total weight (filament + container) in grams | — |
+| `container_weight` | Your actual container weight in grams | Server computes `net = weight − container_weight` using **your** value, overriding the database |
+
+In the example above: `965 − 215 = 750 g` of filament remaining.
+
+---
+
+### Mode 3 — Use stored container weight (database default)
+
+Use this when you weigh **spool + container** and want the server to subtract the container weight it already has on record for that spool.
+
+```
+GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=920
+```
+
+| Parameter | Value | Effect |
+|---|---|---|
+| `weight` | Total weight (filament + container) in grams | — |
+| `container_weight` | _(omitted)_ | Server subtracts the container weight stored on the spool record |
+
+> In the app: expand **"Use raw scale weight (with container)"**, enter the scale reading, and click Update. The `container_weight` parameter is intentionally omitted.
+
+---
+
+### Reading the response
+
+Both modes return the same JSON shape:
+
+```json
+{
+  "success": true,
+  "weight_available": 750,
+  "weight": 920,
+  "container_weight": 170,
+  "twin_updated": false
+}
+```
+
+| Field | Description |
+|---|---|
+| `weight_available` | Net filament weight now stored (grams) |
+| `weight` | Raw weight value you sent |
+| `container_weight` | Container weight used in the calculation |
+| `twin_updated` | `true` if the spool has a linked twin tag that was also updated |
 
 ---
 

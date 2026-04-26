@@ -56,7 +56,7 @@
     background: linear-gradient(180deg, rgba(255,122,24,.3) 0%, rgba(255,122,24,.0) 60%);
     pointer-events: none;
   }
-  .sidebar.collapsed { width: 60px; }
+  .sidebar.collapsed { width: 65px; }
 
   /* header / brand */
   .sb-header {
@@ -133,17 +133,6 @@
   .sidebar.collapsed .sb-avatar { width: 40px; height: 40px; font-size: 15px; }
 
   /* config section */
-  .sb-config { flex-shrink: 0; border-top: 1px solid rgba(255,255,255,.06); }
-  .sb-config-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 9px 14px; cursor: pointer; user-select: none;
-    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-    color: rgba(255,255,255,.3); transition: color .15s;
-  }
-  .sb-config-header:hover { color: rgba(255,255,255,.65); }
-  .sb-config-chevron { font-size: 9px; transition: transform .2s; }
-  .sb-config.open .sb-config-chevron { transform: rotate(90deg); }
-  .sb-config-body { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
   .sb-field-wrap { display: flex; flex-direction: column; gap: 4px; }
   .sb-field-label { font-size: 10px; color: rgba(255,255,255,.28); text-transform: uppercase; letter-spacing: .06em; }
   .sb-field-row { display: flex; gap: 4px; }
@@ -167,7 +156,6 @@
     color: #fff; border-radius: 7px; width: 100%; justify-content: center; margin-top: 2px;
   }
   .sb-config-save:hover { background: var(--primary-hover) !important; }
-  .sidebar.collapsed .sb-config { display: none; }
 
   /* stats */
   .sb-stats-wrap {
@@ -199,7 +187,21 @@
     font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
     color: #fff; margin-top: 4px; letter-spacing: -.02em;
   }
-  .sidebar.collapsed .sb-stats-wrap { display: none; }
+  .sidebar.collapsed .sb-stats-wrap {
+    display: flex; padding: 8px 5px; gap: 4px; overflow-y: auto;
+  }
+  .sidebar.collapsed .sb-stat { padding: 5px 4px; border-radius: 8px; }
+  .sidebar.collapsed .sb-stat .label { display: none; }
+  .sidebar.collapsed .sb-stat .value { display: none; }
+  .sidebar.collapsed .sb-stat::before {
+    content: attr(data-mini-val); display: block; text-align: center;
+    font-size: 13px; font-weight: 700; color: #fff; letter-spacing: -.02em;
+  }
+  .sidebar.collapsed .sb-stat::after {
+    content: attr(data-mini); display: block; text-align: center;
+    font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: rgba(255,255,255,.3); margin-top: 2px;
+  }
 
   /* login / idle state */
   .sb-login {
@@ -215,6 +217,104 @@
   .sb-login-title { font-size: 14px; font-weight: 700; color: rgba(255,255,255,.85); text-align: center; }
   .sb-login-text { font-size: 11px; color: rgba(255,255,255,.28); text-align: center; line-height: 1.75; }
   .sidebar.collapsed .sb-login { display: none; }
+
+  /* mid flex wrapper (login + stats) */
+  .sb-mid { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar.collapsed .sb-mid { display: flex; }
+
+  /* community footer */
+  .sb-community {
+    flex-shrink: 0; padding: 11px 13px 13px;
+    border-top: 1px solid rgba(255,255,255,.06);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .sidebar.collapsed .sb-community {
+    padding: 8px 6px 12px; align-items: center;
+  }
+  .sidebar.collapsed .sb-community-label { display: none; }
+  .sidebar.collapsed .sb-github-btn,
+  .sidebar.collapsed .sb-discord-btn {
+    width: 44px; height: 34px; padding: 0; border-radius: 10px;
+  }
+  .sidebar.collapsed .sb-github-btn span,
+  .sidebar.collapsed .sb-discord-btn span { display: none; }
+  .sidebar.collapsed .sb-qr-wrap { padding: 4px; width: 100%; }
+  .sidebar.collapsed .sb-qr-label,
+  .sidebar.collapsed .sb-qr-hint { display: none; }
+  .sidebar.collapsed .sb-qr-img { width: 44px; height: 44px; }
+  .sb-community-label {
+    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: rgba(255,255,255,.22); padding-bottom: 1px;
+  }
+  .sb-github-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 8px;
+    padding: 7px 12px; color: rgba(255,255,255,.75); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+    width: 100%; box-sizing: border-box;
+  }
+  .sb-github-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.25); color: #fff; }
+  .sb-discord-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: #5865F2; border: none; border-radius: 8px;
+    padding: 8px 12px; color: #fff; font-size: 12px; font-weight: 600;
+    cursor: pointer; text-decoration: none;
+    transition: background .15s, box-shadow .2s; width: 100%; box-sizing: border-box;
+  }
+  .sb-discord-btn:hover { background: #4752C4; box-shadow: 0 3px 14px rgba(88,101,242,.45); }
+  .sb-qr-wrap {
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 10px; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .sb-qr-wrap:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
+  .sb-qr-img { width: 88px; height: 88px; border-radius: 6px; display: block; image-rendering: pixelated; }
+  .sb-qr-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.72); }
+  .sb-qr-hint { font-size: 10px; color: rgba(255,255,255,.3); text-align: center; }
+
+  /* settings panel */
+  .stg-section-label {
+    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); padding-bottom: 8px;
+    border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  }
+  .stg-row { display: flex; gap: 8px; margin-top: 10px; }
+  .stg-switch-btn {
+    flex-shrink: 0; padding: 0 14px; height: 32px;
+    background: var(--danger-soft); border: 1px solid rgba(216,59,59,.25);
+    color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .stg-switch-btn:hover { background: #f5c6c6; border-color: rgba(216,59,59,.45); }
+  .stg-copy-btn {
+    width: 32px; height: 30px; border-radius: 7px; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--muted); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+  }
+  .stg-copy-btn:hover { background: var(--border); color: var(--text); }
+  .stg-copy-btn.copied { background: var(--success-soft); border-color: rgba(26,175,108,.3); color: var(--success); }
+  .stg-export-btn {
+    width: 100%; height: 32px; border-radius: 8px; margin-top: 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .stg-export-btn:hover { background: var(--border); }
+  .stg-link-input { font-size: 10px !important; font-family: var(--mono) !important; cursor: text; }
+
+  /* settings panel — light-theme overrides for dark sidebar components */
+  #settingsPanel .sb-field-label { color: var(--muted); }
+  #settingsPanel .sb-field-input {
+    background: var(--surface-2); border-color: var(--border); color: var(--text);
+  }
+  #settingsPanel .sb-field-input:focus { border-color: var(--primary); background: var(--primary-soft); }
+  #settingsPanel .sb-eye {
+    background: var(--surface-2); border-color: var(--border); color: var(--muted);
+  }
+  #settingsPanel .sb-eye:hover { background: var(--border) !important; color: var(--text) !important; }
+  #settingsPanel .sb-config-save { height: 32px; }
+
   /* main column */
   .main-col {
     flex: 1; min-width: 0;
@@ -229,10 +329,19 @@
   header.top h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
   header.top h1 .dot { width: 12px; height: 12px; border-radius: 4px; background: linear-gradient(135deg, var(--primary), #ffb056); display: inline-block; }
   header.top .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .health { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .health .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--neutral); }
-  .health.ok .pulse { background: var(--success); box-shadow: 0 0 0 4px var(--success-soft); }
-  .health.bad .pulse { background: var(--danger); box-shadow: 0 0 0 4px var(--danger-soft); }
+  .health { display: flex; align-items: center; cursor: default; position: relative; }
+  .health svg { stroke: var(--neutral); transition: stroke .25s, filter .25s; }
+  .health.ok  svg { stroke: var(--success); filter: drop-shadow(0 0 5px var(--success)); }
+  .health.bad svg { stroke: var(--danger);  filter: drop-shadow(0 0 5px var(--danger)); }
+  .health::after {
+    content: attr(data-tooltip);
+    position: absolute; top: calc(100% + 7px); right: 0;
+    background: #1c2030; color: #fff; border: 1px solid rgba(255,255,255,.1);
+    padding: 5px 10px; border-radius: 7px; font-size: 11px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3); z-index: 50;
+  }
+  .health:hover::after { opacity: 1; }
 
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
   .card h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
@@ -302,7 +411,7 @@
   tbody tr.deleted { opacity: .45; }
   tbody tr:last-child td { border-bottom: none; }
   td.id-cell { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.1); vertical-align: middle; margin-right: 5px; flex-shrink: 0; }
+  .color-circle { display: inline-block; border-radius: 50%; flex-shrink: 0; vertical-align: middle; margin-right: 5px; overflow: hidden; border: 1.5px solid rgba(0,0,0,.12); }
   .bar { width: 64px; height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 6px; }
   .bar > span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
   .thumb { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; background: #1c2030; flex-shrink: 0; }
@@ -312,6 +421,7 @@
   /* ── tag type badges ── */
   .tag-plus { background: linear-gradient(90deg,#ff7a18,#ffb056); color:#fff; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; letter-spacing:.03em; }
   .tag-diy { background: var(--surface-2); color: var(--muted); font-size:10px; padding:2px 7px; border-radius:999px; font-weight:600; letter-spacing:.03em; }
+  .tag-twin { background: linear-gradient(90deg,#3d8ef0,#7ab4ff); color:#fff; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; letter-spacing:.03em; display:inline-flex; align-items:center; gap:3px; margin-left:4px; }
 
   /* ── view toggle ── */
   .view-toggle { display: flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: var(--radius-sm); }
@@ -433,6 +543,10 @@
   .debug-meta { margin: 10px 0 6px; font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
   pre.json { margin: 0; padding: 12px; background: #0e1422; color: #e7ebf3; border-radius: var(--radius-sm); font-family: var(--mono); font-size: 12.5px; line-height: 1.5; overflow: auto; max-height: 360px; }
   pre.json .k { color: #ffb45b; } pre.json .s { color: #b8e1a8; } pre.json .n { color: #7fb6ff; } pre.json .b { color: #ff8aa3; }
+  .raw-tabs { display: flex; gap: 4px; margin: 10px 0 6px; }
+  .raw-tab { height: 26px; padding: 0 10px; font-size: 11px; font-family: var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+  .raw-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .raw-tab:hover:not(.active) { background: var(--border); color: var(--text); }
 
   /* ── lang toggle ── */
   .lang-toggle { display:flex; gap:2px; background:var(--surface-2); padding:3px; border-radius:var(--radius-sm); }
@@ -478,48 +592,43 @@
     <!-- user section (shown when connected) -->
     <div class="sb-user hidden" id="sbUser">
       <div class="sb-avatar" id="sbAvatar">?</div>
-      <div class="sb-sub-welcome" id="sbWelcome">👋 Welcome back,</div>
+      <div class="sb-sub-welcome" id="sbWelcome" data-i18n="welcomeBack">👋 Welcome back,</div>
       <div class="sb-name" id="sbName">—</div>
       <div class="sb-actions">
         <button id="btnSbReload" class="primary"><span class="spinner"></span><span class="label" data-i18n="btnRefresh">↻ Refresh</span></button>
-        <button id="btnSbSwitch"><span class="label" data-i18n="btnSwitchAccount">Switch account</span></button>
+        <button id="btnOpenSettings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="label" data-i18n="settingsOpenBtn">Settings</span></button>
       </div>
     </div>
 
-    <!-- config / credentials (collapsible, shown when connected) -->
-    <div class="sb-config hidden" id="sbConfig">
-      <div class="sb-config-header" id="btnSbConfigToggle">
-        <span>⚙ Configuration</span>
-        <span class="sb-config-chevron">▸</span>
+    <!-- scrollable middle (login or stats) -->
+    <div class="sb-mid">
+      <!-- login hint (shown when not connected) -->
+      <div class="sb-login" id="sbLogin">
+        <div class="sb-login-logo">🏷</div>
+        <div class="sb-login-title">TigerTag</div>
+        <div class="sb-login-text">Enter your credentials to load your filament inventory</div>
       </div>
-      <div class="sb-config-body hidden" id="sbConfigBody">
-        <div class="sb-field-wrap">
-          <span class="sb-field-label">Email</span>
-          <div class="sb-field-row">
-            <input class="sb-field-input" id="sbEmailField" type="password" autocomplete="off" data-lpignore="true" placeholder="you@example.com" />
-            <button class="sb-eye" id="btnToggleSbEmail" type="button" title="Show / hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
-          </div>
-        </div>
-        <div class="sb-field-wrap">
-          <span class="sb-field-label">API Key</span>
-          <div class="sb-field-row">
-            <input class="sb-field-input" id="sbApiKeyField" type="password" autocomplete="off" data-lpignore="true" placeholder="••••••" />
-            <button class="sb-eye" id="btnToggleSbApiKey" type="button" title="Show / hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
-          </div>
-        </div>
-        <button class="sb-config-save primary" id="btnSbSaveCreds"><span class="spinner"></span><span class="label">Save &amp; reload</span></button>
-      </div>
+      <!-- stats (shown when inventory loaded) -->
+      <div class="sb-stats-wrap hidden" id="sbStats"></div>
     </div>
 
-    <!-- login hint (shown when not connected) -->
-    <div class="sb-login" id="sbLogin">
-      <div class="sb-login-logo">🏷</div>
-      <div class="sb-login-title">TigerTag</div>
-      <div class="sb-login-text">Enter your credentials to load your filament inventory</div>
+    <!-- community footer (always visible) -->
+    <div class="sb-community">
+      <div class="sb-community-label">Community</div>
+      <button class="sb-github-btn" id="sbGithubBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        <span data-i18n="githubBtn">View on GitHub</span>
+      </button>
+      <button class="sb-discord-btn" id="sbDiscordBtn">
+        <!-- Discord logo -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.03.054a19.9 19.9 0 0 0 5.993 3.03.077.077 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.108 13.108 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+        <span data-i18n="discordBtn">Join us on Discord</span>
+      </button>
+      <div class="sb-qr-wrap" id="sbQrWrap">
+        <div class="sb-qr-label" data-i18n="mobileApp">📱 Mobile App</div>
+        <img class="sb-qr-img" src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=https%3A%2F%2Ftaap.it%2FDF1Aqt&bgcolor=0f1117&color=ffffff&margin=8" alt="QR" />
+      </div>
     </div>
-
-    <!-- stats (shown when inventory loaded) -->
-    <div class="sb-stats-wrap hidden" id="sbStats"></div>
   </aside>
 
   <!-- ── main column ── -->
@@ -536,7 +645,7 @@
           <button class="lang-btn" data-lang="fr">FR</button>
         </div>
         <div class="health" id="rfidStatus" style="display:none"><span class="pulse"></span><span id="rfidLabel">RFID: —</span></div>
-        <div class="health" id="health"><span class="pulse"></span><span id="healthLabel">Backend: idle</span></div>
+        <div class="health" id="health" data-tooltip="Backend: idle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
       </div>
     </header>
 
@@ -620,6 +729,63 @@
   <button id="btnInstallUpdate" class="primary sm hidden">Restart &amp; update</button>
 </div>
 
+<!-- settings panel -->
+<div class="panel-overlay" id="settingsOverlay"></div>
+<div class="detail-panel" id="settingsPanel">
+  <div class="panel-header">
+    <span class="panel-title" data-i18n="settingsTitle">Settings</span>
+    <button class="panel-close" id="settingsClose">✕</button>
+  </div>
+  <div class="panel-body" style="padding:18px 20px 24px;display:flex;flex-direction:column;gap:18px;overflow-y:auto">
+
+    <!-- Account -->
+    <div>
+      <div class="stg-section-label" data-i18n="settingsAccount">Account</div>
+      <div class="sb-field-wrap" style="margin-top:10px">
+        <span class="sb-field-label">Email</span>
+        <div class="sb-field-row">
+          <input class="sb-field-input" id="stgEmail" type="password" autocomplete="off" data-lpignore="true" placeholder="you@example.com" />
+          <button class="sb-eye" id="btnToggleStgEmail" type="button" title="Show / hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
+        </div>
+      </div>
+      <div class="sb-field-wrap">
+        <span class="sb-field-label">API Key</span>
+        <div class="sb-field-row">
+          <input class="sb-field-input" id="stgApiKey" type="password" autocomplete="off" data-lpignore="true" placeholder="••••••" />
+          <button class="sb-eye" id="btnToggleStgApiKey" type="button" title="Show / hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
+        </div>
+      </div>
+      <div class="stg-row">
+        <button class="sb-config-save primary" id="btnStgSave" style="flex:1;height:32px"><span class="spinner"></span><span class="label" data-i18n="settingsSave">Save &amp; reload</span></button>
+        <button class="stg-switch-btn" id="btnStgSwitch"><span data-i18n="btnSwitchAccount">Switch account</span></button>
+      </div>
+    </div>
+
+    <!-- Data & Export -->
+    <div>
+      <div class="stg-section-label" data-i18n="settingsData">Data &amp; Export</div>
+      <div class="sb-field-wrap" style="margin-top:10px">
+        <span class="sb-field-label" data-i18n="settingsApiLink">API Link</span>
+        <div class="sb-field-row">
+          <input class="sb-field-input stg-link-input" id="stgApiLink" type="text" readonly placeholder="—" />
+          <button class="stg-copy-btn" id="btnCopyApiLink" title="Copy"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        </div>
+      </div>
+      <button class="stg-export-btn" id="btnStgExport" data-i18n="settingsExport">↓ Download JSON</button>
+    </div>
+
+    <!-- Language -->
+    <div>
+      <div class="stg-section-label" data-i18n="settingsLang">Language</div>
+      <div class="lang-toggle" style="margin-top:10px">
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="fr">FR</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <!-- debug panel -->
 <div class="panel-overlay" id="debugOverlay"></div>
 <div class="detail-panel" id="debugPanel">
@@ -659,7 +825,13 @@
       rfidConnected: name => `RFID: ${name || "connected"}`, rfidNoReader: "RFID: no reader",
       rfidScanned: uid => `RFID: ${uid.slice(-6)}`,
       rfidNotFound: uid => `RFID scanned: ${uid} — spool not found in current inventory.`,
-      welcomeBack: "👋 Welcome back,", btnRefresh: "↻ Refresh", btnSwitchAccount: "Switch account",
+      welcomeBack: () => { const m = ["🎉 Welcome back,","🔥 Good to see you,","👊 Let's go,","🚀 Ready to print,","✨ Hey, glad you're here,"]; return m[Math.floor(Math.random()*m.length)]; },
+      githubBtn: "View on GitHub", discordBtn: "Join us on Discord", mobileApp: "TigerTag Mobile Apps", mobileScan: "Scan to get the app",
+      settingsOpenBtn: "Settings", settingsTitle: "Settings",
+      settingsAccount: "Account", settingsData: "Data & Export", settingsLang: "Language",
+      settingsSave: "Save & reload", settingsApiLink: "API Link", settingsExport: "↓ Download JSON",
+      settingsCopied: "Copied!",
+      btnRefresh: "↻ Refresh", btnSwitchAccount: "Switch account",
       credTitle: "Credentials", credEmail: "Email", credApiKey: "API Key", credStatus: "Status",
       statusUntested: "untested", statusValid: "valid", statusInvalid: "invalid", statusChecking: "checking…",
       btnLoadInv: "Load inventory", btnTestKey: "Test API key", btnClearSaved: "Clear saved data",
@@ -667,7 +839,8 @@
       btnShowDeleted: "Show deleted", btnHideDeleted: "Hide deleted",
       btnExport: "↓ JSON", searchPlaceholder: "Search material, brand, color, UID…",
       noInventory: "No inventory loaded yet.", noMatch: "No spools match the filters.",
-      statActive: "Active spools", statPlus: "TigerTag+", statDiy: "TigerTag DIY", statTotal: "Total available",
+      statActive: "Active spools", statPlus: "TigerTag+", statDiy: "TigerTag", statTotal: "Total available",
+      statActiveMini: "Spools", statPlusMini: "TigerTag+", statDiyMini: "TigerTag", statTotalMini: "Stock",
       thUid: "UID", thType: "Type", thMaterial: "Material", thBrand: "Brand",
       thColor: "Color / Name", thWeight: "Weight avail.", thCapacity: "Capacity", thUpdated: "Updated",
       debugLabel: "Debug", debugSubtitle: " — last API request & response", debugNoReqs: "No requests yet.",
@@ -694,6 +867,8 @@
       btnRestartUpdate: "Restart & update",
       agoNow: "just now", agoMin: m => `${m}m ago`, agoHour: h => `${h}h ago`,
       agoDay: d => `${d}d ago`, agoMonth: mo => `${mo}mo ago`, agoYear: y => `${y}y ago`,
+      twinBadge: "Twin", twinTitle: "Spool with 2 linked RFID chips",
+      twinTabThis: "This tag", twinTabTwin: "Twin tag",
     },
     fr: {
       appSubtitle: "Consultez et gérez vos bobines de filament",
@@ -702,7 +877,13 @@
       rfidConnected: name => `RFID : ${name || "connecté"}`, rfidNoReader: "RFID : aucun lecteur",
       rfidScanned: uid => `RFID : ${uid.slice(-6)}`,
       rfidNotFound: uid => `RFID lu : ${uid} — bobine introuvable dans l'inventaire.`,
-      welcomeBack: "👋 Bienvenue,", btnRefresh: "↻ Actualiser", btnSwitchAccount: "Changer de compte",
+      welcomeBack: () => { const m = ["🎉 Content de te revoir,","🔥 Te revoilà,","👊 C'est parti,","🚀 Prêt à imprimer,","✨ Hé, bienvenue,"]; return m[Math.floor(Math.random()*m.length)]; },
+      githubBtn: "Voir sur GitHub", discordBtn: "Rejoindre notre Discord", mobileApp: "TigerTag Mobile Apps", mobileScan: "Scanner pour l'app",
+      settingsOpenBtn: "Paramètres", settingsTitle: "Paramètres",
+      settingsAccount: "Compte", settingsData: "Données & Export", settingsLang: "Langue",
+      settingsSave: "Sauvegarder & recharger", settingsApiLink: "Lien API", settingsExport: "↓ Télécharger JSON",
+      settingsCopied: "Copié !",
+      btnRefresh: "↻ Actualiser", btnSwitchAccount: "Changer de compte",
       credTitle: "Identifiants", credEmail: "E-mail", credApiKey: "Clé API", credStatus: "Statut",
       statusUntested: "non testé", statusValid: "valide", statusInvalid: "invalide", statusChecking: "vérification…",
       btnLoadInv: "Charger l'inventaire", btnTestKey: "Tester la clé API", btnClearSaved: "Effacer les données",
@@ -710,7 +891,8 @@
       btnShowDeleted: "Afficher supprimés", btnHideDeleted: "Masquer supprimés",
       btnExport: "↓ JSON", searchPlaceholder: "Rechercher matière, marque, couleur, UID…",
       noInventory: "Aucun inventaire chargé.", noMatch: "Aucune bobine ne correspond aux filtres.",
-      statActive: "Bobines actives", statPlus: "TigerTag+", statDiy: "TigerTag DIY", statTotal: "Poids total disponible",
+      statActive: "Bobines actives", statPlus: "TigerTag+", statDiy: "TigerTag", statTotal: "Poids total disponible",
+      statActiveMini: "Spools", statPlusMini: "TigerTag+", statDiyMini: "TigerTag", statTotalMini: "Stock",
       thUid: "UID", thType: "Type", thMaterial: "Matière", thBrand: "Marque",
       thColor: "Couleur / Nom", thWeight: "Poids dispo.", thCapacity: "Capacité", thUpdated: "Mis à jour",
       debugLabel: "Debug", debugSubtitle: " — dernière requête & réponse API", debugNoReqs: "Aucune requête effectuée.",
@@ -735,6 +917,8 @@
       updateDownloading: "<strong>Mise à jour disponible</strong> — téléchargement…",
       updateReady: "<strong>Mise à jour prête !</strong> Redémarrez pour installer.",
       btnRestartUpdate: "Redémarrer & installer",
+      twinBadge: "Jumelle", twinTitle: "Bobine avec 2 puces RFID liées",
+      twinTabThis: "Cette puce", twinTabTwin: "Puce jumelle",
       agoNow: "à l'instant", agoMin: m => `il y a ${m}min`, agoHour: h => `il y a ${h}h`,
       agoDay: d => `il y a ${d}j`, agoMonth: mo => `il y a ${mo} mois`, agoYear: y => `il y a ${y}an${y > 1 ? "s" : ""}`,
     },
@@ -903,8 +1087,8 @@
       const r = await fetch(`${API_BASE}/healthz/`);
       $("health").classList.toggle("ok", r.ok);
       $("health").classList.toggle("bad", !r.ok);
-      $("healthLabel").textContent = r.ok ? t("backendOk") : t("backendErr", r.status);
-    } catch { $("health").classList.add("bad"); $("healthLabel").textContent = t("backendOffline"); }
+      $("health").dataset.tooltip = r.ok ? t("backendOk") : t("backendErr", r.status);
+    } catch { $("health").classList.add("bad"); $("health").dataset.tooltip = t("backendOffline"); }
   }
   pingHealth();
 
@@ -917,41 +1101,82 @@
     $("sbAvatar").textContent = initials;
     $("sbWelcome").textContent = t("welcomeBack");
     $("sbName").textContent = displayName || email || "—";
-    // populate config fields (masked, not visible until user reveals)
-    $("sbEmailField").value  = email  || "";
-    $("sbApiKeyField").value = apiKey || "";
     $("sbUser").classList.remove("hidden");
-    $("sbConfig").classList.remove("hidden");
     $("sbLogin").classList.add("hidden");
     $("card-creds").classList.add("hidden");
   }
   function setDisconnected() {
     state.displayName = null; state.keyValid = null;
     $("sbUser").classList.add("hidden");
-    $("sbConfig").classList.add("hidden");
     $("sbStats").classList.add("hidden");
     $("sbLogin").classList.remove("hidden");
     $("card-creds").classList.remove("hidden");
     setKeyStatus("untested"); $("credsResult").innerHTML = "";
   }
-  $("btnSbSwitch").addEventListener("click", () => {
+  /* ── settings panel ── */
+  const SVG_COPY = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  function openSettings() {
+    $("stgEmail").value  = $("email").value;
+    $("stgApiKey").value = $("apiKey").value;
+    const email = $("email").value.trim(), key = $("apiKey").value.trim();
+    $("stgApiLink").value = (email && key)
+      ? `${API_BASE}/exportInventory?ApiKey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`
+      : "";
+    document.querySelectorAll(".lang-btn").forEach(b =>
+      b.classList.toggle("active", b.dataset.lang === state.lang)
+    );
+    $("settingsPanel").classList.add("open"); $("settingsOverlay").classList.add("open");
+  }
+  function closeSettings() {
+    $("settingsPanel").classList.remove("open"); $("settingsOverlay").classList.remove("open");
+  }
+  $("btnOpenSettings").addEventListener("click", openSettings);
+  $("settingsClose").addEventListener("click", closeSettings);
+  $("settingsOverlay").addEventListener("click", closeSettings);
+
+  makeEyeToggle("btnToggleStgEmail",  "stgEmail");
+  makeEyeToggle("btnToggleStgApiKey", "stgApiKey");
+
+  $("btnStgSave").addEventListener("click", async () => {
+    const email = $("stgEmail").value.trim(), key = $("stgApiKey").value.trim();
+    if (!email || !key) return;
+    $("email").value = email; $("apiKey").value = key;
+    setLoading($("btnStgSave"), true);
+    await loadInventory();
+    setLoading($("btnStgSave"), false);
+    closeSettings();
+  });
+
+  $("btnStgSwitch").addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(STORAGE_INV);
     $("email").value = ""; $("apiKey").value = "";
     state.inventory = null; state.rows = [];
     renderStats(); renderInventory(); setDisconnected();
+    closeSettings();
   });
+
+  $("btnCopyApiLink").addEventListener("click", async () => {
+    const val = $("stgApiLink").value; if (!val) return;
+    try {
+      await navigator.clipboard.writeText(val);
+      const btn = $("btnCopyApiLink");
+      btn.classList.add("copied"); btn.innerHTML = "✓";
+      setTimeout(() => { btn.classList.remove("copied"); btn.innerHTML = SVG_COPY; }, 2000);
+    } catch {}
+  });
+
+  $("btnStgExport").addEventListener("click", () => {
+    if (!state.inventory) return;
+    const blob = new Blob([JSON.stringify(state.inventory,null,2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = `tigertag-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
   $("btnSbReload").addEventListener("click", async () => {
     setLoading($("btnSbReload"), true);
     await loadInventory();
     setLoading($("btnSbReload"), false);
-  });
-
-  /* ── config panel ── */
-  $("btnSbConfigToggle").addEventListener("click", () => {
-    const section = $("sbConfig");
-    const body    = $("sbConfigBody");
-    section.classList.toggle("open");
-    body.classList.toggle("hidden");
   });
 
   const SVG_EYE_OFF = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
@@ -966,20 +1191,6 @@
       btn.innerHTML   = reveal ? SVG_EYE_ON : SVG_EYE_OFF;
     });
   }
-  makeEyeToggle("btnToggleSbEmail",  "sbEmailField");
-  makeEyeToggle("btnToggleSbApiKey", "sbApiKeyField");
-
-  $("btnSbSaveCreds").addEventListener("click", async () => {
-    const email  = $("sbEmailField").value.trim();
-    const apiKey = $("sbApiKeyField").value.trim();
-    if (!email || !apiKey) return;
-    $("email").value  = email;
-    $("apiKey").value = apiKey;
-    setLoading($("btnSbSaveCreds"), true);
-    await loadInventory();
-    setLoading($("btnSbSaveCreds"), false);
-  });
-
   /* ── sidebar collapse toggle ── */
   (function() {
     const sidebar = $("sidebar");
@@ -1092,21 +1303,46 @@
 
   /* ── stats ── */
   function renderStats() {
-    const all = state.rows; const active = all.filter(r => !r.deleted);
+    const all = deduplicateTwins(state.rows.slice()); const active = all.filter(r => !r.deleted);
     const plus = active.filter(r => r.isPlus);
     const totalW = active.reduce((s, r) => s + (Number(r.weightAvailable)||0), 0);
     const el = $("sbStats");
     if (!all.length) { el.classList.add("hidden"); return; }
+    const kgFull = (totalW / 1000).toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:2});
+    const kgMini = `${Math.round(totalW / 1000)} kg`;
     el.innerHTML = [
-      { label: t("statActive"), value: active.length },
-      { label: t("statPlus"),   value: plus.length },
-      { label: t("statDiy"),    value: active.length - plus.length },
-      { label: t("statTotal"),  value: `${(totalW / 1000).toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:2})} kg` },
-    ].map(s => `<div class="sb-stat"><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`).join("");
+      { label: t("statActive"), mini: t("statActiveMini"), value: active.length,           miniVal: active.length },
+      { label: t("statPlus"),   mini: t("statPlusMini"),   value: plus.length,              miniVal: plus.length },
+      { label: t("statDiy"),    mini: t("statDiyMini"),    value: active.length-plus.length, miniVal: active.length-plus.length },
+      { label: t("statTotal"),  mini: t("statTotalMini"),  value: `${kgFull} kg`,           miniVal: kgMini },
+    ].map(s => `<div class="sb-stat" data-mini="${s.mini}" data-mini-val="${s.miniVal}"><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`).join("");
     el.classList.remove("hidden");
   }
 
   /* ── filter ── */
+  function deduplicateTwins(rows) {
+    const skip = new Set();
+    const result = [];
+    for (const row of rows) {
+      if (skip.has(row.spoolId)) continue;
+      if (row.twinUid) {
+        const twinId = String(row.twinUid);
+        const twin = rows.find(r =>
+          !skip.has(r.spoolId) &&
+          r.spoolId !== row.spoolId &&
+          (String(r.uid) === twinId || String(r.spoolId) === twinId)
+        );
+        if (twin) {
+          row.hasTwinPair = true;
+          skip.add(twin.spoolId);
+        }
+      }
+      skip.add(row.spoolId);
+      result.push(row);
+    }
+    return result;
+  }
+
   function filteredRows() {
     let rows = state.rows.slice();
     if (!state.showDeleted) rows = rows.filter(r => !r.deleted);
@@ -1119,7 +1355,7 @@
         String(r.colorName).toLowerCase().includes(q)
       );
     }
-    return rows;
+    return deduplicateTwins(rows);
   }
 
   /* ── render ── */
@@ -1140,6 +1376,30 @@
     }
   }
 
+  function colorCircleHTML(row, size = 15) {
+    const aspects = [row.aspect1, row.aspect2].map(a => (a || '').toLowerCase());
+    const isRainbow  = aspects.some(a => a.includes('rainbow') || a.includes('multicolor'));
+    const isTricolor = aspects.some(a => a.includes('tricolor') || a.includes('tri color') || a.includes('tricolore'));
+    const isBicolor  = aspects.some(a => a.includes('bicolor')  || a.includes('bi color')  || a.includes('bicolore'));
+    const cls = (row.colorList || []).map(c => c.replace(/FF$/i, '').trim()).filter(Boolean);
+    let bg;
+    if (isRainbow) {
+      bg = 'linear-gradient(to right, #ff0000, #ff7700, #ffee00, #00cc44, #0077ff, #8800ff)';
+    } else if (isTricolor && cls.length >= 3) {
+      bg = `conic-gradient(${cls[0]} 0deg 120deg, ${cls[1]} 120deg 240deg, ${cls[2]} 240deg 360deg)`;
+    } else if (isTricolor && cls.length >= 2) {
+      bg = `conic-gradient(${cls[0]} 0deg 120deg, ${cls[1]} 120deg 240deg, ${cls[0]} 240deg 360deg)`;
+    } else if (isBicolor && cls.length >= 2) {
+      bg = `linear-gradient(to right, ${cls[0]} 50%, ${cls[1]} 50%)`;
+    } else if (isBicolor && row.colorHex) {
+      bg = `linear-gradient(to right, ${row.colorHex} 50%, #ffffff 50%)`;
+    } else {
+      bg = cls[0] || row.colorHex || '#cccccc';
+    }
+    const border = isRainbow ? 'none' : '1.5px solid rgba(0,0,0,.12)';
+    return `<span class="color-circle" style="width:${size}px;height:${size}px;background:${bg};border:${border}"></span>`;
+  }
+
   function thumbHTML(row, size = 28) {
     if (row.imgUrl) return `<img class="thumb" src="${esc(row.imgUrl)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.display='none'" />`;
     return `<span class="thumb-placeholder" style="width:${size}px;height:${size}px"><img src="${LOGO_PATH}" width="${size-6}" /></span>`;
@@ -1152,15 +1412,16 @@
       tr.dataset.id = r.spoolId;
       if (state.selected === r.spoolId) tr.classList.add("selected");
       if (r.deleted) tr.classList.add("deleted");
-      const swatch = r.colorHex ? `<span class="swatch" style="background:${r.colorHex}"></span>` : "";
+      const swatch = colorCircleHTML(r);
       let wCell = "-";
       if (r.weightAvailable != null) {
         wCell = `${r.weightAvailable} g`;
         if (r.capacity) { const p = Math.max(0,Math.min(100,Math.round(r.weightAvailable/r.capacity*100))); wCell += `<span class="bar" title="${p}%"><span style="width:${p}%"></span></span>`; }
       }
+      const twinBadge = r.hasTwinPair ? `<span class="tag-twin" title="${t('twinTitle')}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${t('twinBadge')}</span>` : "";
       tr.innerHTML = `
         <td style="width:36px">${thumbHTML(r)}</td>
-        <td>${r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">DIY</span>'}</td>
+        <td>${r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>'}${twinBadge}</td>
         <td>${esc(v(r.material))}</td>
         <td>${esc(v(r.brand))}</td>
         <td>${swatch}${esc(v(r.colorName))}</td>
@@ -1182,8 +1443,9 @@
         ? `<img class="card-img" src="${esc(r.imgUrl)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'card-img-placeholder\\'><img src=\\'${LOGO_PATH}\\'></div>'" />`
         : `<div class="card-img-placeholder"><img src="${LOGO_PATH}" /></div>`;
       const pct = (r.weightAvailable != null && r.capacity) ? Math.max(0,Math.min(100,Math.round(r.weightAvailable/r.capacity*100))) : null;
-      const swatch = r.colorHex ? `<span class="swatch" style="background:${r.colorHex}"></span>` : "";
-      const badge = r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">DIY</span>';
+      const swatch = colorCircleHTML(r);
+      const badge = r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>';
+      const twinBadgeCard = r.hasTwinPair ? `<span class="tag-twin" title="${t('twinTitle')}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${t('twinBadge')}</span>` : "";
       card.innerHTML = `
         ${imgHtml}
         <div class="card-body">
@@ -1191,7 +1453,7 @@
           <div class="card-sub">${esc(v(r.material))} · ${esc(v(r.brand))}</div>
           <div class="card-footer">
             <span class="card-weight">${r.weightAvailable!=null ? r.weightAvailable+" g" : "-"}</span>
-            ${badge}
+            <span style="display:flex;gap:3px;align-items:center">${badge}${twinBadgeCard}</span>
           </div>
           ${pct!==null ? `<div class="card-bar"><span style="width:${pct}%"></span></div>` : ""}
         </div>`;
@@ -1230,6 +1492,16 @@
     if (!r) return;
     $("panelTitle").textContent = r.colorName && r.colorName !== "-" ? r.colorName : r.material;
     $("panelBody").innerHTML = buildPanelHTML(r);
+    // twin raw JSON tab switching
+    $("panelBody").querySelectorAll("[data-raw-tab]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        $("panelBody").querySelectorAll("[data-raw-tab]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const pre = $("rawJsonPre");
+        const raw = decodeURIComponent(btn.dataset.rawTab === "a" ? pre.dataset.rawA : pre.dataset.rawB);
+        pre.innerHTML = highlight(raw);
+      });
+    });
     $("detailPanel").classList.add("open"); $("panelOverlay").classList.add("open");
     // slider ↔ display ↔ manual input
     const slider    = $("weightSlider");
@@ -1428,9 +1700,21 @@
       ${linksHtml}
       ${infoHtml}
       <div class="panel-section">
-        <details class="debug">
+        <details class="debug" id="rawDetails">
           <summary><strong>${t("sectionRaw")}</strong></summary>
-          <pre class="json" style="margin-top:10px;max-height:400px">${highlight(r.raw)}</pre>
+          ${(() => {
+            if (!r.hasTwinPair) {
+              return `<pre class="json" id="rawJsonPre" style="margin-top:10px;max-height:400px">${highlight(r.raw)}</pre>`;
+            }
+            const twin = state.rows.find(x => x.spoolId !== r.spoolId && (String(x.uid) === String(r.twinUid) || String(x.spoolId) === String(r.twinUid)));
+            const twinRaw = twin ? twin.raw : "{}";
+            return `
+            <div class="raw-tabs" style="margin-top:10px">
+              <button class="raw-tab active" data-raw-tab="a">${t("twinTabThis")}</button>
+              <button class="raw-tab" data-raw-tab="b">${t("twinTabTwin")}</button>
+            </div>
+            <pre class="json" id="rawJsonPre" style="max-height:400px" data-raw-a="${encodeURIComponent(r.raw)}" data-raw-b="${encodeURIComponent(twinRaw)}">${highlight(r.raw)}</pre>`;
+          })()}
         </details>
       </div>`;
   }
@@ -1463,6 +1747,11 @@
   $("debugOverlay").addEventListener("click", closeDebug);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDebug(); });
 
+  /* ── community buttons ── */
+  $("sbGithubBtn").addEventListener("click", () => window.open("https://github.com/TigerTag-Project/TigerTag_Studio_Manager/"));
+  $("sbDiscordBtn").addEventListener("click", () => window.open("https://discord.gg/3Qv5TSqnJH"));
+  $("sbQrWrap").addEventListener("click", () => window.open("https://taap.it/DF1Aqt"));
+
   /* ── language toggle ── */
   document.querySelectorAll(".lang-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1472,7 +1761,7 @@
       renderStats();
       renderInventory();
       pingHealth();
-      if (state.selected) openDetail(state.selected);
+      if (state.selected && $("detailPanel").classList.contains("open")) openDetail(state.selected);
     });
   });
 
