@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "TigerTag Inventory Manager — desktop app",
   "main": "main.js",
+  "engines": { "node": ">=24" },
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild",
