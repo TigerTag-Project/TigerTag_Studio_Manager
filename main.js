@@ -20,7 +20,7 @@ function createWindow() {
     height: 820,
     minWidth: 900,
     minHeight: 600,
-    title: 'TigerTag Inventory',
+    title: 'TigerTag Studio Manager',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

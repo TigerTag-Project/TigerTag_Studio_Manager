@@ -1,7 +1,7 @@
 {
   "name": "tigertag-inventory",
   "version": "1.0.0",
-  "description": "TigerTag Inventory Manager — desktop app",
+  "description": "TigerTag Studio Manager — desktop app",
   "main": "main.js",
   "engines": { "node": ">=24" },
   "scripts": {
@@ -23,7 +23,7 @@
   },
   "build": {
     "appId": "io.tigertag.inventory",
-    "productName": "TigerTag Inventory",
+    "productName": "TigerTag Studio Manager",
     "copyright": "TigerTag",
     "publish": {
       "provider": "github",
@@ -44,7 +44,12 @@
     "mac": {
       "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
       "icon": "assets/img/icon.icns",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
     },
     "linux": {
       "target": [{ "target": "AppImage", "arch": ["x64"] }],
