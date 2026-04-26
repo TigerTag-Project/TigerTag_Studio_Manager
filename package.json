@@ -62,11 +62,7 @@
       ],
       "icon": "assets/img/icon.icns",
       "category": "public.app-category.utilities",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": true
+      "identity": null
     },
     "linux": {
       "target": [
