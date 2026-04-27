@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const db = require('./services/tigertagDbService');
 
 let mainWindow;
 
@@ -28,7 +29,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile('inventory.html');
+  mainWindow.loadFile('renderer/inventory.html');
 
   // Open external links in default browser, not in Electron
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -108,8 +109,19 @@ ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 
+// ── DB IPC handlers ──────────────────────────────────────────────────────────
+ipcMain.handle('db:getLabel',                (_, cat, id) => db.getLabel(cat, id));
+ipcMain.handle('db:getMaterialLabel',        (_, id)      => db.getMaterialLabel(id));
+ipcMain.handle('db:getPublicKeyForId',       (_, id)      => db.getPublicKeyForId(id));
+ipcMain.handle('db:getAllLastUpdateTimestamps', ()         => db.getAllLastUpdateTimestamps());
+ipcMain.handle('db:isUpdateAvailable',       ()           => db.isUpdateAvailable());
+ipcMain.handle('db:updateIfNeeded',          ()           => db.updateIfNeeded());
+ipcMain.handle('db:downloadAndSaveLatestData', ()         => db.downloadAndSaveLatestData());
+
 // ── App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await db.initTigerTagDB();
+
   createWindow();
   initNFC();
 
@@ -117,6 +129,11 @@ app.whenReady().then(() => {
   if (app.isPackaged) {
     setTimeout(initUpdater, 3000);
   }
+
+  // Sync DB in background — non-blocking, no crash if offline
+  db.updateIfNeeded().then(n => {
+    if (n > 0) console.log(`[DB] ${n} dataset(s) updated from API`);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

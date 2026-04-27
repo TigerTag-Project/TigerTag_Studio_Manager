@@ -18,4 +18,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Ask main process to install the downloaded update and restart
   installUpdate: () => ipcRenderer.send('install-update'),
+
+  // ── Local DB (main-process side) ─────────────────────────────────────────
+  db: {
+    getLabel:                 (category, id) => ipcRenderer.invoke('db:getLabel', category, id),
+    getMaterialLabel:         (id)           => ipcRenderer.invoke('db:getMaterialLabel', id),
+    getPublicKeyForId:        (id)           => ipcRenderer.invoke('db:getPublicKeyForId', id),
+    getAllLastUpdateTimestamps: ()            => ipcRenderer.invoke('db:getAllLastUpdateTimestamps'),
+    isUpdateAvailable:        ()             => ipcRenderer.invoke('db:isUpdateAvailable'),
+    updateIfNeeded:           ()             => ipcRenderer.invoke('db:updateIfNeeded'),
+    downloadAndSaveLatestData: ()            => ipcRenderer.invoke('db:downloadAndSaveLatestData'),
+  },
 });

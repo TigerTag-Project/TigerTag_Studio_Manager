@@ -35,8 +35,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "inventory.html",
-      "dada_base/**",
+      "renderer/**",
+      "services/**",
+      "data/**",
       "assets/**"
     ],
     "win": {

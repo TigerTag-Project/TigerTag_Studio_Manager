@@ -4,577 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TigerTag Studio Manager</title>
-<style>
-  :root {
-    --bg: #f6f7fb;
-    --surface: #ffffff;
-    --surface-2: #f1f3f9;
-    --border: #e3e6ef;
-    --text: #1c2030;
-    --muted: #6b7287;
-    --primary: #ff7a18;
-    --primary-hover: #e96900;
-    --primary-soft: #ffe9d6;
-    --success: #1aaf6c;
-    --success-soft: #e1f6ec;
-    --danger: #d83b3b;
-    --danger-soft: #fbe3e3;
-    --warning: #b97a00;
-    --warning-soft: #fff5dc;
-    --neutral: #8b91a3;
-    --shadow: 0 1px 2px rgba(20,24,40,.04), 0 8px 24px rgba(20,24,40,.06);
-    --radius: 14px;
-    --radius-sm: 10px;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.45;
-  }
-
-  /* ── layout ── */
-  .app-layout {
-    height: 100%; display: flex; flex-direction: row; overflow: hidden;
-  }
-  /* sidebar */
-  .sidebar {
-    width: 240px; flex-shrink: 0;
-    background: linear-gradient(175deg, #0f1117 0%, #18101f 100%);
-    border-right: none;
-    display: flex; flex-direction: column; overflow: hidden;
-    transition: width .25s cubic-bezier(.4,0,.2,1);
-    box-shadow: 2px 0 24px rgba(0,0,0,.25);
-    position: relative;
-  }
-  .sidebar::after {
-    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
-    background: linear-gradient(180deg, rgba(255,122,24,.3) 0%, rgba(255,122,24,.0) 60%);
-    pointer-events: none;
-  }
-  .sidebar.collapsed { width: 65px; }
-
-  /* header / brand */
-  .sb-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 12px 12px; border-bottom: 1px solid rgba(255,255,255,.06); flex-shrink: 0;
-  }
-  .sidebar.collapsed .sb-header { justify-content: center; }
-  .sb-brand { display: flex; align-items: center; gap: 9px; overflow: hidden; min-width: 0; }
-  .sb-brand-dot {
-    width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px;
-    background: linear-gradient(135deg, var(--primary), #ffb056);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 800; color: #fff;
-    box-shadow: 0 2px 10px rgba(255,122,24,.4);
-  }
-  .sb-brand-name { font-size: 13px; font-weight: 700; color: rgba(255,255,255,.85); white-space: nowrap; letter-spacing: -.01em; }
-  .sidebar.collapsed .sb-brand { display: none; }
-  .sb-toggle {
-    width: 28px; height: 28px; padding: 0; border-radius: 50%; flex-shrink: 0;
-    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12);
-    color: rgba(255,255,255,.45);
-    display: flex; align-items: center; justify-content: center;
-    transition: background .2s, border-color .2s, box-shadow .2s, color .2s;
-  }
-  .sb-toggle:hover {
-    background: rgba(255,122,24,.18) !important; border-color: rgba(255,122,24,.55) !important;
-    box-shadow: 0 0 12px rgba(255,122,24,.25); color: var(--primary) !important;
-  }
-  .sb-chevron {
-    display: block; flex-shrink: 0; pointer-events: none;
-    transition: transform .25s cubic-bezier(.4,0,.2,1);
-  }
-  .sidebar.collapsed .sb-chevron { transform: rotate(180deg); }
-
-  /* user section */
-  .sb-user {
-    padding: 20px 14px 16px; border-bottom: 1px solid rgba(255,255,255,.06);
-    flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
-  }
-  .sb-avatar {
-    width: 54px; height: 54px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary), #ffb056);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px; font-weight: 700; color: #fff; letter-spacing: -1px;
-    box-shadow: 0 0 0 3px rgba(255,122,24,.25), 0 4px 20px rgba(255,122,24,.2);
-    transition: box-shadow .3s; flex-shrink: 0;
-  }
-  .sb-avatar:hover { box-shadow: 0 0 0 4px rgba(255,122,24,.45), 0 4px 28px rgba(255,122,24,.3); }
-  .sb-name {
-    font-size: 14px; font-weight: 600; color: #fff; text-align: center;
-    margin-top: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
-  }
-  .sb-sub {
-    font-size: 10px; color: rgba(255,255,255,.32); text-align: center;
-    font-family: var(--mono); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
-  }
-  .sb-actions { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; width: 100%; }
-  .sb-actions button {
-    height: 32px; font-size: 12px; width: 100%; justify-content: center; border-radius: 8px;
-  }
-  .sb-actions .primary { background: var(--primary); border-color: var(--primary); box-shadow: 0 2px 10px rgba(255,122,24,.35); }
-  .sb-actions .primary:hover { background: var(--primary-hover) !important; box-shadow: 0 3px 14px rgba(255,122,24,.45); }
-  .sb-actions button:not(.primary) {
-    background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.1);
-    color: rgba(255,255,255,.6);
-  }
-  .sb-actions button:not(.primary):hover { background: rgba(255,255,255,.12) !important; color: #fff !important; }
-  .sb-sub-welcome { font-size: 11px; color: rgba(255,255,255,.38); text-align: center; margin-top: 4px; }
-  .sidebar.collapsed .sb-name,
-  .sidebar.collapsed .sb-sub,
-  .sidebar.collapsed .sb-sub-welcome,
-  .sidebar.collapsed .sb-actions { display: none; }
-  .sidebar.collapsed .sb-user { padding: 14px 8px; }
-  .sidebar.collapsed .sb-avatar { width: 40px; height: 40px; font-size: 15px; }
-
-  /* config section */
-  .sb-field-wrap { display: flex; flex-direction: column; gap: 4px; }
-  .sb-field-label { font-size: 10px; color: rgba(255,255,255,.28); text-transform: uppercase; letter-spacing: .06em; }
-  .sb-field-row { display: flex; gap: 4px; }
-  .sb-field-input {
-    flex: 1; height: 30px; padding: 0 9px; font-size: 11px; font-family: var(--mono);
-    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
-    border-radius: 7px; color: rgba(255,255,255,.8); outline: none; min-width: 0;
-    transition: border-color .15s, background .15s;
-  }
-  .sb-field-input:focus { border-color: var(--primary); background: rgba(255,122,24,.08); }
-  .sb-eye {
-    width: 30px; height: 30px; padding: 0; border-radius: 7px; flex-shrink: 0;
-    background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.1); color: rgba(255,255,255,.35);
-    display: flex; align-items: center; justify-content: center;
-    transition: background .15s, color .15s;
-  }
-  .sb-eye svg { display: block; }
-  .sb-eye:hover { background: rgba(255,255,255,.13) !important; color: rgba(255,255,255,.8) !important; }
-  .sb-config-save {
-    height: 30px; font-size: 12px; background: var(--primary); border-color: var(--primary);
-    color: #fff; border-radius: 7px; width: 100%; justify-content: center; margin-top: 2px;
-  }
-  .sb-config-save:hover { background: var(--primary-hover) !important; }
-
-  /* stats */
-  .sb-stats-wrap {
-    flex: 1; overflow-y: auto; padding: 14px 12px 12px;
-    display: flex; flex-direction: column; gap: 7px;
-  }
-  .sb-stats-wrap::-webkit-scrollbar { width: 3px; }
-  .sb-stats-wrap::-webkit-scrollbar-track { background: transparent; }
-  .sb-stats-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
-  .sb-stats-section-label {
-    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: rgba(255,255,255,.25); padding: 4px 2px 6px;
-  }
-  .sb-stat {
-    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
-    border-radius: 10px; padding: 10px 12px;
-    transition: background .15s, border-color .15s; cursor: default;
-  }
-  .sb-stat:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.11); }
-  .sb-stat .label {
-    font-size: 10px; color: rgba(255,255,255,.38); text-transform: uppercase;
-    letter-spacing: .06em; display: flex; align-items: center; gap: 6px;
-  }
-  .sb-stat .label::before {
-    content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--primary);
-    flex-shrink: 0; box-shadow: 0 0 6px rgba(255,122,24,.6);
-  }
-  .sb-stat .value {
-    font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
-    color: #fff; margin-top: 4px; letter-spacing: -.02em;
-  }
-  .sidebar.collapsed .sb-stats-wrap {
-    display: flex; padding: 8px 5px; gap: 4px; overflow-y: auto;
-  }
-  .sidebar.collapsed .sb-stat { padding: 5px 4px; border-radius: 8px; }
-  .sidebar.collapsed .sb-stat .label { display: none; }
-  .sidebar.collapsed .sb-stat .value { display: none; }
-  .sidebar.collapsed .sb-stat::before {
-    content: attr(data-mini-val); display: block; text-align: center;
-    font-size: 13px; font-weight: 700; color: #fff; letter-spacing: -.02em;
-  }
-  .sidebar.collapsed .sb-stat::after {
-    content: attr(data-mini); display: block; text-align: center;
-    font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-    color: rgba(255,255,255,.3); margin-top: 2px;
-  }
-
-  /* login / idle state */
-  .sb-login {
-    flex: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; padding: 20px 14px; gap: 10px;
-  }
-  .sb-login-logo {
-    width: 44px; height: 44px; border-radius: 12px;
-    background: linear-gradient(135deg, var(--primary), #ffb056);
-    display: flex; align-items: center; justify-content: center; font-size: 22px;
-    box-shadow: 0 4px 20px rgba(255,122,24,.35);
-  }
-  .sb-login-title { font-size: 14px; font-weight: 700; color: rgba(255,255,255,.85); text-align: center; }
-  .sb-login-text { font-size: 11px; color: rgba(255,255,255,.28); text-align: center; line-height: 1.75; }
-  .sidebar.collapsed .sb-login { display: none; }
-
-  /* mid flex wrapper (login + stats) */
-  .sb-mid { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .sidebar.collapsed .sb-mid { display: flex; }
-
-  /* community footer */
-  .sb-community {
-    flex-shrink: 0; padding: 11px 13px 13px;
-    border-top: 1px solid rgba(255,255,255,.06);
-    display: flex; flex-direction: column; gap: 7px;
-  }
-  .sidebar.collapsed .sb-community {
-    padding: 8px 6px 12px; align-items: center;
-  }
-  .sidebar.collapsed .sb-community-label { display: none; }
-  .sidebar.collapsed .sb-github-btn,
-  .sidebar.collapsed .sb-discord-btn {
-    width: 44px; height: 34px; padding: 0; border-radius: 10px;
-  }
-  .sidebar.collapsed .sb-github-btn span,
-  .sidebar.collapsed .sb-discord-btn span { display: none; }
-  .sidebar.collapsed .sb-qr-wrap { padding: 4px; width: 100%; }
-  .sidebar.collapsed .sb-qr-label,
-  .sidebar.collapsed .sb-qr-hint { display: none; }
-  .sidebar.collapsed .sb-qr-img { width: 44px; height: 44px; }
-  .sb-community-label {
-    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: rgba(255,255,255,.22); padding-bottom: 1px;
-  }
-  .sb-github-btn {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 8px;
-    padding: 7px 12px; color: rgba(255,255,255,.75); font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: background .15s, border-color .15s, color .15s;
-    width: 100%; box-sizing: border-box;
-  }
-  .sb-github-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.25); color: #fff; }
-  .sb-discord-btn {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    background: #5865F2; border: none; border-radius: 8px;
-    padding: 8px 12px; color: #fff; font-size: 12px; font-weight: 600;
-    cursor: pointer; text-decoration: none;
-    transition: background .15s, box-shadow .2s; width: 100%; box-sizing: border-box;
-  }
-  .sb-discord-btn:hover { background: #4752C4; box-shadow: 0 3px 14px rgba(88,101,242,.45); }
-  .sb-qr-wrap {
-    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
-    border-radius: 10px; padding: 10px; display: flex; flex-direction: column;
-    align-items: center; gap: 6px; cursor: pointer; transition: background .15s, border-color .15s;
-  }
-  .sb-qr-wrap:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
-  .sb-qr-img { width: 88px; height: 88px; border-radius: 6px; display: block; image-rendering: pixelated; }
-  .sb-qr-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.72); }
-  .sb-qr-hint { font-size: 10px; color: rgba(255,255,255,.3); text-align: center; }
-
-  /* settings panel */
-  .stg-section-label {
-    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); padding-bottom: 8px;
-    border-bottom: 1px solid var(--border); margin-bottom: 4px;
-  }
-  .stg-row { display: flex; gap: 8px; margin-top: 10px; }
-  .stg-switch-btn {
-    flex-shrink: 0; padding: 0 14px; height: 32px;
-    background: var(--danger-soft); border: 1px solid rgba(216,59,59,.25);
-    color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: background .15s, border-color .15s;
-  }
-  .stg-switch-btn:hover { background: #f5c6c6; border-color: rgba(216,59,59,.45); }
-  .stg-copy-btn {
-    width: 32px; height: 30px; border-radius: 7px; flex-shrink: 0;
-    background: var(--surface-2); border: 1px solid var(--border);
-    color: var(--muted); display: flex; align-items: center; justify-content: center;
-    cursor: pointer; transition: background .15s, color .15s, border-color .15s;
-  }
-  .stg-copy-btn:hover { background: var(--border); color: var(--text); }
-  .stg-copy-btn.copied { background: var(--success-soft); border-color: rgba(26,175,108,.3); color: var(--success); }
-  .stg-export-btn {
-    width: 100%; height: 32px; border-radius: 8px; margin-top: 8px;
-    background: var(--surface-2); border: 1px solid var(--border);
-    color: var(--text); font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: background .15s, color .15s;
-  }
-  .stg-export-btn:hover { background: var(--border); }
-  .stg-link-input { font-size: 10px !important; font-family: var(--mono) !important; cursor: text; }
-
-  /* settings panel — light-theme overrides for dark sidebar components */
-  #settingsPanel .sb-field-label { color: var(--muted); }
-  #settingsPanel .sb-field-input {
-    background: var(--surface-2); border-color: var(--border); color: var(--text);
-  }
-  #settingsPanel .sb-field-input:focus { border-color: var(--primary); background: var(--primary-soft); }
-  #settingsPanel .sb-eye {
-    background: var(--surface-2); border-color: var(--border); color: var(--muted);
-  }
-  #settingsPanel .sb-eye:hover { background: var(--border) !important; color: var(--text) !important; }
-  #settingsPanel .sb-config-save { height: 32px; }
-
-  /* main column */
-  .main-col {
-    flex: 1; min-width: 0;
-    padding: 16px 20px 12px;
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-
-  header.top {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
-  }
-  header.top h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
-  header.top h1 .dot { width: 12px; height: 12px; border-radius: 4px; background: linear-gradient(135deg, var(--primary), #ffb056); display: inline-block; }
-  header.top .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .health { display: flex; align-items: center; cursor: default; position: relative; }
-  .health svg { stroke: var(--neutral); transition: stroke .25s, filter .25s; }
-  .health.ok  svg { stroke: var(--success); filter: drop-shadow(0 0 5px var(--success)); }
-  .health.bad svg { stroke: var(--danger);  filter: drop-shadow(0 0 5px var(--danger)); }
-  .health::after {
-    content: attr(data-tooltip);
-    position: absolute; top: calc(100% + 7px); right: 0;
-    background: #1c2030; color: #fff; border: 1px solid rgba(255,255,255,.1);
-    padding: 5px 10px; border-radius: 7px; font-size: 11px; white-space: nowrap;
-    opacity: 0; pointer-events: none; transition: opacity .15s;
-    box-shadow: 0 4px 12px rgba(0,0,0,.3); z-index: 50;
-  }
-  .health:hover::after { opacity: 1; }
-
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
-  .card h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .card h2 .num { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; }
-  .card .desc { color: var(--muted); font-size: 13px; margin: -6px 0 14px; }
-
-  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .row.between { justify-content: space-between; }
-
-  label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); flex: 1 1 180px; }
-  input[type="text"], input[type="email"], input[type="number"] {
-    height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface); color: var(--text); font-size: 14px;
-    transition: border-color .15s, box-shadow .15s; font-family: inherit; width: 100%;
-  }
-  input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-  input.mono { font-family: var(--mono); letter-spacing: .04em; }
-
-  button {
-    height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface); color: var(--text); font-size: 14px; cursor: pointer; font-weight: 500;
-    transition: background .15s, border-color .15s, transform .05s;
-    display: inline-flex; align-items: center; gap: 6px; font-family: inherit;
-  }
-  button:hover { background: var(--surface-2); }
-  button:active { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-  button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
-  button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
-  button.ghost:hover { background: var(--surface-2); color: var(--text); }
-  button.sm { height: 32px; font-size: 12px; padding: 0 10px; }
-  button .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; animation: spin .8s linear infinite; display: none; }
-  button.loading .spinner { display: inline-block; }
-  button.loading .label { opacity: .7; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--muted); }
-  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .badge.ok { background: var(--success-soft); color: var(--success); }
-  .badge.bad { background: var(--danger-soft); color: var(--danger); }
-  .badge.info { background: var(--primary-soft); color: var(--primary); }
-
-  .alert { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; border: 1px solid var(--border); margin-top: 10px; }
-  .alert.warn { background: var(--warning-soft); border-color: #f1d989; color: #6e4a00; }
-  .alert.bad { background: var(--danger-soft); border-color: #f0bcbc; color: var(--danger); }
-  .alert.ok { background: var(--success-soft); border-color: #c0e6cf; color: var(--success); }
-  .alert.muted { background: var(--surface-2); color: var(--muted); }
-
-  /* ── stats ── */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
-  .stat { background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; }
-  .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  .stat .value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
-
-  /* ── table ── */
-  .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: 12px; }
-  #card-inv { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-  #invTableWrap { flex: 1; min-height: 0; }
-  #invGrid { flex: 1; min-height: 0; overflow-y: auto; margin-top: 12px; }
-  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
-  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  thead th { background: var(--surface-2); color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .03em; text-transform: uppercase; position: sticky; top: 0; z-index: 1; }
-  tbody tr { cursor: pointer; transition: background .1s; }
-  tbody tr:hover { background: var(--surface-2); }
-  tbody tr.selected { background: var(--primary-soft); }
-  tbody tr.deleted { opacity: .45; }
-  tbody tr:last-child td { border-bottom: none; }
-  td.id-cell { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-  .color-circle { display: inline-block; border-radius: 50%; flex-shrink: 0; vertical-align: middle; margin-right: 5px; overflow: hidden; border: 1.5px solid rgba(0,0,0,.12); }
-  .bar { width: 64px; height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 6px; }
-  .bar > span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
-  .thumb { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; background: #1c2030; flex-shrink: 0; }
-  .thumb-placeholder { width: 28px; height: 28px; border-radius: 6px; background: #1c2030; display: inline-flex; align-items: center; justify-content: center; }
-  .thumb-placeholder img { width: 22px; height: 22px; opacity: .6; }
-
-  /* ── tag type badges ── */
-  .tag-plus { background: linear-gradient(90deg,#ff7a18,#ffb056); color:#fff; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; letter-spacing:.03em; }
-  .tag-diy { background: var(--surface-2); color: var(--muted); font-size:10px; padding:2px 7px; border-radius:999px; font-weight:600; letter-spacing:.03em; }
-  .tag-twin { background: linear-gradient(90deg,#3d8ef0,#7ab4ff); color:#fff; font-size:10px; padding:2px 7px; border-radius:999px; font-weight:700; letter-spacing:.03em; display:inline-flex; align-items:center; gap:3px; margin-left:4px; }
-
-  /* ── view toggle ── */
-  .view-toggle { display: flex; gap: 2px; background: var(--surface-2); padding: 3px; border-radius: var(--radius-sm); }
-  .view-toggle button { height: 30px; padding: 0 10px; font-size: 13px; border: none; background: transparent; color: var(--muted); border-radius: 8px; }
-  .view-toggle button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-
-  /* ── grid view ── */
-  .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: min-content; align-content: start; gap: 8px; margin-top: 12px; }
-  .spool-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    overflow: hidden; cursor: pointer; transition: box-shadow .15s, transform .1s, border-color .15s;
-  }
-  .spool-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); transform: translateY(-1px); }
-  .spool-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-  .spool-card.deleted { opacity: .45; }
-  .spool-card .card-img {
-    width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #1c2030;
-  }
-  .spool-card .card-img-placeholder {
-    width: 100%; aspect-ratio: 1; background: #1c2030;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .spool-card .card-img-placeholder img { width: 65%; opacity: .55; }
-  .spool-card .card-body { padding: 10px 10px 8px; }
-  .spool-card .card-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .spool-card .card-sub { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .spool-card .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-  .spool-card .card-weight { font-size: 12px; font-variant-numeric: tabular-nums; }
-  .spool-card .card-bar { height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 6px; }
-  .spool-card .card-bar > span { display: block; height: 100%; background: var(--primary); border-radius: 2px; }
-
-  .empty { padding: 28px; text-align: center; color: var(--muted); font-size: 14px; }
-
-  /* ── detail panel ── */
-  .panel-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 100;
-    opacity: 0; pointer-events: none; transition: opacity .2s;
-  }
-  .panel-overlay.open { opacity: 1; pointer-events: all; }
-  .detail-panel {
-    position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 95vw;
-    background: var(--surface); box-shadow: -8px 0 32px rgba(0,0,0,.12);
-    z-index: 101; transform: translateX(100%); transition: transform .25s cubic-bezier(.4,0,.2,1);
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .detail-panel.open { transform: translateX(0); }
-  .panel-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
-  }
-  .panel-header .panel-title { font-size: 15px; font-weight: 600; }
-  .panel-close { width: 32px; height: 32px; border: none; background: var(--surface-2); border-radius: 8px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
-  .panel-close:hover { background: var(--border); color: var(--text); }
-  .panel-body { flex: 1; overflow-y: auto; padding: 0 0 24px; }
-  .panel-img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #1c2030; }
-  .panel-img-placeholder { width: 100%; aspect-ratio: 1; background: linear-gradient(135deg,#1c2030,#2a1a0e); display: flex; align-items: center; justify-content: center; }
-  .panel-img-placeholder img { width: 40%; opacity: .5; }
-  .panel-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
-  .panel-section:last-child { border-bottom: none; }
-  .panel-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; font-weight: 600; }
-  .panel-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 5px; }
-  .panel-row .pk { color: var(--muted); }
-  .panel-row .pv { font-weight: 500; text-align: right; max-width: 60%; }
-  .panel-row .pv a { color: var(--primary); text-decoration: none; }
-  .panel-row .pv a:hover { text-decoration: underline; }
-  .color-dots { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-  .color-dot { width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(0,0,0,.1); }
-  .temp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
-  .temp-chip { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; }
-  .temp-chip .tc-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-  .temp-chip .tc-value { font-size: 15px; font-weight: 600; margin-top: 2px; }
-  .aspect-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .aspect-chip { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
-  .links-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-  .link-btn { height: 30px; padding: 0 10px; font-size: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; text-decoration: none; color: var(--text); display: inline-flex; align-items: center; gap: 5px; font-family: inherit; }
-  .link-btn:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-  .weight-mode-hint { font-size: 11px; color: var(--muted); margin: 6px 0 8px; line-height: 1.5; }
-  .weight-form { display: flex; gap: 8px; align-items: flex-end; margin-top: 4px; }
-  .weight-form input { flex: 1; }
-  .weight-manual-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  .weight-manual-row input { width: 110px; flex: none; }
-  .weight-bar-wrap { margin-top: 10px; }
-  .weight-bar-wrap .wb-labels { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .weight-bar-wrap .wb-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .weight-bar-wrap .wb-val span { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 2px; }
-  .weight-bar-wrap .wb-cap { font-size: 12px; color: var(--muted); }
-  .weight-bar-wrap .wb-track {
-    position: relative; height: 10px;
-    background: var(--surface-2); border-radius: 5px; overflow: visible;
-  }
-  .weight-bar-wrap .wb-fill {
-    height: 100%; background: linear-gradient(90deg, var(--primary), #ffb056);
-    border-radius: 5px; pointer-events: none; transition: width .08s;
-  }
-  .weight-bar-wrap input[type="range"] {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    -webkit-appearance: none; appearance: none;
-    background: transparent; cursor: pointer;
-    margin: 0; padding: 0; border: none; outline: none;
-  }
-  .weight-bar-wrap input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-    background: #fff; border: 3px solid var(--primary);
-    box-shadow: 0 1px 6px rgba(255,122,24,.5); cursor: grab;
-  }
-  .weight-bar-wrap input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
-  .weight-bar-wrap input[type="range"]::-moz-range-thumb {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: #fff; border: 3px solid var(--primary);
-    box-shadow: 0 1px 6px rgba(255,122,24,.5); cursor: grab;
-  }
-
-
-  /* ── debug ── */
-  details.debug summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; user-select: none; display: flex; align-items: center; gap: 8px; }
-  details.debug summary::-webkit-details-marker { display: none; }
-  details.debug summary::before { content: "▸"; font-size: 10px; transition: transform .15s; }
-  details.debug[open] summary::before { transform: rotate(90deg); }
-  .debug-meta { margin: 10px 0 6px; font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
-  pre.json { margin: 0; padding: 12px; background: #0e1422; color: #e7ebf3; border-radius: var(--radius-sm); font-family: var(--mono); font-size: 12.5px; line-height: 1.5; overflow: auto; max-height: 360px; }
-  pre.json .k { color: #ffb45b; } pre.json .s { color: #b8e1a8; } pre.json .n { color: #7fb6ff; } pre.json .b { color: #ff8aa3; }
-  .raw-tabs { display: flex; gap: 4px; margin: 10px 0 6px; }
-  .raw-tab { height: 26px; padding: 0 10px; font-size: 11px; font-family: var(--mono); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
-  .raw-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .raw-tab:hover:not(.active) { background: var(--border); color: var(--text); }
-
-  /* ── lang toggle ── */
-  .lang-toggle { display:flex; gap:2px; background:var(--surface-2); padding:3px; border-radius:var(--radius-sm); }
-  .lang-btn { height:26px; padding:0 10px; font-size:12px; font-weight:700; letter-spacing:.04em; border:none; background:transparent; color:var(--muted); border-radius:7px; cursor:pointer; font-family:inherit; }
-  .lang-btn.active { background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.08); }
-  .lang-btn:hover:not(.active) { background:rgba(0,0,0,.04); }
-
-  /* ── update banner ── */
-  .update-banner {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: #1c2030; color: #fff; border-radius: var(--radius);
-    padding: 12px 18px; display: flex; align-items: center; gap: 14px;
-    box-shadow: 0 4px 24px rgba(0,0,0,.35); z-index: 200;
-    font-size: 13px; white-space: nowrap;
-    animation: slideUp .25s cubic-bezier(.4,0,.2,1);
-  }
-  .update-banner .ub-icon { font-size: 18px; }
-  .update-banner .ub-text { color: rgba(255,255,255,.75); }
-  .update-banner .ub-text strong { color: #fff; }
-  @keyframes slideUp { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
-
-  #debugPanel .panel-body { overflow: hidden; }
-  #debugBody { flex: 1; min-height: 0; max-height: none !important; }
-
-  .hidden { display: none !important; }
-  .gap-1 { gap: 8px; }
-  .footer-note { margin-top: 24px; text-align: center; color: var(--muted); font-size: 12px; }
-</style>
+<link rel="stylesheet" href="inventory.css" />
 </head>
 <body>
 <div class="app-layout">
@@ -643,6 +73,10 @@
         <div class="lang-toggle">
           <button class="lang-btn active" data-lang="en">EN</button>
           <button class="lang-btn" data-lang="fr">FR</button>
+          <button class="lang-btn" data-lang="de">DE</button>
+          <button class="lang-btn" data-lang="es">ES</button>
+          <button class="lang-btn" data-lang="it">IT</button>
+          <button class="lang-btn" data-lang="zh">中文</button>
         </div>
         <div class="health" id="rfidStatus" style="display:none"><span class="pulse"></span><span id="rfidLabel">RFID: —</span></div>
         <div class="health" id="health" data-tooltip="Backend: idle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
@@ -683,7 +117,6 @@
             <button id="btnViewTable" class="active" data-i18n="btnViewTable">☰ Table</button>
             <button id="btnViewGrid" data-i18n="btnViewGrid">⊞ Grid</button>
           </div>
-          <button id="btnExport" class="ghost sm"><span class="label" data-i18n="btnExport">↓ JSON</span></button>
         </div>
       </div>
       <div style="margin-top:10px">
@@ -697,13 +130,14 @@
           <thead>
             <tr>
               <th></th>
-              <th data-i18n="thType">Type</th>
-              <th data-i18n="thMaterial">Material</th>
-              <th data-i18n="thBrand">Brand</th>
-              <th data-i18n="thColor">Color / Name</th>
-              <th data-i18n="thWeight">Weight avail.</th>
-              <th data-i18n="thCapacity">Capacity</th>
-              <th data-i18n="thUpdated">Updated</th>
+              <th class="sortable" data-sort="isPlus" data-i18n="thType">Type</th>
+              <th class="sortable" data-sort="material" data-i18n="thMaterial">Material</th>
+              <th class="sortable" data-sort="brand" data-i18n="thBrand">Brand</th>
+              <th data-i18n="thColor">Color</th>
+              <th class="sortable" data-sort="colorName" data-i18n="thName">Name</th>
+              <th class="sortable" data-sort="weightAvailable" data-i18n="thWeight">Weight avail.</th>
+              <th class="sortable" data-sort="capacity" data-i18n="thCapacity">Capacity</th>
+              <th class="sortable" data-sort="lastUpdate" data-i18n="thUpdated">Updated</th>
             </tr>
           </thead>
           <tbody id="invBody"></tbody>
@@ -713,10 +147,6 @@
       <!-- grid view -->
       <div id="invGrid" class="inv-grid hidden"></div>
 
-      <!-- debug trigger -->
-      <div style="padding-top:10px;border-top:1px solid var(--border);flex-shrink:0;display:flex;justify-content:flex-end">
-        <button id="btnDebug" class="ghost sm" style="font-size:11px;color:var(--muted)">⌥ Debug</button>
-      </div>
     </section>
 
   </div><!-- /.main-col -->
@@ -780,7 +210,17 @@
       <div class="lang-toggle" style="margin-top:10px">
         <button class="lang-btn" data-lang="en">EN</button>
         <button class="lang-btn" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="de">DE</button>
+        <button class="lang-btn" data-lang="es">ES</button>
+        <button class="lang-btn" data-lang="it">IT</button>
+        <button class="lang-btn" data-lang="zh">中文</button>
       </div>
+    </div>
+
+    <!-- Debug -->
+    <div>
+      <div class="stg-section-label" data-i18n="settingsDebug">Debug</div>
+      <button id="btnDebug" class="ghost sm" style="margin-top:10px;font-size:12px;color:var(--muted)" data-i18n="debugOpenBtn">⌥ Open debug panel</button>
     </div>
 
   </div>
@@ -814,115 +254,8 @@
   const API_BASE = "https://cdn.tigertag.io";
   const STORAGE_KEY = "tigertag.creds";
   const STORAGE_INV = "tigertag.inventory";
-  const LOGO_PATH = "assets/svg/tigertag_logo.svg";
-
-  /* ── Translations ── */
-  const TRANSLATIONS = {
-    en: {
-      appSubtitle: "View and manage your filament spools",
-      backendIdle: "Backend: idle", backendOk: "Backend: ok",
-      backendErr: n => `Backend: ${n}`, backendOffline: "Backend: offline",
-      rfidConnected: name => `RFID: ${name || "connected"}`, rfidNoReader: "RFID: no reader",
-      rfidScanned: uid => `RFID: ${uid.slice(-6)}`,
-      rfidNotFound: uid => `RFID scanned: ${uid} — spool not found in current inventory.`,
-      welcomeBack: () => { const m = ["🎉 Welcome back,","🔥 Good to see you,","👊 Let's go,","🚀 Ready to print,","✨ Hey, glad you're here,"]; return m[Math.floor(Math.random()*m.length)]; },
-      githubBtn: "View on GitHub", discordBtn: "Join us on Discord", mobileApp: "TigerTag Mobile Apps", mobileScan: "Scan to get the app",
-      settingsOpenBtn: "Settings", settingsTitle: "Settings",
-      settingsAccount: "Account", settingsData: "Data & Export", settingsLang: "Language",
-      settingsSave: "Save & reload", settingsApiLink: "API Link", settingsExport: "↓ Download JSON",
-      settingsCopied: "Copied!",
-      btnRefresh: "↻ Refresh", btnSwitchAccount: "Switch account",
-      credTitle: "Credentials", credEmail: "Email", credApiKey: "API Key", credStatus: "Status",
-      statusUntested: "untested", statusValid: "valid", statusInvalid: "invalid", statusChecking: "checking…",
-      btnLoadInv: "Load inventory", btnTestKey: "Test API key", btnClearSaved: "Clear saved data",
-      invTitle: "Inventory", btnViewTable: "☰ Table", btnViewGrid: "⊞ Grid",
-      btnShowDeleted: "Show deleted", btnHideDeleted: "Hide deleted",
-      btnExport: "↓ JSON", searchPlaceholder: "Search material, brand, color, UID…",
-      noInventory: "No inventory loaded yet.", noMatch: "No spools match the filters.",
-      statActive: "Active spools", statPlus: "TigerTag+", statDiy: "TigerTag", statTotal: "Total available",
-      statActiveMini: "Spools", statPlusMini: "TigerTag+", statDiyMini: "TigerTag", statTotalMini: "Stock",
-      thUid: "UID", thType: "Type", thMaterial: "Material", thBrand: "Brand",
-      thColor: "Color / Name", thWeight: "Weight avail.", thCapacity: "Capacity", thUpdated: "Updated",
-      debugLabel: "Debug", debugSubtitle: " — last API request & response", debugNoReqs: "No requests yet.",
-      sectionColors: n => `Color${n > 1 ? "s" : ""}`, sectionPrint: "Print settings",
-      sectionWeight: "Weight", sectionLinks: "Documents & links",
-      sectionDetails: "Details", sectionRaw: "Raw JSON — spool data",
-      lbNozzle: "Nozzle", lbBed: "Bed", lbDryTemp: "Dry temp", lbDryTime: "Dry time", lbDensity: "Density",
-      weightTotal: cap => `${cap} g total`, weightContainer: cw => `Container: ${cw} g`,
-      btnUpdate: "Update", btnEditManually: "✎ Edit manually", btnCloseManual: "✕ Close",
-      rawScaleLabel: "▸ Use raw scale weight (with container)",
-      rawScaleHint: "Weigh spool + container on the scale — the server subtracts the container weight.",
-      linkYt: "▶ YouTube", linkFood: "Food safe",
-      detUid: "UID", detSeries: "Series", detBrand: "Brand", detMaterial: "Material",
-      detDiameter: "Diameter", detTagType: "Tag type", detSku: "SKU", detBarcode: "Barcode",
-      detContainer: "Container", detTwin: "Twin tag", detUpdated: "Updated",
-      badgeRefill: "♻ Refill", badgeRecycled: "🌿 Recycled", badgeFilled: "◈ Filled", badgeDeleted: "Deleted",
-      loadedSpools: n => `Loaded ${n} spools.`,
-      invError: r => `Inventory error: ${r}`, invalidKey: r => `Invalid: ${r}`, networkError: "Network error",
-      enterNumeric: "Enter a numeric weight.",
-      weightOk: (wa, w, cw, twin) => `✓ ${wa} g available (${w} g − ${cw} g container)${twin ? " · twin updated" : ""}`,
-      weightErr: (r, c) => `${r}${c != null ? " · computed: " + c + " g" : ""}`,
-      updateDownloading: "<strong>Update available</strong> — downloading…",
-      updateReady: "<strong>Update ready!</strong> Restart to install.",
-      btnRestartUpdate: "Restart & update",
-      agoNow: "just now", agoMin: m => `${m}m ago`, agoHour: h => `${h}h ago`,
-      agoDay: d => `${d}d ago`, agoMonth: mo => `${mo}mo ago`, agoYear: y => `${y}y ago`,
-      twinBadge: "Twin", twinTitle: "Spool with 2 linked RFID chips",
-      twinTabThis: "This tag", twinTabTwin: "Twin tag",
-    },
-    fr: {
-      appSubtitle: "Consultez et gérez vos bobines de filament",
-      backendIdle: "Serveur : inactif", backendOk: "Serveur : ok",
-      backendErr: n => `Serveur : ${n}`, backendOffline: "Serveur : hors ligne",
-      rfidConnected: name => `RFID : ${name || "connecté"}`, rfidNoReader: "RFID : aucun lecteur",
-      rfidScanned: uid => `RFID : ${uid.slice(-6)}`,
-      rfidNotFound: uid => `RFID lu : ${uid} — bobine introuvable dans l'inventaire.`,
-      welcomeBack: () => { const m = ["🎉 Content de te revoir,","🔥 Te revoilà,","👊 C'est parti,","🚀 Prêt à imprimer,","✨ Hé, bienvenue,"]; return m[Math.floor(Math.random()*m.length)]; },
-      githubBtn: "Voir sur GitHub", discordBtn: "Rejoindre notre Discord", mobileApp: "TigerTag Mobile Apps", mobileScan: "Scanner pour l'app",
-      settingsOpenBtn: "Paramètres", settingsTitle: "Paramètres",
-      settingsAccount: "Compte", settingsData: "Données & Export", settingsLang: "Langue",
-      settingsSave: "Sauvegarder & recharger", settingsApiLink: "Lien API", settingsExport: "↓ Télécharger JSON",
-      settingsCopied: "Copié !",
-      btnRefresh: "↻ Actualiser", btnSwitchAccount: "Changer de compte",
-      credTitle: "Identifiants", credEmail: "E-mail", credApiKey: "Clé API", credStatus: "Statut",
-      statusUntested: "non testé", statusValid: "valide", statusInvalid: "invalide", statusChecking: "vérification…",
-      btnLoadInv: "Charger l'inventaire", btnTestKey: "Tester la clé API", btnClearSaved: "Effacer les données",
-      invTitle: "Inventaire", btnViewTable: "☰ Tableau", btnViewGrid: "⊞ Grille",
-      btnShowDeleted: "Afficher supprimés", btnHideDeleted: "Masquer supprimés",
-      btnExport: "↓ JSON", searchPlaceholder: "Rechercher matière, marque, couleur, UID…",
-      noInventory: "Aucun inventaire chargé.", noMatch: "Aucune bobine ne correspond aux filtres.",
-      statActive: "Bobines actives", statPlus: "TigerTag+", statDiy: "TigerTag", statTotal: "Poids total disponible",
-      statActiveMini: "Spools", statPlusMini: "TigerTag+", statDiyMini: "TigerTag", statTotalMini: "Stock",
-      thUid: "UID", thType: "Type", thMaterial: "Matière", thBrand: "Marque",
-      thColor: "Couleur / Nom", thWeight: "Poids dispo.", thCapacity: "Capacité", thUpdated: "Mis à jour",
-      debugLabel: "Debug", debugSubtitle: " — dernière requête & réponse API", debugNoReqs: "Aucune requête effectuée.",
-      sectionColors: n => `Couleur${n > 1 ? "s" : ""}`, sectionPrint: "Paramètres d'impression",
-      sectionWeight: "Poids", sectionLinks: "Documents & liens",
-      sectionDetails: "Détails", sectionRaw: "JSON brut — données bobine",
-      lbNozzle: "Buse", lbBed: "Plateau", lbDryTemp: "Temp. séchage", lbDryTime: "Durée séchage", lbDensity: "Densité",
-      weightTotal: cap => `${cap} g total`, weightContainer: cw => `Contenant : ${cw} g`,
-      btnUpdate: "Mettre à jour", btnEditManually: "✎ Saisir manuellement", btnCloseManual: "✕ Fermer",
-      rawScaleLabel: "▸ Poids brut avec contenant",
-      rawScaleHint: "Pesez la bobine + le contenant — le serveur soustrait le poids du contenant.",
-      linkYt: "▶ YouTube", linkFood: "Alimentaire",
-      detUid: "UID", detSeries: "Série", detBrand: "Marque", detMaterial: "Matière",
-      detDiameter: "Diamètre", detTagType: "Type de tag", detSku: "SKU", detBarcode: "Code-barres",
-      detContainer: "Contenant", detTwin: "Tag jumeau", detUpdated: "Mis à jour",
-      badgeRefill: "♻ Rechargeable", badgeRecycled: "🌿 Recyclé", badgeFilled: "◈ Rempli", badgeDeleted: "Supprimé",
-      loadedSpools: n => `${n} bobine${n > 1 ? "s" : ""} chargée${n > 1 ? "s" : ""}.`,
-      invError: r => `Erreur inventaire : ${r}`, invalidKey: r => `Invalide : ${r}`, networkError: "Erreur réseau",
-      enterNumeric: "Entrez un poids numérique.",
-      weightOk: (wa, w, cw, twin) => `✓ ${wa} g disponibles (${w} g − ${cw} g contenant)${twin ? " · jumeau mis à jour" : ""}`,
-      weightErr: (r, c) => `${r}${c != null ? " · calculé : " + c + " g" : ""}`,
-      updateDownloading: "<strong>Mise à jour disponible</strong> — téléchargement…",
-      updateReady: "<strong>Mise à jour prête !</strong> Redémarrez pour installer.",
-      btnRestartUpdate: "Redémarrer & installer",
-      twinBadge: "Jumelle", twinTitle: "Bobine avec 2 puces RFID liées",
-      twinTabThis: "Cette puce", twinTabTwin: "Puce jumelle",
-      agoNow: "à l'instant", agoMin: m => `il y a ${m}min`, agoHour: h => `il y a ${h}h`,
-      agoDay: d => `il y a ${d}j`, agoMonth: mo => `il y a ${mo} mois`, agoYear: y => `il y a ${y}an${y > 1 ? "s" : ""}`,
-    },
-  };
+  const LOGO_PATH          = "../assets/svg/tigertag_logo.svg";
+  const LOGO_PATH_OUTLINE  = "../assets/svg/tigertag_logo_contouring.svg";
 
   const state = {
     inventory: null,
@@ -934,15 +267,33 @@
     search: "",
     viewMode: localStorage.getItem("tigertag.view") || "table",
     lang: localStorage.getItem("tigertag.lang") || "en",
-    db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [] }
+    sortCol: null,
+    sortDir: "asc",
+    i18n: {},
+    db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [], containers: [] }
   };
 
   const $ = id => document.getElementById(id);
 
-  function t(key, ...args) {
-    const dict = TRANSLATIONS[state.lang] || TRANSLATIONS.en;
-    const val = (key in dict) ? dict[key] : (TRANSLATIONS.en[key] ?? key);
-    return typeof val === "function" ? val(...args) : (val ?? key);
+  // t(key, params?) — looks up a translation key in the loaded locale.
+  // Supports: plain strings, {{param}} interpolation, ["array"] random pick,
+  // and {"one": "…", "other": "…"} plurals (uses params.n to select form).
+  function t(key, params = {}) {
+    const lang = state.i18n[state.lang] || {};
+    const en   = state.i18n.en || {};
+    const val  = (key in lang) ? lang[key] : (key in en ? en[key] : key);
+    if (Array.isArray(val)) {
+      return val[Math.floor(Math.random() * val.length)];
+    }
+    if (val && typeof val === "object" && ("one" in val || "other" in val)) {
+      const n = params.n ?? 0;
+      const str = n === 1 ? (val.one ?? val.other) : (val.other ?? val.one);
+      return (str || "").replace(/\{\{(\w+)\}\}/g, (_, k) => params[k] ?? "");
+    }
+    if (typeof val === "string") {
+      return val.replace(/\{\{(\w+)\}\}/g, (_, k) => params[k] ?? "");
+    }
+    return key;
   }
 
   function applyTranslations() {
@@ -967,11 +318,11 @@
     const ms = secOrMs > 1e12 ? secOrMs : secOrMs * 1000;
     const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
     if (s < 60)                    return t("agoNow");
-    const m = Math.floor(s / 60);  if (m < 60)   return t("agoMin", m);
-    const h = Math.floor(m / 60);  if (h < 24)   return t("agoHour", h);
-    const d = Math.floor(h / 24);  if (d < 30)   return t("agoDay", d);
-    const mo = Math.floor(d / 30); if (mo < 12)  return t("agoMonth", mo);
-    return t("agoYear", Math.floor(mo / 12));
+    const m = Math.floor(s / 60);  if (m < 60)   return t("agoMin",   {n: m});
+    const h = Math.floor(m / 60);  if (h < 24)   return t("agoHour",  {n: h});
+    const d = Math.floor(h / 24);  if (d < 30)   return t("agoDay",   {n: d});
+    const mo = Math.floor(d / 30); if (mo < 12)  return t("agoMonth", {n: mo});
+    return t("agoYear", {n: Math.floor(mo / 12)});
   }
   function fmtTs(secOrMs) {
     if (!secOrMs) return "-";
@@ -1007,17 +358,31 @@
   }
 
   /* ── lookups ── */
+  async function loadLocales() {
+    await Promise.all(["en", "fr", "de", "es", "it", "zh"].map(async lang => {
+      try {
+        const r = await fetch(`locales/${lang}.json`);
+        if (r.ok) state.i18n[lang] = await r.json();
+      } catch {}
+    }));
+  }
+
   async function loadLookups() {
     const files = ["id_brand","id_material","id_aspect","id_type","id_diameter","id_measure_unit","id_version"];
     const keys  = ["brand",   "material",   "aspect",   "type",   "diameter",   "unit",            "version"];
     await Promise.all(files.map(async (f, i) => {
       try {
-        const r = await fetch(`dada_base/${f}.json`);
+        const r = await fetch(`../data/${f}.json`);
         if (r.ok) state.db[keys[i]] = await r.json();
       } catch {}
     }));
+    try {
+      const r = await fetch('../data/container_spool/spools_filament.json');
+      if (r.ok) state.db.containers = await r.json();
+    } catch {}
   }
   function dbFind(key, id) { return state.db[key].find(x => x.id === id) || null; }
+  function containerFind(id) { return (state.db.containers || []).find(c => c.id === id) || null; }
   function brandName(id) { const b = dbFind("brand", id); return b ? b.name : "-"; }
   function materialLabel(id) { const m = dbFind("material", id); return m ? m.label : "-"; }
   function aspectLabel(id) { const a = dbFind("aspect", id); return a ? a.label : null; }
@@ -1027,7 +392,9 @@
 
   /* ── normalize ── */
   function normalizeRow(spoolId, data) {
-    const hex = toHex(data.color_r, data.color_g, data.color_b);
+    const hex  = toHex(data.color_r,  data.color_g,  data.color_b);
+    const hex2 = toHex(data.color_r2, data.color_g2, data.color_b2);
+    const hex3 = toHex(data.color_r3, data.color_g3, data.color_b3);
     const isPlus = data.url_img && data.url_img !== "--" && data.url_img !== "";
     const mat = materialFull(data.id_material);
     return {
@@ -1038,6 +405,8 @@
       brand: brandName(data.id_brand),
       colorName: data.color_name || data.name || data.message || "-",
       colorHex: hex,
+      colorHex2: hex2,
+      colorHex3: hex3,
       colorList: Array.isArray(data.online_color_list) ? data.online_color_list : [],
       colorType: data.online_color_type || null,
       aspect1: aspectLabel(data.id_aspect1),
@@ -1087,7 +456,7 @@
       const r = await fetch(`${API_BASE}/healthz/`);
       $("health").classList.toggle("ok", r.ok);
       $("health").classList.toggle("bad", !r.ok);
-      $("health").dataset.tooltip = r.ok ? t("backendOk") : t("backendErr", r.status);
+      $("health").dataset.tooltip = r.ok ? t("backendOk") : t("backendErr", {n: r.status});
     } catch { $("health").classList.add("bad"); $("health").dataset.tooltip = t("backendOffline"); }
   }
   pingHealth();
@@ -1155,12 +524,15 @@
     closeSettings();
   });
 
+  const SVG_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
   $("btnCopyApiLink").addEventListener("click", async () => {
     const val = $("stgApiLink").value; if (!val) return;
     try {
       await navigator.clipboard.writeText(val);
       const btn = $("btnCopyApiLink");
-      btn.classList.add("copied"); btn.innerHTML = "✓";
+      btn.classList.add("copied", "pop");
+      btn.innerHTML = SVG_CHECK;
+      btn.addEventListener("animationend", () => btn.classList.remove("pop"), { once: true });
       setTimeout(() => { btn.classList.remove("copied"); btn.innerHTML = SVG_COPY; }, 2000);
     } catch {}
   });
@@ -1263,7 +635,7 @@
       const ok = r.ok && r.body && r.body.success === true;
       state.keyValid = ok; setKeyStatus(ok ? "ok" : "bad");
       if (ok) { saveCreds(); setConnected(r.body.displayName || r.body.uid || "", $("email").value.trim(), key); }
-      else toast($("credsResult"), "bad", t("invalidKey", (r.body && r.body.reason) || "HTTP " + r.status));
+      else toast($("credsResult"), "bad", t("invalidKey", {r: (r.body && r.body.reason) || "HTTP " + r.status}));
     } catch (e) { setKeyStatus("bad"); toast($("credsResult"), "bad", e.message || t("networkError")); }
     finally { setLoading(btn, false); }
   });
@@ -1285,13 +657,13 @@
       if (!r.ok || (r.body && r.body.success === false)) {
         const reason = (r.body && r.body.reason) || `HTTP ${r.status}`;
         state.inventory = null; state.rows = []; renderInventory(); renderStats(); setKeyStatus("bad");
-        toast($("credsResult"), "bad", t("invError", reason)); return;
+        toast($("credsResult"), "bad", t("invError", {r: reason})); return;
       }
       state.inventory = r.body || {};
       state.rows = Object.entries(state.inventory).map(([k,vv]) => normalizeRow(k, vv||{}));
       sortRows(); state.keyValid = true; setKeyStatus("ok"); saveCreds(); saveInventory(state.inventory);
       setConnected(state.displayName, email, key);
-      toast($("credsResult"), "ok", t("loadedSpools", state.rows.length));
+      toast($("credsResult"), "ok", t("loadedSpools", {n: state.rows.length}));
       renderStats(); renderInventory();
     } catch (e) { toast($("credsResult"), "bad", e.message || t("networkError")); }
     finally { setLoading(btn, false); }
@@ -1343,6 +715,20 @@
     return result;
   }
 
+  function sortRows(rows) {
+    if (!state.sortCol) return rows;
+    const dir = state.sortDir === "asc" ? 1 : -1;
+    return rows.slice().sort((a, b) => {
+      let va = a[state.sortCol], vb = b[state.sortCol];
+      if (va == null && vb == null) return 0;
+      if (va == null) return dir;
+      if (vb == null) return -dir;
+      if (typeof va === "boolean") return dir * ((va ? 1 : 0) - (vb ? 1 : 0));
+      if (typeof va === "number" && typeof vb === "number") return dir * (va - vb);
+      return dir * String(va).localeCompare(String(vb), undefined, { sensitivity: "base" });
+    });
+  }
+
   function filteredRows() {
     let rows = state.rows.slice();
     if (!state.showDeleted) rows = rows.filter(r => !r.deleted);
@@ -1355,7 +741,7 @@
         String(r.colorName).toLowerCase().includes(q)
       );
     }
-    return deduplicateTwins(rows);
+    return sortRows(deduplicateTwins(rows));
   }
 
   /* ── render ── */
@@ -1376,33 +762,74 @@
     }
   }
 
-  function colorCircleHTML(row, size = 15) {
+  function colorBg(row) {
     const aspects = [row.aspect1, row.aspect2].map(a => (a || '').toLowerCase());
     const isRainbow  = aspects.some(a => a.includes('rainbow') || a.includes('multicolor'));
     const isTricolor = aspects.some(a => a.includes('tricolor') || a.includes('tri color') || a.includes('tricolore'));
     const isBicolor  = aspects.some(a => a.includes('bicolor')  || a.includes('bi color')  || a.includes('bicolore'));
-    const cls = (row.colorList || []).map(c => c.replace(/FF$/i, '').trim()).filter(Boolean);
-    let bg;
-    if (isRainbow) {
-      bg = 'linear-gradient(to right, #ff0000, #ff7700, #ffee00, #00cc44, #0077ff, #8800ff)';
-    } else if (isTricolor && cls.length >= 3) {
-      bg = `conic-gradient(${cls[0]} 0deg 120deg, ${cls[1]} 120deg 240deg, ${cls[2]} 240deg 360deg)`;
-    } else if (isTricolor && cls.length >= 2) {
-      bg = `conic-gradient(${cls[0]} 0deg 120deg, ${cls[1]} 120deg 240deg, ${cls[0]} 240deg 360deg)`;
-    } else if (isBicolor && cls.length >= 2) {
-      bg = `linear-gradient(to right, ${cls[0]} 50%, ${cls[1]} 50%)`;
-    } else if (isBicolor && row.colorHex) {
-      bg = `linear-gradient(to right, ${row.colorHex} 50%, #ffffff 50%)`;
+    const stripAlpha = c => (c || '').replace(/FF$/i, '').trim();
+    const cls = (row.colorList || []).map(stripAlpha).filter(Boolean);
+    const colorType = row.colorType || '';
+    if (cls.length >= 2 && colorType === 'conic_gradient') {
+      return `conic-gradient(from 0deg, ${cls.join(', ')}, ${cls[0]})`;
+    } else if (cls.length >= 2 && colorType === 'gradient') {
+      return `linear-gradient(90deg, ${cls.join(', ')})`;
+    } else if (cls.length >= 2) {
+      const step = 360 / cls.length;
+      const stops = cls.map((c, i) => `${c} ${i * step}deg ${(i + 1) * step}deg`).join(', ');
+      return `conic-gradient(${stops})`;
+    } else if (isRainbow && isTricolor) {
+      const [c1=`#ff4d4d`, c2=`#ffd93d`, c3=`#4da3ff`] = cls;
+      return `linear-gradient(90deg, ${c1} 0%, ${c2} 50%, ${c3} 100%)`;
+    } else if (isRainbow && isBicolor) {
+      const [c1=`#ff7a00`, c2=`#8a2be2`] = cls;
+      return `linear-gradient(90deg, ${c1} 0%, ${c2} 100%)`;
+    } else if (isRainbow) {
+      const colors = [row.colorHex, row.colorHex2, row.colorHex3].filter(Boolean);
+      if (colors.length >= 2) return `linear-gradient(90deg, ${colors.join(', ')})`;
+      if (colors.length === 1) return colors[0];
+      return `linear-gradient(90deg, #ff0000, #ff8800, #ffff00, #00cc00, #0000ff, #8b00ff)`;
+    } else if (isTricolor) {
+      const colors = [row.colorHex, row.colorHex2, row.colorHex3].filter(Boolean);
+      const [c1 = '#cccccc', c2 = '#888888', c3] = colors;
+      const _c3 = c3 || c1;
+      return `conic-gradient(${c1} 0deg 120deg, ${c2} 120deg 240deg, ${_c3} 240deg 360deg)`;
+    } else if (isBicolor) {
+      const colors = [row.colorHex, row.colorHex2, row.colorHex3].filter(Boolean);
+      const [c1 = '#cccccc', c2 = '#ffffff'] = colors;
+      return `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
     } else {
-      bg = cls[0] || row.colorHex || '#cccccc';
+      return row.colorHex || '#1c2030';
     }
-    const border = isRainbow ? 'none' : '1.5px solid rgba(0,0,0,.12)';
-    return `<span class="color-circle" style="width:${size}px;height:${size}px;background:${bg};border:${border}"></span>`;
+  }
+
+  function colorCircleHTML(row, size = 15) {
+    const bg = colorBg(row);
+    const borderColor = isColorDark(bg) ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+    return `<span class="color-circle" style="width:${size}px;height:${size}px;background:${bg};border-color:${borderColor}"></span>`;
+  }
+
+  // Returns true if the first color found in a CSS background string is dark.
+  function isColorDark(bg) {
+    const m = bg.match(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/);
+    if (!m) return false;
+    let h = m[1];
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+  }
+
+  // Dark bg → normal logo (white fill), light bg → contouring logo (black outline)
+  function logoSrc(bg) {
+    return isColorDark(bg) ? LOGO_PATH : LOGO_PATH_OUTLINE;
   }
 
   function thumbHTML(row, size = 28) {
     if (row.imgUrl) return `<img class="thumb" src="${esc(row.imgUrl)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.display='none'" />`;
-    return `<span class="thumb-placeholder" style="width:${size}px;height:${size}px"><img src="${LOGO_PATH}" width="${size-6}" /></span>`;
+    const bg = colorBg(row);
+    return `<span class="thumb-color" style="width:${size}px;height:${size}px;background:${bg}"><img src="${logoSrc(bg)}" /></span>`;
   }
 
   function renderTable(rows) {
@@ -1412,7 +839,7 @@
       tr.dataset.id = r.spoolId;
       if (state.selected === r.spoolId) tr.classList.add("selected");
       if (r.deleted) tr.classList.add("deleted");
-      const swatch = colorCircleHTML(r);
+      const swatch = colorCircleHTML(r, 28);
       let wCell = "-";
       if (r.weightAvailable != null) {
         wCell = `${r.weightAvailable} g`;
@@ -1420,11 +847,12 @@
       }
       const twinBadge = r.hasTwinPair ? `<span class="tag-twin" title="${t('twinTitle')}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${t('twinBadge')}</span>` : "";
       tr.innerHTML = `
-        <td style="width:36px">${thumbHTML(r)}</td>
+        <td class="thumb-cell">${thumbHTML(r, 48)}</td>
         <td>${r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>'}${twinBadge}</td>
         <td>${esc(v(r.material))}</td>
         <td>${esc(v(r.brand))}</td>
-        <td>${swatch}${esc(v(r.colorName))}</td>
+        <td class="color-cell">${swatch}</td>
+        <td>${esc(v(r.colorName))}</td>
         <td style="font-variant-numeric:tabular-nums">${wCell}</td>
         <td style="font-variant-numeric:tabular-nums">${v(r.capacity)}${r.capacity!=null?" g":""}</td>
         <td title="${esc(fmtTs(r.lastUpdate))}">${esc(timeAgo(r.lastUpdate))}</td>`;
@@ -1440,8 +868,8 @@
       card.className = "spool-card" + (state.selected===r.spoolId?" selected":"") + (r.deleted?" deleted":"");
       card.dataset.id = r.spoolId;
       const imgHtml = r.imgUrl
-        ? `<img class="card-img" src="${esc(r.imgUrl)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'card-img-placeholder\\'><img src=\\'${LOGO_PATH}\\'></div>'" />`
-        : `<div class="card-img-placeholder"><img src="${LOGO_PATH}" /></div>`;
+        ? `<img class="card-img" src="${esc(r.imgUrl)}" loading="lazy" onerror="this.outerHTML='<div class=\\'card-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'></div>'" />`
+        : `<div class="card-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" /></div>`;
       const pct = (r.weightAvailable != null && r.capacity) ? Math.max(0,Math.min(100,Math.round(r.weightAvailable/r.capacity*100))) : null;
       const swatch = colorCircleHTML(r);
       const badge = r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>';
@@ -1477,11 +905,23 @@
 
   $("searchInv").addEventListener("input", e => { state.search = e.target.value.trim(); renderInventory(); });
 
-  $("btnExport").addEventListener("click", () => {
-    if (!state.inventory) return;
-    const blob = new Blob([JSON.stringify(state.inventory,null,2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = `tigertag-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  function updateSortIndicators() {
+    document.querySelectorAll("th.sortable").forEach(th => {
+      th.classList.toggle("sort-asc",  state.sortCol === th.dataset.sort && state.sortDir === "asc");
+      th.classList.toggle("sort-desc", state.sortCol === th.dataset.sort && state.sortDir === "desc");
+    });
+  }
+  document.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => {
+      if (state.sortCol === th.dataset.sort) {
+        state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      } else {
+        state.sortCol = th.dataset.sort;
+        state.sortDir = "asc";
+      }
+      updateSortIndicators();
+      renderInventory();
+    });
   });
 
   /* ── detail panel ── */
@@ -1492,6 +932,19 @@
     if (!r) return;
     $("panelTitle").textContent = r.colorName && r.colorName !== "-" ? r.colorName : r.material;
     $("panelBody").innerHTML = buildPanelHTML(r);
+    // copy raw JSON button
+    const btnCopyRaw = $("btnCopyRaw");
+    if (btnCopyRaw) {
+      btnCopyRaw.addEventListener("click", e => {
+        e.preventDefault(); e.stopPropagation();
+        const pre = $("rawJsonPre");
+        const text = pre.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          btnCopyRaw.classList.add("copied");
+          setTimeout(() => btnCopyRaw.classList.remove("copied"), 1800);
+        });
+      });
+    }
     // twin raw JSON tab switching
     $("panelBody").querySelectorAll("[data-raw-tab]").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -1548,21 +1001,23 @@
   function buildPanelHTML(r) {
     const mat = r.materialData;
 
-    // image
+    // image + badge overlay
+    const badgeLeft = r.isPlus
+      ? '<span class="tag-plus panel-img-badge panel-img-badge--tl">TigerTag+</span>'
+      : '<span class="tag-diy panel-img-badge panel-img-badge--tl">TigerTag</span>';
+    const badgeTwin = r.hasTwinPair
+      ? `<span class="tag-twin panel-img-badge panel-img-badge--tr"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${t("twinBadge")}</span>`
+      : "";
+    const overlays = badgeLeft + badgeTwin;
     let imgSection = "";
     if (r.imgUrl) {
-      imgSection = `<img class="panel-img" src="${esc(r.imgUrl)}" onerror="this.outerHTML='<div class=\\'panel-img-placeholder\\'><img src=\\'${LOGO_PATH}\\'></div>'" />`;
+      imgSection = `<div class="panel-img-wrap">${overlays}<img class="panel-img" src="${esc(r.imgUrl)}" onerror="this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'" /></div>`;
     } else {
-      imgSection = `<div class="panel-img-placeholder"><img src="${LOGO_PATH}" /></div>`;
+      imgSection = `<div class="panel-img-wrap">${overlays}<div class="panel-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" class="panel-img-logo" /></div></div>`;
     }
 
-    // colors
-    let colorsHtml = "";
-    if (r.colorList && r.colorList.length > 0) {
-      colorsHtml = `<div class="color-dots">${r.colorList.map(c => `<div class="color-dot" style="background:${esc(c.replace(/FF$/,''))}" title="${esc(c)}"></div>`).join("")}</div>`;
-    } else if (r.colorHex) {
-      colorsHtml = `<div class="color-dots"><div class="color-dot" style="background:${r.colorHex}"></div></div>`;
-    }
+    // colors — same circle design as table rows
+    const colorsHtml = colorCircleHTML(r, 40);
 
     // print settings — renamed local var to avoid shadowing t()
     const temps = r.temps;
@@ -1623,7 +1078,7 @@
         <div class="weight-bar-wrap">
           <div class="wb-labels">
             <div class="wb-val" id="sliderDisplay">${curW}<span>g</span></div>
-            <div class="wb-cap">${t("weightTotal", cap)}</div>
+            <div class="wb-cap">${t("weightTotal", {cap})}</div>
           </div>
           <div class="wb-track">
             <div class="wb-fill" id="wbFill" style="width:${Math.round(curW/cap*100)}%"></div>
@@ -1637,7 +1092,7 @@
         <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="panelWeightBtn" class="primary sm"><span class="spinner"></span><span class="label">${t("btnUpdate")}</span></button>
           <button id="btnManualEdit" class="ghost sm">${t("btnEditManually")}</button>
-          <span style="font-size:11px;color:var(--muted)">${t("weightContainer", v(r.containerWeight))}</span>
+          <span style="font-size:11px;color:var(--muted)">${t("weightContainer", {cw: v(r.containerWeight)})}</span>
         </div>
 
         <div class="weight-manual-row hidden" id="manualRow">
@@ -1679,15 +1134,29 @@
         <div class="panel-label">${t("sectionDetails")}</div>
         ${infoRows.map(([k,val]) => `<div class="panel-row"><span class="pk">${k}</span><span class="pv">${esc(String(val))}</span></div>`).join("")}
         <div style="margin-top:8px;display:flex;gap:6px">
-          ${r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag DIY</span>'}
+          ${r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>'}
           ${r.deleted ? `<span class="badge bad" style="font-size:11px">${t("badgeDeleted")}</span>` : ""}
         </div>
       </div>`;
 
+    // container card
+    const container = r.containerId ? containerFind(r.containerId) : null;
+    const containerHtml = container ? `
+      <div class="panel-section">
+        <div class="panel-label">${t("sectionContainer")}</div>
+        <div class="container-card">
+          <img src="${esc(container.img)}" alt="${esc(container.brand)}" onerror="this.style.display='none'" />
+          <div class="container-card-info">
+            <div class="container-card-line1">${esc(container.brand)} · ${esc(container.label)}</div>
+            <div class="container-card-line2">${esc(container.type)} · ${container.container_weight} g</div>
+          </div>
+        </div>
+      </div>` : "";
+
     return `
       ${imgSection}
       <div class="panel-section">
-        <div class="panel-label">${t("sectionColors", r.colorList.length)} &amp; Aspect</div>
+        <div class="panel-label">${t("sectionColors", {n: r.colorList.length})} &amp; Aspect</div>
         ${colorsHtml || ""}
         ${[r.aspect1, r.aspect2].filter(a => a && a !== "-" && a !== "None").length ? `
         <div class="aspect-chips">
@@ -1695,25 +1164,29 @@
         </div>` : (!colorsHtml ? '<span style="color:var(--muted);font-size:13px">—</span>' : "")}
         ${infoHtml2}
       </div>
+      ${containerHtml}
       ${tempHtml}
       ${weightHtml}
       ${linksHtml}
       ${infoHtml}
       <div class="panel-section">
         <details class="debug" id="rawDetails">
-          <summary><strong>${t("sectionRaw")}</strong></summary>
+          <summary style="display:flex;align-items:center;justify-content:space-between">
+            <strong>${t("sectionRaw")}</strong>
+            <button class="stg-copy-btn" id="btnCopyRaw" title="Copy JSON" style="height:26px;width:26px;flex-shrink:0">${SVG_COPY}</button>
+          </summary>
           ${(() => {
             if (!r.hasTwinPair) {
               return `<pre class="json" id="rawJsonPre" style="margin-top:10px;max-height:400px">${highlight(r.raw)}</pre>`;
             }
             const twin = state.rows.find(x => x.spoolId !== r.spoolId && (String(x.uid) === String(r.twinUid) || String(x.spoolId) === String(r.twinUid)));
-            const twinRaw = twin ? twin.raw : "{}";
+            const twinRaw = twin ? twin.raw : {};
             return `
             <div class="raw-tabs" style="margin-top:10px">
               <button class="raw-tab active" data-raw-tab="a">${t("twinTabThis")}</button>
               <button class="raw-tab" data-raw-tab="b">${t("twinTabTwin")}</button>
             </div>
-            <pre class="json" id="rawJsonPre" style="max-height:400px" data-raw-a="${encodeURIComponent(r.raw)}" data-raw-b="${encodeURIComponent(twinRaw)}">${highlight(r.raw)}</pre>`;
+            <pre class="json" id="rawJsonPre" style="max-height:400px" data-raw-a="${encodeURIComponent(JSON.stringify(r.raw, null, 2))}" data-raw-b="${encodeURIComponent(JSON.stringify(twinRaw, null, 2))}">${highlight(r.raw)}</pre>`;
           })()}
         </details>
       </div>`;
@@ -1729,11 +1202,11 @@
       const url = `${API_BASE}/setSpoolWeightByRfid?ApiKey=${encodeURIComponent(key)}&uid=${encodeURIComponent(r.spoolId)}&weight=${encodeURIComponent(w)}${extra}`;
       const res = await apiFetch(url); const b = res.body || {};
       if (b.success) {
-        toast($("panelWeightResult"), "ok", t("weightOk", b.weight_available, b.weight, b.container_weight, b.twin_updated));
+        toast($("panelWeightResult"), "ok", t("weightOk", {wa: b.weight_available, w: b.weight, cw: b.container_weight}) + (b.twin_updated ? t("weightOkTwin") : ""));
         await loadInventory();
         openDetail(r.spoolId);
       } else {
-        toast($("panelWeightResult"), "bad", t("weightErr", b.reason || "Error", b.computed_weight_available));
+        toast($("panelWeightResult"), "bad", t("weightErr", {r: b.reason || "Error"}) + (b.computed_weight_available != null ? t("weightErrComputed", {c: b.computed_weight_available}) : ""));
       }
     } catch (e) { toast($("panelWeightResult"), "bad", e.message || t("networkError")); }
     finally { setLoading(btn, false); }
@@ -1766,8 +1239,10 @@
   });
 
   /* ── init ── */
-  applyTranslations();
-  loadLookups().then(() => restoreAll());
+  loadLocales().then(() => {
+    applyTranslations();
+    return loadLookups();
+  }).then(() => restoreAll());
 
   // ── Electron RFID integration ──
   if (window.electronAPI) {
@@ -1779,7 +1254,7 @@
       el.style.display = "flex";
       el.classList.toggle("ok",  connected);
       el.classList.toggle("bad", !connected);
-      lbl.textContent = connected ? t("rfidConnected", name) : t("rfidNoReader");
+      lbl.textContent = connected ? t("rfidConnected", {name: name || "—"}) : t("rfidNoReader");
     });
 
     // Card scanned → find spool and open detail panel
@@ -1790,7 +1265,7 @@
       const el = $("rfidStatus");
       el.style.display = "flex";
       el.classList.add("ok");
-      $("rfidLabel").textContent = t("rfidScanned", uid);
+      $("rfidLabel").textContent = t("rfidScanned", {uid: uid.slice(-6)});
 
       // Search in loaded inventory
       const row = state.rows.find(r => r.uid === uid || r.spoolId === uid);
@@ -1800,7 +1275,7 @@
       }
 
       // Unknown UID — show a toast and pre-fill RFID field if panel is open
-      toast($("credsResult"), "warn", t("rfidNotFound", uid));
+      toast($("credsResult"), "warn", t("rfidNotFound", {uid}));
     });
 
     // Auto-update notification

@@ -1,0 +1,416 @@
+[
+  {
+    "id": "custom_cardboard",
+    "brandId": 0,
+    "brand": "Generic",
+    "label": "Cardboard",
+    "type": "Customizable",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/oem_cardboard.png"
+  },
+  {
+    "id": "custom_plastic",
+    "brandId": 0,
+    "brand": "Generic",
+    "label": "Plastic",
+    "type": "Customizable",
+    "container_weight": 200,
+    "img": "../assets/img/spool_filament/oem_plastic.png"
+  },
+  {
+    "id": "bambu_grey",
+    "brandId": 35123,
+    "brand": "Bambu Lab",
+    "label": "Grey",
+    "type": "Masterspool",
+    "container_weight": 249,
+    "img": "../assets/img/spool_filament/bambu_grey.png"
+  },
+  {
+    "id": "bambu_transp",
+    "brandId": 35123,
+    "brand": "Bambu Lab",
+    "label": "Transparent",
+    "type": "Masterspool",
+    "container_weight": 256,
+    "img": "../assets/img/spool_filament/bambu_transp.png"
+  },
+  {
+    "id": "r3d_grey",
+    "brandId": 48804,
+    "brand": "R3D",
+    "label": "Grey",
+    "type": "Masterspool",
+    "container_weight": 278,
+    "img": "../assets/img/spool_filament/r3d_grey.png"
+  },
+  {
+    "id": "sunlu_light_grey",
+    "brandId": 51857,
+    "brand": "Sunlu",
+    "label": "Light Grey V2",
+    "type": "Masterspool",
+    "container_weight": 219,
+    "img": "../assets/img/spool_filament/sunlu_light_greyV2.png"
+  },
+  {
+    "id": "rosa3d_masterspool_white",
+    "brandId": 19961,
+    "brand": "Rosa3D",
+    "label": "White",
+    "type": "Masterspool",
+    "container_weight": 250,
+    "img": "../assets/img/spool_filament/rosa3d_masterspool_white.png"
+  },
+  {
+    "id": "esun_masterspool_black",
+    "brandId": 47930,
+    "brand": "eSUN",
+    "label": "Standard",
+    "type": "plastic",
+    "container_weight": 225,
+    "img": "../assets/img/spool_filament/esun_black.png"
+  },
+  {
+    "id": "polymaker_cardboard",
+    "brandId": 50604,
+    "brand": "Polymaker",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 170,
+    "img": "../assets/img/spool_filament/polymaker_cardboard.png"
+  },
+  {
+    "id": "panchroma_cardboard",
+    "brandId": 45670,
+    "brand": "Panchroma",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 170,
+    "img": "../assets/img/spool_filament/panchroma_cardboard.png"
+  },
+  {
+    "id": "aceaddity_carton",
+    "brandId": 46010,
+    "brand": "AceAddity",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 157,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "amazon_basic_black",
+    "brandId": 32587,
+    "brand": "Amazon",
+    "label": "Basic Black",
+    "type": "plastic",
+    "container_weight": 234,
+    "img": "../assets/img/spool_filament/amazon_basic_black.png"
+  },
+  {
+    "id": "amolen_clear",
+    "brandId": 9798,
+    "brand": "AMOLEN",
+    "label": "Clear",
+    "type": "plastic",
+    "container_weight": 150,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "anycubic_black",
+    "brandId": 15962,
+    "brand": "Anycubic",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 129,
+    "img": "../assets/img/spool_filament/anycubic_black.png"
+  },
+  {
+    "id": "arianeplast_black",
+    "brandId": 23181,
+    "brand": "ArianePlast",
+    "label": "Black, Blue, Grey",
+    "type": "plastic",
+    "container_weight": 220,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "azurfilm_transparent",
+    "brandId": 58410,
+    "brand": "AzureFilm",
+    "label": "Transparent",
+    "type": "Masterspool",
+    "container_weight": 217,
+    "img": "../assets/img/spool_filament/azurfilm_transparent.png"
+  },
+  {
+    "id": "azurfilm_black",
+    "brandId": 58410,
+    "brand": "AzureFilm",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 217,
+    "img": "../assets/img/spool_filament/azurfilm_black.png"
+  },
+  {
+    "id": "bambulab_ht",
+    "brandId": 35123,
+    "brand": "Bambu Lab",
+    "label": "HT",
+    "type": "Masterspool",
+    "container_weight": 232,
+    "img": "../assets/img/spool_filament/bambu_ht.png"
+  },
+  {
+    "id": "cc3d_black",
+    "brandId": 19265,
+    "brand": "CC3D",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "creality_black",
+    "brandId": 26956,
+    "brand": "Creality",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 204,
+    "img": "../assets/img/spool_filament/creality_black.png"
+  },
+  {
+    "id": "creality_clear",
+    "brandId": 26956,
+    "brand": "Creality",
+    "label": "Clear",
+    "type": "plastic",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/creality_clear.png"
+  },
+  {
+    "id": "elegoo_carton",
+    "brandId": 57632,
+    "brand": "Elegoo",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/elegoo_carton.png"
+  },
+  {
+    "id": "eryone_black",
+    "brandId": 28940,
+    "brand": "Eryone",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 183,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "eryone_standard_carton",
+    "brandId": 28940,
+    "brand": "Eryone",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 154,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "esun_epla_carton",
+    "brandId": 47930,
+    "brand": "eSun",
+    "label": "Carton",
+    "type": "cardboard",
+    "container_weight": 168,
+    "img": "../assets/img/spool_filament/esun_cardboard.png"
+  },
+  {
+    "id": "esun_black",
+    "brandId": 47930,
+    "brand": "eSun",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 253,
+    "img": "../assets/img/spool_filament/esun_black.png"
+  },
+  {
+    "id": "esun_clear",
+    "brandId": 47930,
+    "brand": "eSun",
+    "label": "Clear",
+    "type": "plastic",
+    "container_weight": 205,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "extrudr_clear",
+    "brandId": 7674,
+    "brand": "Extrudr",
+    "label": "Clear",
+    "type": "plastic",
+    "container_weight": 241,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "flashforge_black",
+    "brandId": 63340,
+    "brand": "Flashforge",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 171,
+    "img": "../assets/img/spool_filament/flashforge_black.png"
+  },
+  {
+    "id": "forshape_black",
+    "brandId": 12498,
+    "brand": "Forshape",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 128,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "g3dpro_black",
+    "brandId": 50311,
+    "brand": "G3D Pro",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 232,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "giantarm_transparent",
+    "brandId": 49784,
+    "brand": "GIANTARN",
+    "label": "Transparent",
+    "type": "plastic",
+    "container_weight": 180,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "geeetech_black",
+    "brandId": 52467,
+    "brand": "Geeetech",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 176,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "gst3d_anthracite",
+    "brandId": 8303,
+    "brand": "GST3D",
+    "label": "Anthracite",
+    "type": "plastic",
+    "container_weight": 205,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "longer_black",
+    "brandId": 39382,
+    "brand": "Longer",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 180,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "overture_carton",
+    "brandId": 46203,
+    "brand": "Overture",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 170,
+    "img": "../assets/img/spool_filament/overture_carton.png"
+  },
+  {
+    "id": "printomax3d_carton",
+    "brandId": 18629,
+    "brand": "PrintoMax 3D",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 139,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "sovb3d_red",
+    "brandId": 8675,
+    "brand": "SOVB 3D",
+    "label": "Red",
+    "type": "plastic",
+    "container_weight": 149,
+    "img": "../assets/img/spool_filament/custom.png"
+  },
+  {
+    "id": "sunlu_midnight_blue_v1",
+    "brandId": 51857,
+    "brand": "Sunlu",
+    "label": "Midnight Blue V1",
+    "type": "Masterspool",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/sunlu_midnight_blueV1.png"
+  },
+  {
+    "id": "sunlu_midnight_blue_v2",
+    "brandId": 51857,
+    "brand": "Sunlu",
+    "label": "Midnight Blue V2",
+    "type": "Masterspool",
+    "container_weight": 219,
+    "img": "../assets/img/spool_filament/sunlu_midnight_blueV2.png"
+  },
+  {
+    "id": "sunlu_black",
+    "brandId": 51857,
+    "brand": "Sunlu",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 130,
+    "img": "../assets/img/spool_filament/sunlu_black.png"
+  },
+  {
+    "id": "fiberlogy_grey",
+    "brandId": 8182,
+    "brand": "Fiberlogy",
+    "label": "Light Grey",
+    "type": "plastic",
+    "container_weight": 292,
+    "img": "../assets/img/spool_filament/fiberlogy_light_grey.png"
+  },
+  {
+    "id": "prusa_carton_core",
+    "brandId": 46392,
+    "brand": "Prusa",
+    "label": "Black",
+    "type": "Masterspool",
+    "container_weight": 205,
+    "img": "../assets/img/spool_filament/prusa_carton_core.png"
+  },
+  {
+    "id": "3dxtech_plastic_black",
+    "brandId": 39652,
+    "brand": "3DXTECH",
+    "label": "Black",
+    "type": "plastic",
+    "container_weight": 258,
+    "img": "../assets/img/spool_filament/3dxtech_plastic_black.png"
+  },
+  {
+    "id": "formfutura_carton",
+    "brandId": 51857,
+    "brand": "Formfutura",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 165,
+    "img": "../assets/img/spool_filament/formfutura_carton.png"
+  },
+  {
+    "id": "wanhao_carton",
+    "brandId": 47560,
+    "brand": "Wanhao",
+    "label": "Standard",
+    "type": "cardboard",
+    "container_weight": 142,
+    "img": "../assets/img/spool_filament/wanhao_carton.png"
+  }
+]
