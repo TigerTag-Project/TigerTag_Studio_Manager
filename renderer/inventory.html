@@ -70,14 +70,6 @@
         <div class="subtitle" data-i18n="appSubtitle">View and manage your filament spools</div>
       </div>
       <div style="display:flex;gap:12px;align-items:center">
-        <div class="lang-toggle">
-          <button class="lang-btn active" data-lang="en">EN</button>
-          <button class="lang-btn" data-lang="fr">FR</button>
-          <button class="lang-btn" data-lang="de">DE</button>
-          <button class="lang-btn" data-lang="es">ES</button>
-          <button class="lang-btn" data-lang="it">IT</button>
-          <button class="lang-btn" data-lang="zh">中文</button>
-        </div>
         <div class="health" id="rfidStatus" style="display:none"><span class="pulse"></span><span id="rfidLabel">RFID: —</span></div>
         <div class="health" id="health" data-tooltip="Backend: idle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
       </div>
@@ -270,6 +262,7 @@
     sortCol: null,
     sortDir: "asc",
     i18n: {},
+    imgCache: new Map(),
     db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [], containers: [] }
   };
 
@@ -592,6 +585,7 @@
       if (raw && typeof raw === "object") {
         state.inventory = raw;
         state.rows = Object.entries(raw).map(([k,vv]) => normalizeRow(k, vv||{}));
+        await preCacheImages(state.rows);
         sortRows(); renderStats(); renderInventory();
       }
     } catch {}
@@ -661,6 +655,7 @@
       }
       state.inventory = r.body || {};
       state.rows = Object.entries(state.inventory).map(([k,vv]) => normalizeRow(k, vv||{}));
+      await preCacheImages(state.rows);
       sortRows(); state.keyValid = true; setKeyStatus("ok"); saveCreds(); saveInventory(state.inventory);
       setConnected(state.displayName, email, key);
       toast($("credsResult"), "ok", t("loadedSpools", {n: state.rows.length}));
@@ -826,8 +821,25 @@
     return isColorDark(bg) ? LOGO_PATH : LOGO_PATH_OUTLINE;
   }
 
+  async function preCacheImages(rows) {
+    if (!window.electronAPI?.imgGet) return;
+    const urls = [...new Set(rows.map(r => r.imgUrl).filter(Boolean))];
+    await Promise.all(urls.map(async url => {
+      if (!state.imgCache.has(url)) {
+        const local = await window.electronAPI.imgGet(url).catch(() => null);
+        state.imgCache.set(url, local); // null = lien mort sans cache
+      }
+    }));
+  }
+
+  function resolvedImg(url) {
+    if (!url) return null;
+    return state.imgCache.has(url) ? state.imgCache.get(url) : url;
+  }
+
   function thumbHTML(row, size = 28) {
-    if (row.imgUrl) return `<img class="thumb" src="${esc(row.imgUrl)}" width="${size}" height="${size}" loading="lazy" onerror="this.style.display='none'" />`;
+    const src = row.imgUrl ? resolvedImg(row.imgUrl) : null;
+    if (src) return `<img class="thumb" src="${esc(src)}" width="${size}" height="${size}" loading="lazy" />`;
     const bg = colorBg(row);
     return `<span class="thumb-color" style="width:${size}px;height:${size}px;background:${bg}"><img src="${logoSrc(bg)}" /></span>`;
   }
@@ -867,8 +879,9 @@
       const card = document.createElement("div");
       card.className = "spool-card" + (state.selected===r.spoolId?" selected":"") + (r.deleted?" deleted":"");
       card.dataset.id = r.spoolId;
-      const imgHtml = r.imgUrl
-        ? `<img class="card-img" src="${esc(r.imgUrl)}" loading="lazy" onerror="this.outerHTML='<div class=\\'card-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'></div>'" />`
+      const _resolvedCard = r.imgUrl ? resolvedImg(r.imgUrl) : null;
+      const imgHtml = _resolvedCard
+        ? `<img class="card-img" src="${esc(_resolvedCard)}" loading="lazy" onerror="this.outerHTML='<div class=\\'card-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'></div>'" />`
         : `<div class="card-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" /></div>`;
       const pct = (r.weightAvailable != null && r.capacity) ? Math.max(0,Math.min(100,Math.round(r.weightAvailable/r.capacity*100))) : null;
       const swatch = colorCircleHTML(r);
@@ -1010,8 +1023,9 @@
       : "";
     const overlays = badgeLeft + badgeTwin;
     let imgSection = "";
-    if (r.imgUrl) {
-      imgSection = `<div class="panel-img-wrap">${overlays}<img class="panel-img" src="${esc(r.imgUrl)}" onerror="this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'" /></div>`;
+    const _resolvedPanel = r.imgUrl ? resolvedImg(r.imgUrl) : null;
+    if (_resolvedPanel) {
+      imgSection = `<div class="panel-img-wrap">${overlays}<img class="panel-img" src="${esc(_resolvedPanel)}" onerror="this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'" /></div>`;
     } else {
       imgSection = `<div class="panel-img-wrap">${overlays}<div class="panel-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" class="panel-img-logo" /></div></div>`;
     }

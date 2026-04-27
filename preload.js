@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ask main process to install the downloaded update and restart
   installUpdate: () => ipcRenderer.send('install-update'),
 
+  // ── Image cache (main-process side) ─────────────────────────────────────
+  imgGet: (url) => ipcRenderer.invoke('img:get', url),
+
   // ── Local DB (main-process side) ─────────────────────────────────────────
   db: {
     getLabel:                 (category, id) => ipcRenderer.invoke('db:getLabel', category, id),

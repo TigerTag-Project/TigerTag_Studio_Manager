@@ -1,7 +1,11 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs   = require('fs');
+const crypto = require('crypto');
 const db = require('./services/tigertagDbService');
+
+let imgCacheDir;
 
 let mainWindow;
 
@@ -109,6 +113,26 @@ ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 
+// ── Image cache IPC handler ───────────────────────────────────────────────────
+ipcMain.handle('img:get', async (_, url) => {
+  if (!url || url === '--') return null;
+  const hash = crypto.createHash('md5').update(url).digest('hex');
+  const ext  = (url.match(/\.(jpe?g|png|webp|gif|avif)/i) || [])[1] || 'jpg';
+  const file = path.join(imgCacheDir, `${hash}.${ext}`);
+  try {
+    const resp = await fetch(url);
+    if (resp.ok) {
+      fs.writeFileSync(file, Buffer.from(await resp.arrayBuffer()));
+      return `file://${file}`;
+    }
+    // lien mort — cache si dispo, sinon null (placeholder couleur)
+    return fs.existsSync(file) ? `file://${file}` : null;
+  } catch {
+    // pas de réseau — cache si dispo, sinon null
+    return fs.existsSync(file) ? `file://${file}` : null;
+  }
+});
+
 // ── DB IPC handlers ──────────────────────────────────────────────────────────
 ipcMain.handle('db:getLabel',                (_, cat, id) => db.getLabel(cat, id));
 ipcMain.handle('db:getMaterialLabel',        (_, id)      => db.getMaterialLabel(id));
@@ -120,6 +144,9 @@ ipcMain.handle('db:downloadAndSaveLatestData', ()         => db.downloadAndSaveL
 
 // ── App lifecycle
 app.whenReady().then(async () => {
+  imgCacheDir = path.join(app.getPath('userData'), 'img_cache');
+  fs.mkdirSync(imgCacheDir, { recursive: true });
+
   await db.initTigerTagDB();
 
   createWindow();
