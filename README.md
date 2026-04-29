@@ -1,6 +1,6 @@
 # TigerTag Studio Manager
 
-> Desktop application to manage your 3D printing filament inventory via NFC RFID tags and the TigerTag API.
+> Desktop application to manage your 3D printing filament inventory via NFC RFID tags and your TigerTag account.
 
 ### ⬇ [Download the latest version](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/releases/latest)
 > Available for **macOS** · **Windows** · **Linux** — no installation knowledge required.
@@ -16,18 +16,18 @@
 
 ## Features
 
-- **Inventory management** — Load and browse all your filament spools via the TigerTag API
+- **Inventory management** — Real-time sync with your TigerTag inventory via Firebase/Firestore
 - **Table & Grid views** — Switch between a compact table or a visual card grid
 - **Column sorting** — Click any column header to sort ascending / descending
 - **NFC RFID reading** — Plug in an ACR122U reader to automatically open a spool's detail panel on scan
-- **Weight tracking** — Update spool weight directly from the app (slider, manual entry, or raw scale input); inventory auto-refreshes 1 second after a successful update
+- **Weight tracking** — Update spool weight directly from the app (slider or manual entry); inventory syncs in real time after a successful update
 - **Material details** — Print temperatures, bed temps, drying settings, density, MSDS/TDS/RoHS links
-- **Product type** — Type label (Filament, Resin, …) resolved from `id_type` and displayed in the detail panel
+- **Product type** — Type label (Filament, Resin, …) resolved from lookup tables and displayed in the detail panel
 - **Manufacturing date** — Chip programming timestamp shown for standard TigerTag (hidden on TigerTag+ to protect factory dates)
 - **Color display** — Smart color circles with conic-gradient (bicolor/tricolor/multi), linear rainbow, and solid color rendering based on spool aspect data
 - **Image cache** — Spool images are downloaded and cached locally; works offline, falls back to color placeholder if the remote link is dead
 - **Multi-account** — Add and switch between multiple TigerTag accounts; profiles are shown as vertical cards with per-account color avatars (13 presets + custom color picker)
-- **Multi-language** — EN, FR, DE, ES, IT, PT, 中文 — switch any time from the account modal
+- **Multi-language** — EN, FR, DE, ES, IT, PT (Brasil), PT (Portugal), 中文 — switch any time from the account modal
 - **Auto-updater** — Receives updates automatically via GitHub Releases
 - **Cross-platform** — Windows, macOS (Intel + Apple Silicon), Linux
 
@@ -57,6 +57,7 @@
 |---|---|
 | Desktop shell | [Electron](https://www.electronjs.org/) 41 |
 | UI | Vanilla HTML / CSS / JavaScript (no framework) |
+| Auth & data | [Firebase](https://firebase.google.com/) (Auth + Firestore) |
 | NFC reading | [nfc-pcsc](https://github.com/pokusew/nfc-pcsc) + ACR122U reader |
 | Auto-update | [electron-updater](https://www.electron.build/auto-update) |
 | Build & packaging | [electron-builder](https://www.electron.build/) |
@@ -68,7 +69,7 @@
 
 - **Node.js** 24+
 - **npm** 10+
-- A **TigerTag account** with a valid API key — [tigertag.io](https://tigertag.io)
+- A **TigerTag account** — [tigertag.io](https://tigertag.io)
 - _(Optional)_ An **ACR122U** NFC reader for automatic spool scanning
 
 ### Linux only
@@ -101,7 +102,7 @@ npm install
 npm start
 ```
 
-The app launches directly into the inventory view if an account is already saved, or opens the **Add account** modal on first launch. Credentials are stored locally in `localStorage` and never sent anywhere other than `https://cdn.tigertag.io`.
+The app launches directly into the inventory view if an account is already saved, or opens the **Sign in** modal on first launch. Credentials are stored locally in `localStorage` and authenticated through Firebase.
 
 ---
 
@@ -123,8 +124,8 @@ Built installers are placed in the `dist/` folder (ignored by git).
 Pushing a version tag automatically triggers a build on all three platforms and publishes a GitHub Release with the installers attached.
 
 ```bash
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
 The workflow file is at [`.github/workflows/build.yml`](.github/workflows/build.yml).
@@ -141,14 +142,15 @@ TigerTag_Studio_Manager/
 │   ├── inventory.html       # Single-page UI (markup + modals, no inline JS)
 │   ├── inventory.css        # All app styles
 │   ├── inventory.js         # All application logic (IIFE)
-│   └── locales/             # i18n JSON files (en, fr, de, es, it, zh, pt)
-├── services/
-│   └── tigertagDbService.js # Local JSON DB with offline fallback and remote sync
+│   ├── firebase.js          # Firebase SDK initialisation
+│   ├── lib/firebase/        # Bundled Firebase compat SDKs (app, auth, firestore)
+│   └── locales/             # i18n JSON files (en, fr, de, es, it, zh, pt, pt-pt)
 ├── data/                    # Local JSON lookup tables (brands, materials, types, aspects…)
 ├── assets/
-│   ├── db/                  # Embedded DB fallback (used when userData/db/ is missing)
 │   ├── img/                 # App icons + spool container images
-│   └── svg/                 # TigerTag logo SVGs (normal + contouring variant)
+│   └── svg/
+│       ├── icons/           # UI icon SVGs (23 icons)
+│       └── logos/           # TigerTag logo SVGs (normal + contouring variant)
 ├── .github/
 │   └── workflows/
 │       └── build.yml        # CI: build + publish on tag push
@@ -161,12 +163,12 @@ TigerTag_Studio_Manager/
 
 ### Sidebar
 
-The left sidebar is always visible and shows the active account as soon as the app loads (from `localStorage`, before any API call). It contains:
+The left sidebar is always visible and shows the active account as soon as the app loads (from `localStorage`, before any Firestore call). It contains:
 
-- **Avatar** — initials with a gradient color (13 presets or custom hex picker); clicking opens the profiles modal or the add-account modal if no account is saved
+- **Avatar** — initials with a gradient color (13 presets or custom hex picker); clicking opens the profiles modal or the sign-in modal if no account is saved
 - **Stats** — active spools, TigerTag+ count, TigerTag count, total available weight
-- **Refresh button** — reloads the full inventory; the SVG icon spins during loading
-- **Community links** — GitHub, MakerWorld (free 3D files), Discord, mobile app QR code
+- **Refresh button** — reloads the full inventory; the icon spins during loading
+- **Community links** — GitHub, Discord, mobile app QR code
 - **Export button** — opens the data/export panel
 
 ### Profiles modal ("Manage profiles")
@@ -177,10 +179,16 @@ Lists all saved accounts as vertical cards (avatar + name + email + chevron). Cl
 
 - **Avatar + name/email** displayed side by side (compact horizontal layout)
 - **Color picker** — 13 gradient presets + a custom hex color input; the avatar gradient updates live
-- **Language selector** — changes the UI language instantly (EN / FR / DE / ES / IT / PT / ZH)
-- **API key field** — masked by default (`-webkit-text-security`); eye button reveals/hides without height jump; copy button copies the key to clipboard
-- **Verify & sync** — validates the API key against the server, updates display name, and reloads the inventory
+- **Language selector** — changes the UI language instantly
+- **Display name** — user's chosen pseudo, synced with Firestore
 - **Disconnect** — requires a 1.5-second press-and-hold (animated fill progress) to prevent accidental disconnection
+
+### Sign in modal
+
+- Email / password sign-in with a "Forgot password?" link
+- Google sign-in (one click)
+- Account creation (email + password)
+- "Stay signed in" checkbox
 
 ### Inventory
 
@@ -191,19 +199,19 @@ Lists all saved accounts as vertical cards (avatar + name + email + chevron). Cl
   - Product image or color placeholder
   - Color swatches + aspect tags side-by-side (solid, bicolor, tricolor, conic gradient, or rainbow)
   - Twin RFID badge shown as overlay on the thumbnail (table & grid)
-  - Weight section (slider, manual input, raw scale input) — directly below colors
-  - Container card (when applicable)
+  - Weight section (slider + manual input) with real-time Firestore sync
+  - Container card — brand, label, image, type, weight; edit button appears on hover
   - Print settings (nozzle, bed, dry temp/time, density)
-  - **Video player** — YouTube links open as a clickable thumbnail (avoids embed restrictions); direct MP4/WebM plays inline at full width
+  - **Video player** — YouTube links open as a clickable thumbnail; direct MP4/WebM plays inline
   - Documents & links with PDF icon (MSDS, TDS, RoHS, REACH, food-safe)
-  - Details rows: UID, **Type** (Filament / Resin / …), Series, Brand, Material, Diameter, Tag type, SKU, Barcode, Container, Twin tag, Updated, **Manufactured** (TigerTag only — hidden on TigerTag+)
+  - Details rows: UID, Type, Series, Brand, Material, Diameter, Tag type, SKU, Barcode, Container, Twin tag, Updated, Manufactured
   - Raw JSON viewer with copy button
 
 ---
 
 ## Image cache
 
-Spool images (TigerTag+ only) are fetched from `cdn.tigertag.io` on first load and stored locally in `userData/img_cache/`. The cache key is an MD5 hash of the image URL — if the URL changes, the new image is automatically downloaded.
+Spool images (TigerTag+ only) are fetched from `cdn.tigertag.io` on first load and stored locally in `userData/img_cache/`. The cache key is an MD5 hash of the image URL.
 
 | Situation | Behaviour |
 |---|---|
@@ -219,78 +227,12 @@ Spool images (TigerTag+ only) are fetched from `cdn.tigertag.io` on first load a
 
 Multiple TigerTag accounts can be added and switched between at any time:
 
-- **Add account** — click the avatar in the sidebar (or the `+` button in the profiles modal), enter your email and API key, and the inventory loads immediately
+- **Add account** — click the avatar in the sidebar (or the `+` button in the profiles modal) and sign in with your email/password or Google account
 - **Switch account** — open the profiles modal, click any account card; the inventory, language, and avatar switch instantly
-- **Edit account** — color avatar (13 gradient presets or custom hex), language preference, API key management (eye reveal + clipboard copy), verify & sync
+- **Edit account** — color avatar (13 gradient presets or custom hex), language preference, display name
 - **Disconnect** — requires a 1.5-second press-and-hold on the disconnect button to prevent accidental removal; the account and its cached inventory are removed from the device
 - **Per-account language** — each account remembers its own UI language; switching accounts automatically restores the correct language
-- **Independent cache** — each account's inventory is cached separately under `tigertag.inv.<id>` in `localStorage` and reloaded on switch without a new API call if the cache is fresh
-
----
-
-## API
-
-The app communicates exclusively with `https://cdn.tigertag.io`. No data is collected or stored by this application beyond your local device.
-
-| Endpoint | Description |
-|---|---|
-| `GET /healthz/` | Backend health check |
-| `GET /pingbyapikey?ApiKey=XXX` | Validate API key, returns display name |
-| `GET /exportInventory?ApiKey=XXX&email=XXX` | Fetch full inventory JSON |
-| `GET /setSpoolWeightByRfid?ApiKey=XXX&uid=XXX&weight=XXX[&container_weight=0]` | Update spool weight |
-
-**Your API key and email are stored locally only** (browser `localStorage`) and used solely to authenticate requests to the TigerTag API.
-
----
-
-## Weight update — three modes
-
-### Mode 1 — Direct filament weight
-
-```
-GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=750&container_weight=0
-```
-
-| Parameter | Value | Effect |
-|---|---|---|
-| `weight` | Net filament weight in grams | Stored as-is |
-| `container_weight` | `0` | No subtraction |
-
-### Mode 2 — Custom container weight
-
-```
-GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=965&container_weight=215
-```
-
-| Parameter | Value | Effect |
-|---|---|---|
-| `weight` | Total weight (filament + container) in grams | — |
-| `container_weight` | Your actual container weight | Server computes `net = weight − container_weight` |
-
-### Mode 3 — Use stored container weight
-
-```
-GET /setSpoolWeightByRfid?ApiKey=YOUR_KEY&uid=SPOOL_UID&weight=920
-```
-
-| Parameter | Value | Effect |
-|---|---|---|
-| `weight` | Total weight (filament + container) in grams | — |
-| `container_weight` | _(omitted)_ | Server uses the value stored on the spool record |
-
-### Response
-
-```json
-{
-  "success": true,
-  "weight_available": 750,
-  "weight": 920,
-  "container_weight": 170,
-  "twin_updated": false
-}
-```
-
-After a successful update the app automatically waits 1 second and then reloads the full inventory so the new weight is reflected everywhere.
+- **Independent cache** — each account's inventory is cached separately under `tigertag.inv.<id>` in `localStorage`
 
 ---
 
@@ -303,7 +245,8 @@ After a successful update the app automatically waits 1 second and then reloads 
 | `de` | Deutsch | `locales/de.json` |
 | `es` | Español | `locales/es.json` |
 | `it` | Italiano | `locales/it.json` |
-| `pt` | Português | `locales/pt.json` |
+| `pt` | Português (Brasil) | `locales/pt.json` |
+| `pt-pt` | Português (Portugal) | `locales/pt-pt.json` |
 | `zh` | 中文 | `locales/zh.json` |
 
 ### Adding a language
@@ -330,7 +273,7 @@ Contributions are welcome! Here's how to get started:
 ### Guidelines
 
 - Keep the UI vanilla (no React, Vue, etc.) — the goal is zero build step for the renderer
-- New i18n strings must be added to **all 7 locale files** in `renderer/locales/`
+- New i18n strings must be added to **all 8 locale files** in `renderer/locales/`
 - Don't commit `node_modules/`, `dist/`, or any credentials
 - One feature / fix per PR
 
