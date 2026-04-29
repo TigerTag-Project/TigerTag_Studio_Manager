@@ -1,9 +1,63 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
+const http = require('http');
 const crypto = require('crypto');
 const db = require('./services/tigertagDbService');
+
+// ── Minimal static file server so location.protocol === 'http:' (required by Firebase Auth)
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript',
+  '.css':  'text/css',
+  '.json': 'application/json',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2':'font/woff2',
+  '.ttf':  'font/ttf',
+};
+let _devServer;
+let _devPort;
+// Port fixe = même origin à chaque démarrage → Firebase Auth + localStorage persistent
+const RENDERER_PORT = 5784;
+
+function startRendererServer(rendererDir) {
+  return new Promise((resolve, reject) => {
+    _devServer = http.createServer((req, res) => {
+      let urlPath = req.url.split('?')[0];
+      if (urlPath === '/' || urlPath === '') urlPath = '/inventory.html';
+      const filePath = path.join(rendererDir, urlPath);
+      try {
+        const data = fs.readFileSync(filePath);
+        const ext  = path.extname(filePath).toLowerCase();
+        res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+        res.end(data);
+      } catch {
+        res.writeHead(404); res.end('Not found');
+      }
+    });
+    _devServer.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        // Port déjà utilisé → port aléatoire en fallback (session non persistée)
+        console.warn(`[Renderer] port ${RENDERER_PORT} occupé, fallback port aléatoire`);
+        _devServer.listen(0, 'localhost', () => {
+          _devPort = _devServer.address().port;
+          console.log(`[Renderer] http://localhost:${_devPort} (fallback)`);
+          resolve(_devPort);
+        });
+      } else { reject(err); }
+    });
+    _devServer.listen(RENDERER_PORT, 'localhost', () => {
+      _devPort = RENDERER_PORT;
+      console.log(`[Renderer] http://localhost:${_devPort}`);
+      resolve(_devPort);
+    });
+  });
+}
 
 let imgCacheDir;
 
@@ -33,21 +87,26 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile('renderer/inventory.html');
+  startRendererServer(__dirname).then(port => {
+    mainWindow.loadURL(`http://localhost:${port}/renderer/inventory.html`);
+  });
 
-  // Open external links in default browser; allow Firebase auth popup internally
+  // Firebase auth popup → ouvrir en interne (postMessage doit fonctionner)
+  // Tous les autres liens → navigateur système
+  const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Firebase sign-in popup must open inside Electron so postMessage works
     if (url.startsWith('https://tigertag-connect.firebaseapp.com/__/auth/')) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          width: 540,
-          height: 660,
+          width: 520,
+          height: 700,
           autoHideMenuBar: true,
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: false, // nécessaire pour que window.opener.postMessage fonctionne
           },
         },
       };
@@ -56,13 +115,12 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Override user-agent on Firebase auth popup to avoid Google's embedded-webview block
+  // Appliquer un vrai user-agent Chrome sur la fenêtre popup
+  // pour que Google ne bloque pas le webview Electron
   mainWindow.webContents.on('did-create-window', (win) => {
-    win.webContents.setUserAgent(
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
-      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-      'Chrome/124.0.0.0 Safari/537.36'
-    );
+    win.webContents.setUserAgent(CHROME_UA);
+    // Aussi bloquer les redirections externes depuis le popup auth
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   });
 }
 
@@ -143,17 +201,22 @@ ipcMain.handle('img:get', async (_, url) => {
   const hash = crypto.createHash('md5').update(url).digest('hex');
   const ext  = (url.match(/\.(jpe?g|png|webp|gif|avif)/i) || [])[1] || 'jpg';
   const file = path.join(imgCacheDir, `${hash}.${ext}`);
+  function toDataUrl(buf, contentType) {
+    const mime = contentType && contentType.startsWith('image/') ? contentType.split(';')[0] : 'image/jpeg';
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  }
   try {
     const resp = await fetch(url);
     if (resp.ok) {
-      fs.writeFileSync(file, Buffer.from(await resp.arrayBuffer()));
-      return `file://${file}`;
+      const buf = Buffer.from(await resp.arrayBuffer());
+      fs.writeFileSync(file, buf);
+      return toDataUrl(buf, resp.headers.get('content-type'));
     }
-    // lien mort — cache si dispo, sinon null (placeholder couleur)
-    return fs.existsSync(file) ? `file://${file}` : null;
+    if (fs.existsSync(file)) return toDataUrl(fs.readFileSync(file), null);
+    return null;
   } catch {
-    // pas de réseau — cache si dispo, sinon null
-    return fs.existsSync(file) ? `file://${file}` : null;
+    if (fs.existsSync(file)) return toDataUrl(fs.readFileSync(file), null);
+    return null;
   }
 });
 

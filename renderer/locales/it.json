@@ -167,5 +167,24 @@
   "agoYear": {
     "one": "1 anno fa",
     "other": "{{n}} anni fa"
-  }
+  },
+  "loginSignInTitle": "Accedi a TigerTag",
+  "loginSignInSubtitle": "Gestisci il tuo inventario di filamento",
+  "loginCreateTitle": "Crea il tuo account",
+  "loginCreateSubtitle": "Unisciti a TigerTag oggi",
+  "loginForgotPassword": "Password dimenticata?",
+  "loginRememberMe": "Rimani connesso",
+  "loginNoAccount": "Non hai un account?",
+  "loginCreateAccount": "Crea account",
+  "loginHaveAccount": "Hai già un account?",
+  "loginConfirmPasswordPlaceholder": "Conferma password",
+  "loginResetSent": "Controlla la casella — link inviato!",
+  "loginPasswordMismatch": "Le password non corrispondono.",
+  "loginPasswordTooShort": "La password deve contenere almeno 6 caratteri.",
+  "loginAccountCreated": "Account creato! Accesso in corso…",
+  "loginEmailInUse": "Questa email è già registrata.",
+  "invLoading": "Caricamento inventario…",
+  "containerPickerTitle": "Scegli un contenitore",
+  "btnChangeContainer": "Cambia",
+  "displayNameLabel": "Nome visualizzato"
 }

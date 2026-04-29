@@ -4,7 +4,8 @@
   // ── Firebase helpers (SDK initialised in firebase.js) ──────────────────────
   const fbAuth = () => firebase.auth();
   const fbDb   = () => firebase.firestore();
-  let _unsubInventory = null; // active Firestore onSnapshot unsubscribe handle
+  let _unsubInventory  = null; // active Firestore onSnapshot unsubscribe handle
+  let _sliderDebounce  = null; // pending auto-save timer for weight slider
 
   const ACCOUNT_COLORS = {
     orange: ["#f97316","#fb923c"],   // orange vif
@@ -49,8 +50,8 @@
   const STORAGE_ACCOUNTS = "tigertag.accounts";
   const STORAGE_ACTIVE   = "tigertag.activeAccount";
   const invKey = id => `tigertag.inv.${id}`;
-  const LOGO_PATH          = "../assets/svg/tigertag_logo.svg";
-  const LOGO_PATH_OUTLINE  = "../assets/svg/tigertag_logo_contouring.svg";
+  const LOGO_PATH          = "../assets/svg/logos/logo_tigertag.svg";
+  const LOGO_PATH_OUTLINE  = "../assets/svg/logos/logo_tigertag_contouring.svg";
 
   const state = {
     inventory: null,
@@ -67,6 +68,9 @@
     activeAccountId: null,
     i18n: {},
     imgCache: new Map(),
+    invLoading: false,
+    isAdmin: false,
+    debugEnabled: false,
     db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [], containers: [] }
   };
 
@@ -160,7 +164,7 @@
 
   /* ── lookups ── */
   async function loadLocales() {
-    await Promise.all(["en", "fr", "de", "es", "it", "zh", "pt"].map(async lang => {
+    await Promise.all(["en", "fr", "de", "es", "it", "zh", "pt", "pt-pt"].map(async lang => {
       try {
         const r = await fetch(`locales/${lang}.json`);
         if (r.ok) state.i18n[lang] = await r.json();
@@ -263,16 +267,31 @@
     };
   }
 
-  /* ── health ── */
-  async function pingHealth() {
-    try {
-      const r = await fetch(`${API_BASE}/healthz/`);
-      $("health").classList.toggle("ok", r.ok);
-      $("health").classList.toggle("bad", !r.ok);
-      $("health").dataset.tooltip = r.ok ? t("backendOk") : t("backendErr", {n: r.status});
-    } catch { $("health").classList.add("bad"); $("health").dataset.tooltip = t("backendOffline"); }
+  /* ── health (driven by Firestore metadata) ── */
+  function setHealthLive(ms)  {
+    $("health").classList.add("ok"); $("health").classList.remove("bad");
+    $("health").dataset.tooltip = ms != null ? `${t("backendOk")} — ${ms} ms` : t("backendOk");
   }
-  pingHealth();
+  function setHealthOffline() { $("health").classList.remove("ok"); $("health").classList.add("bad");    $("health").dataset.tooltip = t("backendOffline"); }
+  function setHealthIdle()    { $("health").classList.remove("ok","bad");                                $("health").dataset.tooltip = t("backendIdle"); }
+
+  // Lazy ping: only fires when user hovers the cloud icon
+  let _pingInFlight = false;
+  $("health").addEventListener("mouseenter", async () => {
+    if (_pingInFlight) return;
+    _pingInFlight = true;
+    try {
+      const t0 = performance.now();
+      const r  = await fetch(`${API_BASE}/healthz/`);
+      const ms = Math.round(performance.now() - t0);
+      if (r.ok) setHealthLive(ms);
+      else { $("health").classList.add("bad"); $("health").classList.remove("ok"); $("health").dataset.tooltip = `${t("backendErr", {n: r.status})} — ${ms} ms`; }
+    } catch {
+      setHealthOffline();
+    } finally {
+      _pingInFlight = false;
+    }
+  });
 
   /* ── connected state ── */
   function setConnected(displayName, email) {
@@ -285,6 +304,10 @@
     $("sbName").textContent = displayName || email || "—";
     $("sbUser").classList.remove("sb-user--empty");
     applyAvatarStyle(activeAccount());
+    $("signInPlaceholder").classList.add("hidden");
+    $("card-inv").classList.remove("hidden");
+    state.invLoading = true;
+    renderInventory(); // show spinner immediately, before first Firestore snapshot
   }
   function setDisconnected() {
     state.displayName = null; state.keyValid = null;
@@ -303,6 +326,10 @@
     av.style.background = ""; av.style.boxShadow = "";
     $("sbUser").classList.add("sb-user--empty");
     $("sbStats").classList.add("hidden");
+    $("signInPlaceholder").classList.remove("hidden");
+    $("card-inv").classList.add("hidden");
+    state.invLoading = false;
+    setHealthIdle();
   }
   /* ── account dropdown ── */
   function openAccountDropdown() {
@@ -360,7 +387,7 @@
   }
 
   /* ── settings panel ── */
-  const SVG_COPY = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const SVG_COPY = `<span class="icon icon-copy icon-13"></span>`;
   function openSettings() {
     if ($("langSelect")) $("langSelect").value = state.lang;
     $("settingsPanel").classList.add("open"); $("settingsOverlay").classList.add("open");
@@ -372,7 +399,7 @@
   $("settingsClose").addEventListener("click", closeSettings);
   $("settingsOverlay").addEventListener("click", closeSettings);
 
-  const SVG_CHECK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const SVG_CHECK = `<span class="icon icon-check icon-13"></span>`;
 
   $("btnStgExport").addEventListener("click", () => {
     if (!state.inventory) return;
@@ -384,8 +411,8 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
   $("btnSbReload").addEventListener("click", () => loadInventory());
 
-  const SVG_EYE_OFF = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
-  const SVG_EYE_ON  = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const SVG_EYE_OFF = `<span class="icon icon-eye-off icon-14"></span>`;
+  const SVG_EYE_ON  = `<span class="icon icon-eye-on icon-14"></span>`;
   function makeEyeToggle(btnId, fieldId) {
     const btn = $(btnId), field = $(fieldId);
     if (!btn || !field) return;
@@ -422,6 +449,11 @@
     $("eacName").style.display  = _editingAccount.displayName ? "" : "none";
     $("eacEmail").textContent   = _editingAccount.email || "";
     $("eacAvatar").style.background = getAccGradient(_editingAccount);
+    $("eacDisplayNameInput").value = _editingAccount.displayName || "";
+    $("eacNameResult").textContent = "";
+    $("eacAdminBadge").classList.toggle("hidden", !state.isAdmin);
+    $("eacDebugRow").classList.toggle("hidden",   !state.isAdmin);
+    $("eacDebugToggle").checked = state.debugEnabled;
     const isCustom = _editingAccount?.color === "custom";
     if (isCustom && _editingAccount.customColor) {
       $("eacCustomColor").value = _editingAccount.customColor;
@@ -487,6 +519,56 @@
   $("editAccountModalClose").addEventListener("click", closeEditAccountModal);
   $("editAccountModalOverlay").addEventListener("click", e => { if (e.target === $("editAccountModalOverlay")) closeEditAccountModal(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && $("editAccountModalOverlay").classList.contains("open")) closeEditAccountModal(); });
+
+  // Save display name
+  async function saveDisplayName() {
+    if (!_editingAccount) return;
+    const newName = $("eacDisplayNameInput").value.trim();
+    const res = $("eacNameResult");
+    if (!newName) { res.style.color = "var(--danger)"; res.textContent = "—"; return; }
+    if (newName === (_editingAccount.displayName || "")) {
+      res.style.color = "var(--muted)"; res.textContent = "✓";
+      setTimeout(() => { res.textContent = ""; }, 1200); return;
+    }
+    res.style.color = "var(--muted)"; res.textContent = "Saving…";
+    try {
+      // 1. Firebase Auth profile
+      const user = fbAuth().currentUser;
+      if (user) await user.updateProfile({ displayName: newName });
+      // 2. Firestore users/{uid}
+      if (user) await fbDb().collection("users").doc(user.uid).set({ displayName: newName }, { merge: true });
+      // 3. localStorage account
+      const accounts = getAccounts();
+      const idx = accounts.findIndex(a => a.id === _editingAccount.id);
+      if (idx >= 0) { accounts[idx].displayName = newName; saveAccounts(accounts); _editingAccount = accounts[idx]; }
+      // 4. Refresh UI
+      $("eacName").textContent = newName; $("eacName").style.display = "";
+      $("eacAvatar").textContent = getInitials(_editingAccount);
+      if (_editingAccount.id === state.activeAccountId) {
+        state.displayName = newName;
+        $("sbName").textContent = newName;
+        $("sbAvatar").textContent = getInitials(_editingAccount);
+      }
+      renderAccountDropdown();
+      res.style.color = "var(--primary)"; res.textContent = "✓ Saved";
+      setTimeout(() => { res.textContent = ""; }, 2000);
+    } catch (e) {
+      res.style.color = "var(--danger)"; res.textContent = e.message || "Error";
+    }
+  }
+  $("btnSaveDisplayName").addEventListener("click", saveDisplayName);
+  $("eacDisplayNameInput").addEventListener("keydown", e => { if (e.key === "Enter") saveDisplayName(); });
+
+  $("eacDebugToggle").addEventListener("change", async () => {
+    const enabled = $("eacDebugToggle").checked;
+    state.debugEnabled = enabled;
+    applyDebugMode();
+    const uid = state.activeAccountId; if (!uid) return;
+    try {
+      await fbDb().collection("users").doc(uid).set({ Debug: enabled }, { merge: true });
+    } catch (e) { console.warn("[Firestore] debug toggle:", e.message); }
+  });
+
   // Disconnect = Firebase sign-out
   $("btnEditModalDisconnect").addEventListener("click", async () => {
     if (!_editingAccount) return;
@@ -495,23 +577,76 @@
   });
 
   /* ── modal: login (Firebase) ── */
-  function openAddAccountModal() {
-    $("stgEmail").value = ""; $("stgPassword").value = "";
-    $("stgPassword").classList.remove("revealed");
-    $("btnToggleStgPassword").innerHTML = SVG_EYE_OFF;
+  let _lmMode = "signin"; // "signin" | "create"
+
+  function lmSetMode(mode) {
+    _lmMode = mode;
+    const create = mode === "create";
+    $("lmConfirmWrap").classList.toggle("hidden", !create);
+    $("lmSignInExtras").classList.toggle("hidden", create);
+    $("stgPassword").setAttribute("autocomplete", create ? "new-password" : "current-password");
+    // Update dynamic labels (data-i18n + textContent)
+    const set = (id, key) => { $(id).dataset.i18n = key; $(id).textContent = t(key); };
+    set("lmTitle",          create ? "loginCreateTitle"    : "loginSignInTitle");
+    set("lmSubtitle",       create ? "loginCreateSubtitle" : "loginSignInSubtitle");
+    set("lmSubmitLabel",    create ? "loginCreateAccount"  : "btnSignIn");
+    set("lmToggleText",     create ? "loginHaveAccount"    : "loginNoAccount");
+    set("btnToggleAuthMode",create ? "btnSignIn"           : "loginCreateAccount");
     $("addModalResult").innerHTML = "";
+  }
+
+  function openAddAccountModal() {
+    $("stgEmail").value = "";
+    $("stgPassword").value = "";
+    $("stgConfirmPassword").value = "";
+    $("stgPassword").classList.remove("revealed");
+    $("stgConfirmPassword").classList.remove("revealed");
+    $("btnToggleStgPassword").innerHTML = SVG_EYE_OFF;
+    $("btnToggleConfirmPassword").innerHTML = SVG_EYE_OFF;
+    $("addModalResult").innerHTML = "";
+    lmSetMode("signin");
+    // Sync language select to current app language
+    $("lmLangSelect").value = state.lang;
     $("addAccountModalOverlay").classList.add("open");
     setTimeout(() => $("stgEmail").focus(), 180);
   }
+
   function closeAddAccountModal() {
     $("addAccountModalOverlay").classList.remove("open");
   }
+
   $("addModalClose").addEventListener("click", closeAddAccountModal);
   $("addAccountModalOverlay").addEventListener("click", e => { if (e.target === $("addAccountModalOverlay")) closeAddAccountModal(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && $("addAccountModalOverlay").classList.contains("open")) closeAddAccountModal(); });
 
-  // eye toggle for password field
+  // Eye toggles for both password fields
   makeEyeToggle("btnToggleStgPassword", "stgPassword");
+  makeEyeToggle("btnToggleConfirmPassword", "stgConfirmPassword");
+
+  // Language switcher inside the login modal
+  $("lmLangSelect").addEventListener("change", () => {
+    const lang = $("lmLangSelect").value;
+    saveAccountLang(lang);
+    applyLang(lang);
+  });
+
+  // Mode toggle: sign-in ↔ create account
+  $("btnToggleAuthMode").addEventListener("click", () => {
+    lmSetMode(_lmMode === "signin" ? "create" : "signin");
+  });
+
+  // Forgot password
+  $("btnForgotPassword").addEventListener("click", async () => {
+    const email = $("stgEmail").value.trim();
+    if (!email) { $("stgEmail").focus(); return; }
+    $("addModalResult").innerHTML = "";
+    try {
+      await fbAuth().sendPasswordResetEmail(email);
+      toast($("addModalResult"), "ok", t("loginResetSent"));
+    } catch (err) {
+      toast($("addModalResult"), "bad", err.message || t("networkError"));
+    }
+  });
 
   // Google sign-in via popup (opens inside Electron, see main.js)
   $("btnGoogleSignIn").addEventListener("click", async () => {
@@ -530,30 +665,54 @@
     } finally { setLoading($("btnGoogleSignIn"), false); }
   });
 
-  // Email/password sign-in
+  // Email/password sign-in or create account
   $("btnStgSave").addEventListener("click", async () => {
-    const email = $("stgEmail").value.trim(), password = $("stgPassword").value;
+    const email    = $("stgEmail").value.trim();
+    const password = $("stgPassword").value;
     if (!email || !password) return;
     setLoading($("btnStgSave"), true);
     $("addModalResult").innerHTML = "";
     try {
-      await fbAuth().signInWithEmailAndPassword(email, password);
-      // onAuthStateChanged handles the rest
-      closeAddAccountModal();
+      // Apply "Stay signed in" persistence preference
+      const remember = $("stgRememberMe").checked;
+      await fbAuth().setPersistence(
+        remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION
+      );
+      if (_lmMode === "create") {
+        const confirm = $("stgConfirmPassword").value;
+        if (password !== confirm) {
+          toast($("addModalResult"), "bad", t("loginPasswordMismatch"));
+          setLoading($("btnStgSave"), false);
+          return;
+        }
+        if (password.length < 6) {
+          toast($("addModalResult"), "bad", t("loginPasswordTooShort"));
+          setLoading($("btnStgSave"), false);
+          return;
+        }
+        await fbAuth().createUserWithEmailAndPassword(email, password);
+        toast($("addModalResult"), "ok", t("loginAccountCreated"));
+        setTimeout(closeAddAccountModal, 1400);
+      } else {
+        await fbAuth().signInWithEmailAndPassword(email, password);
+        // onAuthStateChanged handles the rest
+        closeAddAccountModal();
+      }
     } catch (err) {
       const code = err.code || "";
       const msg = (code === "auth/wrong-password" || code === "auth/user-not-found" || code === "auth/invalid-credential")
         ? t("addAccountAuthError")
-        : (err.message || t("networkError"));
+        : code === "auth/email-already-in-use"
+          ? t("loginEmailInUse")
+          : (err.message || t("networkError"));
       toast($("addModalResult"), "bad", msg);
     }
     setLoading($("btnStgSave"), false);
   });
 
-  // Allow Enter key in password field to submit
-  $("stgPassword").addEventListener("keydown", e => {
-    if (e.key === "Enter") $("btnStgSave").click();
-  });
+  // Allow Enter key in either password field to submit
+  $("stgPassword").addEventListener("keydown", e => { if (e.key === "Enter") $("btnStgSave").click(); });
+  $("stgConfirmPassword").addEventListener("keydown", e => { if (e.key === "Enter") $("btnStgSave").click(); });
 
   /* ── sidebar collapse toggle ── */
   (function() {
@@ -606,17 +765,35 @@
     _unsubInventory = fbDb()
       .collection("users").doc(uid)
       .collection("inventory")
-      .onSnapshot(snapshot => {
+      .onSnapshot({ includeMetadataChanges: true }, snapshot => {
+        // Native connection detection — no ping needed
+        if (snapshot.metadata.fromCache) {
+          setHealthOffline();
+        } else {
+          setHealthLive();
+        }
+
+        // Skip data re-processing on metadata-only updates
+        if (snapshot.docChanges().length === 0 && !snapshot.metadata.hasPendingWrites) return;
+
+        state.invLoading = false;
         const raw = {};
         snapshot.forEach(doc => { raw[doc.id] = doc.data(); });
         state.inventory = raw;
         state.rows = snapshot.docs.map(doc => normalizeRow(doc.id, doc.data()));
         saveInventory(raw);
-        preCacheImages(state.rows).then(() => { sortRows(); renderStats(); renderInventory(); });
-        // clear any loading state
+        preCacheImages(state.rows).then(() => {
+          sortRows(); renderStats(); renderInventory();
+          // Refresh open detail panel with latest data
+          if (state.selected && $("detailPanel").classList.contains("open")) {
+            openDetail(state.selected);
+          }
+        });
         setLoading($("btnSbReload"), false);
       }, err => {
         console.error("[Firestore] onSnapshot error:", err.code, err.message);
+        state.invLoading = false;
+        setHealthOffline();
         setLoading($("btnSbReload"), false);
       });
   }
@@ -628,26 +805,37 @@
   function initAuth() {
     fbAuth().onAuthStateChanged(async (user) => {
       if (user) {
-        const uid    = user.uid;
-        const email  = user.email  || "";
-        const dispName = user.displayName || "";
-        const photo  = user.photoURL || null;
+        const uid      = user.uid;
+        const email    = user.email        || "";
+        const authName = user.displayName  || "";   // Google real name — stored for admin, never shown
+        const photo    = user.photoURL     || null;
 
-        // Upsert account in localStorage
+        // Upsert account in localStorage — never store the Google real name as the UI name
         const accounts = getAccounts();
         let acc = accounts.find(a => a.id === uid);
         if (!acc) {
-          acc = { id: uid, email, displayName: dispName, photoURL: photo };
+          // New account: no pseudo yet — syncUserDoc will fill it in if one exists in Firestore
+          acc = { id: uid, email, displayName: "", photoURL: photo, lang: state.lang };
           accounts.push(acc);
           saveAccounts(accounts);
         } else {
-          // Refresh display info from Firebase
+          // Only update photo — displayName (pseudo) is managed via Firestore syncUserDoc
           let changed = false;
-          if (dispName && acc.displayName !== dispName) { acc.displayName = dispName; changed = true; }
           if (photo && acc.photoURL !== photo) { acc.photoURL = photo; changed = true; }
           if (changed) saveAccounts(accounts);
         }
         setActiveId(uid);
+
+        // Save real name + email to Firestore users/{uid} for admin reference (non-blocking, silent)
+        if (authName || email) {
+          const parts     = authName.trim().split(/\s+/);
+          const firstName = parts[0] || "";
+          const lastName  = parts.slice(1).join(" ") || "";
+          fbDb().collection("users").doc(uid).set(
+            { googleName: authName, firstName, lastName, email },
+            { merge: true }
+          ).catch(() => {});
+        }
 
         // Restore this account's language preference
         if (acc.lang && state.i18n[acc.lang]) {
@@ -656,8 +844,8 @@
           applyTranslations();
         }
 
-        // Show connected state immediately
-        setConnected(acc.displayName || dispName || email, email);
+        // Show connected state — use pseudo if known, fall back to email (never the Google real name)
+        setConnected(acc.displayName || email, email);
 
         // Display cached inventory while Firestore connects
         try {
@@ -672,15 +860,21 @@
 
         // Subscribe to live Firestore data
         subscribeInventory(uid);
+        // Sync language preference from Firestore (non-blocking, cross-device)
+        syncLangFromFirestore(uid);
+        // Sync admin status + debug mode from user doc
+        syncUserDoc(uid);
 
       } else {
         // Signed out
         unsubscribeInventory();
         state.inventory = null; state.rows = [];
+        state.isAdmin = false; state.debugEnabled = false;
+        applyDebugMode();
         renderStats(); renderInventory();
         setDisconnected();
-        // Show login modal if no accounts stored
-        if (!getAccounts().length) setTimeout(() => openAddAccountModal(), 300);
+        // Always show login modal when signed out
+        setTimeout(() => openAddAccountModal(), 300);
       }
     });
   }
@@ -697,8 +891,8 @@
     const accounts = getAccounts();
     const activeId = state.activeAccountId;
     const sorted = [...accounts].sort((a, b) => (b.id === activeId ? 1 : 0) - (a.id === activeId ? 1 : 0));
-    const SVG_PLUS = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
-    const SVG_CHEVRON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    const SVG_PLUS = `<span class="icon icon-plus icon-11"></span>`;
+    const SVG_CHEVRON = `<span class="icon icon-chevron-r icon-14"></span>`;
 
     let html = "";
     if (!sorted.length) {
@@ -853,7 +1047,11 @@
     const rows = filteredRows();
     if (rows.length === 0) {
       $("invTableWrap").classList.add("hidden"); $("invGrid").classList.add("hidden");
-      $("invEmpty").textContent = state.rows.length === 0 ? t("noInventory") : t("noMatch");
+      if (state.invLoading) {
+        $("invEmpty").innerHTML = `<div class="inv-loading"><div class="inv-loading-spin"></div><span>${t("invLoading")}</span></div>`;
+      } else {
+        $("invEmpty").textContent = state.rows.length === 0 ? t("noInventory") : t("noMatch");
+      }
       $("invEmpty").classList.remove("hidden"); return;
     }
     $("invEmpty").classList.add("hidden");
@@ -944,7 +1142,7 @@
     return state.imgCache.has(url) ? state.imgCache.get(url) : url;
   }
 
-  const SVG_TWIN_SMALL = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+  const SVG_TWIN_SMALL = `<span class="icon icon-link icon-9"></span>`;
   function twinOverlayBadge(r) {
     return r.hasTwinPair ? `<span class="thumb-twin-badge" title="${t('twinBadge')} — ${t('twinTitle')}">${SVG_TWIN_SMALL}</span>` : "";
   }
@@ -1088,48 +1286,149 @@
     }
 
     $("detailPanel").classList.add("open"); $("panelOverlay").classList.add("open");
-    // slider ↔ display ↔ manual input
-    const slider    = $("weightSlider");
-    const fill      = $("wbFill");
-    const display   = $("sliderDisplay");
-    const manualIn  = $("panelWeightInput");
-    const manualRow = $("manualRow");
-    const cap       = Number(slider.max);
+    // slider ↔ display ↔ inline edit
+    const slider  = $("weightSlider");
+    const fill    = $("wbFill");
+    const display = $("sliderDisplay");
+    const cap     = Number(slider.max);
 
     function syncFromValue(val) {
       const w = Math.max(0, Math.min(val, cap));
       slider.value = w;
       fill.style.width = cap ? Math.round(w / cap * 100) + "%" : "0%";
       display.innerHTML = `${w}<span>g</span>`;
+      // Keep inline input in sync if open
+      const inp = $("wbInlineInput");
+      if (inp && !$("wbInlineEdit").classList.contains("hidden")) inp.value = w;
+    }
+
+    // Cancel any pending auto-save from a previous panel open
+    clearTimeout(_sliderDebounce); _sliderDebounce = null;
+
+    function cancelSliderDebounce() {
+      clearTimeout(_sliderDebounce); _sliderDebounce = null;
+      fill.classList.remove("wb-saving");
+    }
+
+    function openInlineEdit() {
+      cancelSliderDebounce();
+      $("sliderDisplay").classList.add("hidden");
+      $("wbEditOpen").classList.add("hidden");
+      $("wbInlineEdit").classList.remove("hidden");
+      $("wbInlineInput").value = slider.value;
+      $("wbInlineInput").focus();
+      $("wbInlineInput").select();
+    }
+    function closeInlineEdit() {
+      $("sliderDisplay").classList.remove("hidden");
+      $("wbEditOpen").classList.remove("hidden");
+      $("wbInlineEdit").classList.add("hidden");
+    }
+    function confirmInlineEdit() {
+      const val = $("wbInlineInput").value;
+      closeInlineEdit();
+      syncFromValue(Number(val) || 0);
+      doWeightUpdate(r, "direct", val);
     }
 
     slider.addEventListener("input", () => {
       syncFromValue(Number(slider.value));
-      if (!manualRow.classList.contains("hidden")) manualIn.value = slider.value;
+      // Debounced auto-save: wait 500 ms of inactivity, then write to Firestore
+      clearTimeout(_sliderDebounce);
+      fill.classList.add("wb-saving");
+      _sliderDebounce = setTimeout(() => {
+        fill.classList.remove("wb-saving");
+        _sliderDebounce = null;
+        doWeightUpdate(r, "direct", slider.value);
+      }, 500);
     });
 
-    manualIn && manualIn.addEventListener("input", () => {
-      syncFromValue(Number(manualIn.value) || 0);
+    $("wbEditOpen").addEventListener("click", openInlineEdit);
+    $("wbInlineConfirm").addEventListener("click", confirmInlineEdit);
+    $("wbInlineCancel").addEventListener("click", closeInlineEdit);
+    $("wbInlineInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); confirmInlineEdit(); }
+      if (e.key === "Escape") closeInlineEdit();
     });
 
-    $("btnManualEdit").addEventListener("click", () => {
-      const nowHidden = manualRow.classList.toggle("hidden");
-      $("btnManualEdit").textContent = nowHidden ? t("btnEditManually") : t("btnCloseManual");
-      if (!nowHidden) { manualIn.value = slider.value; manualIn.focus(); manualIn.select(); }
-    });
-
-    $("panelWeightBtn").addEventListener("click", () =>
-      doWeightUpdate(r, "direct", slider.value)
-    );
-    $("panelWeightRawBtn") && $("panelWeightRawBtn").addEventListener("click", () =>
-      doWeightUpdate(r, "raw", $("panelWeightRaw").value)
-    );
+    if ($("btnChangeContainerCard")) {
+      $("btnChangeContainerCard").addEventListener("click", () => openContainerPicker(r));
+      // JS hover fallback — ensures the edit icon appears reliably on hover
+      const ccSec = document.querySelector(".cc-section");
+      const ccBtn = $("btnChangeContainerCard");
+      if (ccSec && ccBtn) {
+        ccSec.addEventListener("mouseenter", () => ccBtn.classList.add("cc-visible"));
+        ccSec.addEventListener("mouseleave", () => ccBtn.classList.remove("cc-visible"));
+      }
+    }
   }
   function closeDetail() {
-    // stop any playing video
+    // Cancel any pending auto-save (don't fire on close)
+    clearTimeout(_sliderDebounce); _sliderDebounce = null;
+    // Stop any playing video
     const vp = $("panelVideoPlayer"); if (vp) vp.innerHTML = "";
     $("detailPanel").classList.remove("open"); $("panelOverlay").classList.remove("open");
   }
+
+  /* ── container picker ── */
+  let _cpRow = null; // spool row currently being edited in the picker
+
+  function openContainerPicker(r) {
+    _cpRow = r;
+    _renderCpList("");
+    $("containerPickerSearch").value = "";
+    $("containerPickerOverlay").classList.add("open");
+    setTimeout(() => $("containerPickerSearch").focus(), 120);
+  }
+  function closeContainerPicker() {
+    $("containerPickerOverlay").classList.remove("open");
+    _cpRow = null;
+  }
+  function _renderCpList(query) {
+    const q = query.trim().toLowerCase();
+    const containers = (state.db.containers || []).filter(c =>
+      !q ||
+      c.brand.toLowerCase().includes(q) ||
+      c.label.toLowerCase().includes(q) ||
+      c.type.toLowerCase().includes(q) ||
+      String(c.container_weight).includes(q)
+    );
+    // Group by brand
+    const byBrand = {};
+    containers.forEach(c => { (byBrand[c.brand] = byBrand[c.brand] || []).push(c); });
+    const currentId = _cpRow?.containerId;
+    const html = Object.entries(byBrand).map(([brand, items]) => `
+      <div class="cp-group-label">${esc(brand)}</div>
+      ${items.map(c => `
+        <button class="cp-item${c.id === currentId ? " active" : ""}" data-cid="${esc(c.id)}">
+          <img src="${esc(c.img)}" alt="${esc(c.label)}" onerror="this.style.display='none'" />
+          <div class="cp-item-info">
+            <div class="cp-item-name">${esc(c.label)}</div>
+            <div class="cp-item-meta">${esc(c.type)}</div>
+          </div>
+          <span class="cp-item-cw">${c.container_weight} g</span>
+          ${c.id === currentId ? '<span class="cp-check">✓</span>' : ""}
+        </button>
+      `).join("")}
+    `).join("");
+    $("containerPickerList").innerHTML = html || `<div class="cp-empty">—</div>`;
+  }
+  async function doContainerUpdate(r, newContainerId) {
+    const uid = state.activeAccountId; if (!uid) return;
+    const c = containerFind(newContainerId); if (!c) return;
+    try {
+      await fbDb().collection("users").doc(uid).collection("inventory").doc(r.spoolId).update({
+        container_id:     newContainerId,
+        container_weight: c.container_weight,
+        last_update:      Date.now()
+      });
+      closeContainerPicker();
+      // onSnapshot propagates change; detail panel refreshes automatically
+    } catch (e) {
+      console.error("[Container] update error:", e);
+    }
+  }
+
   function parseVideoUrl(url) {
     if (!url) return null;
     const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/);
@@ -1139,7 +1438,16 @@
   }
   $("panelClose").addEventListener("click", closeDetail);
   $("panelOverlay").addEventListener("click", closeDetail);
-  document.addEventListener("keydown", e => { if (e.key==="Escape") closeDetail(); });
+  document.addEventListener("keydown", e => { if (e.key==="Escape") { closeDetail(); closeContainerPicker(); } });
+
+  // container picker events
+  $("containerPickerClose").addEventListener("click", closeContainerPicker);
+  $("containerPickerOverlay").addEventListener("click", e => { if (e.target === $("containerPickerOverlay")) closeContainerPicker(); });
+  $("containerPickerSearch").addEventListener("input", e => _renderCpList(e.target.value));
+  $("containerPickerList").addEventListener("click", e => {
+    const btn = e.target.closest(".cp-item[data-cid]");
+    if (btn && _cpRow) doContainerUpdate(_cpRow, btn.dataset.cid);
+  });
 
   function buildPanelHTML(r) {
     const mat = r.materialData;
@@ -1149,7 +1457,7 @@
       ? '<span class="tag-plus panel-img-badge panel-img-badge--tl">TigerTag+</span>'
       : '<span class="tag-diy panel-img-badge panel-img-badge--tl">TigerTag</span>';
     const badgeTwin = r.hasTwinPair
-      ? `<span class="tag-twin panel-img-badge panel-img-badge--tr"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${t("twinBadge")}</span>`
+      ? `<span class="tag-twin panel-img-badge panel-img-badge--tr"><span class="icon icon-link icon-9"></span>${t("twinBadge")}</span>`
       : "";
     const overlays = badgeLeft + badgeTwin;
     let imgSection = "";
@@ -1208,7 +1516,7 @@
       <div class="panel-video-section">
         <button class="panel-yt-thumb" id="panelVideoBtn" data-url="${esc(r.links.youtube)}">
           <img src="${thumb}" alt="YouTube" loading="lazy" onerror="this.style.display='none'" />
-          <div class="pvt-play"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" style="margin-left:3px"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pvt-play"><span class="icon icon-play icon-22" style="background-color:#fff;margin-left:3px"></span></div>
         </button>
       </div>`;
       } else if (videoInfo.type === "direct") {
@@ -1224,7 +1532,7 @@
     }
 
     // doc links (MSDS, TDS, RoHS, REACH, food — video handled separately above)
-    const SVG_PDF = `<svg width="11" height="13" viewBox="0 0 11 13" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M2 1h5l3 3v8H2V1z"/><path d="M7 1v3h3" stroke-width="1"/><path d="M3.5 7h4M3.5 9h2.5" stroke-width="1.1"/></svg>`;
+    const SVG_PDF = `<span class="icon icon-pdf icon-13" style="width:11px"></span>`;
     const linkDefs = [
       { key: "msds",  label: "MSDS" },
       { key: "tds",   label: "TDS" },
@@ -1248,8 +1556,21 @@
         <div class="panel-label">${t("sectionWeight")}</div>
         <div class="weight-bar-wrap">
           <div class="wb-labels">
-            <div class="wb-val" id="sliderDisplay">${curW}<span>g</span></div>
-            <div class="wb-cap">${t("weightTotal", {cap})}</div>
+            <div class="wb-val-group">
+              <div class="wb-val" id="sliderDisplay">${curW}<span>g</span></div>
+              <button id="wbEditOpen" class="wb-edit-open" title="${t("btnEditManually")}">
+                <span class="icon icon-edit icon-13"></span>
+              </button>
+              <div class="wb-inline-edit hidden" id="wbInlineEdit">
+                <input type="number" id="wbInlineInput" min="0" max="${cap}" step="1" value="${curW}" />
+                <span class="wb-inline-unit">g</span>
+                <button id="wbInlineConfirm" class="wb-inline-ok" title="Confirm">
+                  <span class="icon icon-check icon-13"></span>
+                </button>
+                <button id="wbInlineCancel" class="wb-inline-cancel" title="Cancel">✕</button>
+              </div>
+            </div>
+            <div class="wb-cap">${cap >= 1000 ? (cap/1000).toFixed(cap % 1000 === 0 ? 0 : 1) + ' kg' : cap + ' g'} total</div>
           </div>
           <div class="wb-track">
             <div class="wb-fill" id="wbFill" style="width:${Math.round(curW/cap*100)}%"></div>
@@ -1259,28 +1580,6 @@
             <span>0 g</span><span>${cap} g</span>
           </div>
         </div>
-
-        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button id="panelWeightBtn" class="primary sm"><span class="spinner"></span><span class="label">${t("btnUpdate")}</span></button>
-          <button id="btnManualEdit" class="ghost sm">${t("btnEditManually")}</button>
-          <span style="font-size:11px;color:var(--muted)">${t("weightContainer", {cw: v(r.containerWeight)})}</span>
-        </div>
-
-        <div class="weight-manual-row hidden" id="manualRow">
-          <input type="number" id="panelWeightInput" min="0" max="${cap}" step="1" placeholder="exact g" />
-          <span style="font-size:12px;color:var(--muted)">g net</span>
-        </div>
-
-        <details style="margin-top:10px">
-          <summary style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none">${t("rawScaleLabel")}</summary>
-          <div style="margin-top:8px">
-            <div class="weight-mode-hint">${t("rawScaleHint")}</div>
-            <div class="weight-form">
-              <input type="number" id="panelWeightRaw" min="0" step="1" placeholder="e.g. ${r.containerWeight ? curW + Number(r.containerWeight) : 800} g" />
-              <button id="panelWeightRawBtn" class="primary sm"><span class="spinner"></span><span class="label">${t("btnUpdate")}</span></button>
-            </div>
-          </div>
-        </details>
 
         <div id="panelWeightResult"></div>
       </div>`;
@@ -1312,16 +1611,18 @@
         </div>
       </div>`;
 
-    // container card (no title)
+    // container card — flat layout (no border box)
     const container = r.containerId ? containerFind(r.containerId) : null;
     const containerHtml = container ? `
-      <div class="panel-section">
-        <div class="container-card">
+      <div class="panel-section cc-section">
+        <div class="cc-head">${esc(container.brand)} · ${esc(container.label)}</div>
+        <div class="cc-body">
           <img src="${esc(container.img)}" alt="${esc(container.brand)}" onerror="this.style.display='none'" />
-          <div class="container-card-info">
-            <div class="container-card-line1">${esc(container.brand)} · ${esc(container.label)}</div>
-            <div class="container-card-line2">${esc(container.type)} · ${container.container_weight} g</div>
+          <div class="cc-meta">
+            <div class="cc-type">${esc(container.type)}</div>
+            <div class="cc-cw">${container.container_weight} g</div>
           </div>
+          <button id="btnChangeContainerCard" class="cc-edit" title="${t("btnChangeContainer")}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         </div>
       </div>` : "";
 
@@ -1383,7 +1684,7 @@
     const uid = state.activeAccountId; if (!uid) return;
     if (w === "" || isNaN(Number(w))) { toast($("panelWeightResult"), "bad", t("enterNumeric")); return; }
 
-    const btn = mode === "raw" ? $("panelWeightRawBtn") : $("panelWeightBtn");
+    const btn = $("panelWeightBtn");
     setLoading(btn, true);
     try {
       const rawW = Number(w);
@@ -1429,27 +1730,256 @@
     finally { setLoading(btn, false); }
   }
 
+  /* ── resizable panels ── */
+  function makePanelResizable(panelEl, handleEl, storageKey) {
+    const MIN_W = 280;
+    const MAX_W = () => Math.round(window.innerWidth * 0.85);
+
+    // Restore saved width
+    const saved = parseInt(localStorage.getItem(storageKey), 10);
+    if (saved && saved >= MIN_W) panelEl.style.width = saved + "px";
+
+    let startX, startW;
+
+    function onMove(e) {
+      const dx = startX - (e.clientX ?? e.touches?.[0]?.clientX ?? startX);
+      const w  = Math.max(MIN_W, Math.min(MAX_W(), startW + dx));
+      panelEl.style.width = w + "px";
+    }
+    function onUp() {
+      handleEl.classList.remove("dragging");
+      panelEl.classList.remove("resizing");
+      document.body.style.cursor  = "";
+      document.body.style.userSelect = "";
+      const w = parseInt(panelEl.style.width, 10);
+      if (w) localStorage.setItem(storageKey, w);
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup",   onUp);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend",  onUp);
+    }
+
+    handleEl.addEventListener("mousedown", e => {
+      e.preventDefault();
+      startX = e.clientX;
+      startW = panelEl.offsetWidth;
+      handleEl.classList.add("dragging");
+      panelEl.classList.add("resizing");
+      document.body.style.cursor     = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup",   onUp);
+    });
+    // touch support
+    handleEl.addEventListener("touchstart", e => {
+      startX = e.touches[0].clientX;
+      startW = panelEl.offsetWidth;
+      handleEl.classList.add("dragging");
+      panelEl.classList.add("resizing");
+      document.addEventListener("touchmove", onMove, { passive: true });
+      document.addEventListener("touchend",  onUp);
+    }, { passive: true });
+  }
+
+  makePanelResizable($("detailPanel"), $("detailResize"), "tigertag.panelWidth.detail");
+  makePanelResizable($("debugPanel"),  $("debugResize"),  "tigertag.panelWidth.debug");
+
   /* ── debug panel ── */
-  function openDebug()  { $("debugPanel").classList.add("open");  $("debugOverlay").classList.add("open"); }
+  function openDebug() {
+    $("debugPanel").classList.add("open");
+    $("debugOverlay").classList.add("open");
+    fsExplRefresh();
+  }
   function closeDebug() { $("debugPanel").classList.remove("open"); $("debugOverlay").classList.remove("open"); }
   $("btnDebug").addEventListener("click", openDebug);
   $("debugPanelClose").addEventListener("click", closeDebug);
   $("debugOverlay").addEventListener("click", closeDebug);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDebug(); });
 
+  // debug tab switching
+  document.querySelectorAll(".dbg-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".dbg-tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      $("dbgPaneApi").classList.toggle("hidden", tab !== "api");
+      $("dbgPaneFs").classList.toggle("hidden",  tab !== "fs");
+      if (tab === "fs") fsExplRefresh();
+    });
+  });
+
+  /* ── Firestore explorer ── */
+  let _fseLastResult = null;
+
+  // Known paths — {uid} replaced at runtime
+  const FSE_QUICK = [
+    { label: "user doc",   path: "users/{uid}" },
+    { label: "prefs",      path: "users/{uid}/prefs/app" },
+    { label: "inventory",  path: "users/{uid}/inventory",  col: true },
+    { label: "printers",   path: "users/{uid}/printers",   col: true },
+    { label: "tags",       path: "users/{uid}/tags",       col: true },
+  ];
+
+  function fseInit() {
+    const uid = state.activeAccountId || "{uid}";
+    // build quick-access chips
+    $("fseChips").innerHTML = FSE_QUICK.map(q => {
+      const p = q.path.replace("{uid}", uid);
+      return `<button class="fse-chip" data-path="${esc(p)}">${esc(q.label)}</button>`;
+    }).join("");
+    // set default path to user doc
+    $("fsePath").value = `users/${uid}`;
+  }
+
+  async function fseFetch() {
+    const uid = state.activeAccountId;
+    if (!uid) { fseSetResult(null, "Not signed in"); return; }
+    const raw = $("fsePath").value.trim().replace("{uid}", uid);
+    if (!raw) return;
+    const parts = raw.split("/").filter(Boolean);
+    fseSetResult(null, "Fetching…");
+    try {
+      let ref;
+      if (parts.length % 2 === 0) {
+        // even segments → document
+        ref = fbDb().doc(raw);
+        const snap = await ref.get();
+        if (!snap.exists) { fseSetResult(null, `Document not found: ${raw}`); return; }
+        _fseLastResult = { _path: raw, ...snap.data() };
+        fseSetResult(_fseLastResult, `doc · ${raw}`);
+      } else {
+        // odd segments → collection
+        ref = fbDb().collection(raw);
+        const snap = await ref.limit(20).get();
+        if (snap.empty) { fseSetResult(null, `Collection empty or not found: ${raw}`); return; }
+        const result = {};
+        snap.forEach(doc => { result[doc.id] = doc.data(); });
+        _fseLastResult = result;
+        fseSetResult(result, `collection · ${raw} (${snap.size} docs${snap.size === 20 ? ", limited to 20" : ""})`);
+      }
+    } catch (e) {
+      fseSetResult(null, `Error: ${e.message}`);
+    }
+  }
+
+  function fseSetResult(data, label) {
+    $("fseLabel").textContent = label || "";
+    $("fsExplPre").innerHTML = data != null
+      ? highlight(data)
+      : `<span style="color:var(--muted)">${esc(label || "—")}</span>`;
+  }
+
+  function fsExplRefresh() { fseInit(); }
+
+  $("fseChips").addEventListener("click", e => {
+    const chip = e.target.closest(".fse-chip[data-path]");
+    if (!chip) return;
+    $("fsePath").value = chip.dataset.path;
+    fseFetch();
+  });
+  $("fseFetch").addEventListener("click", fseFetch);
+  $("fsePath").addEventListener("keydown", e => { if (e.key === "Enter") fseFetch(); });
+  $("fseCopy").addEventListener("click", () => {
+    if (!_fseLastResult) return;
+    navigator.clipboard.writeText(JSON.stringify(_fseLastResult, null, 2)).then(() => {
+      const btn = $("fseCopy");
+      const orig = btn.textContent;
+      btn.textContent = "✓";
+      setTimeout(() => btn.textContent = orig, 1800);
+    });
+  });
+
   /* ── community buttons ── */
   $("sbGithubBtn").addEventListener("click", () => window.open("https://github.com/TigerTag-Project/TigerTag_Studio_Manager/"));
   $("sbMakerWorldBtn").addEventListener("click", () => window.open("https://makerworld.com/fr/@TigerTag/upload"));
   $("sbDiscordBtn").addEventListener("click", () => window.open("https://discord.gg/3Qv5TSqnJH"));
+
+  // Sign-in placeholder buttons
+  $("btnSignInPlaceholder").addEventListener("click", openAddAccountModal);
+  $("btnSignInPlaceholderGh").addEventListener("click", () => window.open("https://github.com/TigerTag-Project/TigerTag_Studio_Manager/"));
+  $("btnSignInPlaceholderDiscord").addEventListener("click", () => window.open("https://discord.gg/3Qv5TSqnJH"));
   $("sbQrWrap").addEventListener("click", () => window.open("https://taap.it/DF1Aqt"));
 
   /* ── language select ── */
   function saveAccountLang(lang) {
-    // persist on the active account object so switching accounts restores its language
+    // 1. Local account object (localStorage)
     const accounts = getAccounts();
     const acc = accounts.find(a => a.id === getActiveId());
     if (acc) { acc.lang = lang; saveAccounts(accounts); }
-    localStorage.setItem("tigertag.lang", lang); // global fallback
+    localStorage.setItem("tigertag.lang", lang);
+    // 2. Firestore — users/{uid}/prefs/app { lang }  (synced to mobile app too)
+    const user = fbAuth().currentUser;
+    if (user) {
+      fbDb().collection("users").doc(user.uid)
+        .collection("prefs").doc("app")
+        .set({ lang }, { merge: true })
+        .catch(err => console.warn("[Firestore] saveAccountLang:", err.message));
+    }
+  }
+
+  // Read language preference from Firestore and apply if different from local
+  function applyDebugMode() {
+    $("btnDebug").classList.toggle("hidden", !state.debugEnabled);
+    if (!state.debugEnabled) closeDebug();
+  }
+
+  async function syncUserDoc(uid) {
+    try {
+      const snap = await fbDb().collection("users").doc(uid).get();
+      if (!snap.exists) return;
+      const data = snap.data();
+
+      // Admin + debug
+      state.isAdmin      = data.roles === "admin";
+      state.debugEnabled = state.isAdmin && !!data.Debug;
+      applyDebugMode();
+
+      // Firestore displayName is the canonical name — takes priority over Google Auth name
+      if (data.displayName) {
+        const accounts = getAccounts();
+        const acc = accounts.find(a => a.id === uid);
+        if (acc && acc.displayName !== data.displayName) {
+          acc.displayName = data.displayName;
+          saveAccounts(accounts);
+        }
+        // Apply to sidebar immediately
+        state.displayName        = data.displayName;
+        $("sbName").textContent  = data.displayName;
+        $("sbAvatar").textContent = getInitials({ displayName: data.displayName, email: acc?.email || "" });
+        applyAvatarStyle(acc);
+        renderAccountDropdown();
+      }
+
+      // Reflect in open edit-account modal if already open
+      if ($("editAccountModalOverlay").classList.contains("open")) {
+        $("eacAdminBadge").classList.toggle("hidden", !state.isAdmin);
+        $("eacDebugRow").classList.toggle("hidden",   !state.isAdmin);
+        $("eacDebugToggle").checked = state.debugEnabled;
+        $("eacName").textContent = data.displayName || "";
+        $("eacDisplayNameInput").value = data.displayName || "";
+      }
+    } catch (err) {
+      console.warn("[Firestore] syncUserDoc:", err.message);
+    }
+  }
+
+  async function syncLangFromFirestore(uid) {
+    try {
+      const doc = await fbDb().collection("users").doc(uid)
+        .collection("prefs").doc("app").get();
+      if (!doc.exists) return;
+      const cloudLang = doc.data().lang;
+      if (!cloudLang || !state.i18n[cloudLang] || cloudLang === state.lang) return;
+      // Remote has a different (more recent) language — apply it
+      state.lang = cloudLang;
+      localStorage.setItem("tigertag.lang", cloudLang);
+      const accounts = getAccounts();
+      const acc = accounts.find(a => a.id === uid);
+      if (acc) { acc.lang = cloudLang; saveAccounts(accounts); }
+      applyLang(cloudLang);
+    } catch (err) {
+      console.warn("[Firestore] syncLang:", err.message);
+    }
   }
   function applyLang(lang) {
     if (!lang || !state.i18n[lang]) return;
@@ -1463,7 +1993,6 @@
     const lang = $("langSelect").value;
     saveAccountLang(lang);
     applyLang(lang);
-    pingHealth();
   });
 
   /* ── init ── */

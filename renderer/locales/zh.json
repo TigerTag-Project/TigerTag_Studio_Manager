@@ -167,5 +167,24 @@
   "agoYear": {
     "one": "1 年前",
     "other": "{{n}} 年前"
-  }
+  },
+  "loginSignInTitle": "登录 TigerTag",
+  "loginSignInSubtitle": "管理您的耗材库存",
+  "loginCreateTitle": "创建您的账户",
+  "loginCreateSubtitle": "立即加入 TigerTag",
+  "loginForgotPassword": "忘记密码？",
+  "loginRememberMe": "保持登录状态",
+  "loginNoAccount": "没有账户？",
+  "loginCreateAccount": "创建账户",
+  "loginHaveAccount": "已有账户？",
+  "loginConfirmPasswordPlaceholder": "确认密码",
+  "loginResetSent": "请查看您的收件箱 — 重置链接已发送！",
+  "loginPasswordMismatch": "两次输入的密码不一致。",
+  "loginPasswordTooShort": "密码至少需要 6 个字符。",
+  "loginAccountCreated": "账户已创建！正在登录…",
+  "loginEmailInUse": "该邮箱已被注册。",
+  "invLoading": "正在加载库存…",
+  "containerPickerTitle": "选择容器",
+  "btnChangeContainer": "更换",
+  "displayNameLabel": "显示名称"
 }

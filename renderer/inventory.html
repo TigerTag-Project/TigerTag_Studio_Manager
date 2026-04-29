@@ -16,24 +16,24 @@
         <div class="sb-brand-dot">T</div>
         <span class="sb-brand-name">Studio Manager</span>
       </div>
-      <button id="btnSidebarToggle" class="sb-toggle" title="Toggle sidebar"><svg class="sb-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button id="btnSidebarToggle" class="sb-toggle" title="Toggle sidebar"><span class="icon icon-chevron-l icon-14 sb-chevron"></span></button>
     </div>
 
     <!-- user section — toujours visible, contenu change selon l'état -->
     <div class="sb-user sb-user--empty" id="sbUser">
       <div class="sb-avatar-wrap">
         <div class="sb-avatar" id="sbAvatar">
-          <svg class="sb-avatar-plus" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="icon icon-plus icon-22 sb-avatar-plus"></span>
         </div>
         <div class="acct-dropdown" id="acctDropdown">
           <div id="acctDropdownList"></div>
           <div class="acct-drop-sep"></div>
           <button class="acct-drop-action" id="btnManageProfiles">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="icon icon-user icon-13"></span>
             <span data-i18n="btnManageProfiles">Manage profiles</span>
           </button>
           <button class="acct-drop-action" id="btnDropdownSettings">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span class="icon icon-download icon-13"></span>
             <span data-i18n="settingsOpenBtn">Export</span>
           </button>
         </div>
@@ -43,7 +43,7 @@
       <div class="sb-noacct" id="sbNoacct">
         <div class="sb-noacct-label" data-i18n="noAccounts">No account</div>
         <button class="sb-noacct-btn" id="btnAddFirstAccount">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span class="icon icon-plus icon-11"></span>
           <span data-i18n="addAccountLabel">Add account</span>
         </button>
       </div>
@@ -52,8 +52,8 @@
       <div class="sb-sub-welcome" id="sbWelcome" data-i18n="welcomeBack">👋 Welcome back,</div>
       <div class="sb-name" id="sbName">—</div>
       <div class="sb-actions">
-        <button id="btnSbReload" class="primary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg><span class="label" data-i18n="btnRefresh">Refresh</span></button>
-        <button id="btnOpenSettings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span class="label" data-i18n="settingsOpenBtn">Export</span></button>
+        <button id="btnSbReload" class="primary"><span class="icon icon-refresh icon-13"></span><span class="label" data-i18n="btnRefresh">Refresh</span></button>
+        <button id="btnOpenSettings"><span class="icon icon-download icon-13"></span><span class="label" data-i18n="settingsOpenBtn">Export</span></button>
       </div>
     </div>
 
@@ -66,16 +66,15 @@
     <div class="sb-community">
       <div class="sb-community-label">Community</div>
       <button class="sb-github-btn" id="sbGithubBtn">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        <span class="icon icon-github icon-14" style="width:15px;height:15px"></span>
         <span data-i18n="githubBtn">View on GitHub</span>
       </button>
       <button class="sb-makerworld-btn" id="sbMakerWorldBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span class="icon icon-package icon-14"></span>
         <span data-i18n="makerWorldBtn">3D Files — MakerWorld</span>
       </button>
       <button class="sb-discord-btn" id="sbDiscordBtn">
-        <!-- Discord logo -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.03.054a19.9 19.9 0 0 0 5.993 3.03.077.077 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.108 13.108 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+        <span class="icon icon-discord icon-14" style="width:16px;height:16px"></span>
         <span data-i18n="discordBtn">Join us on Discord</span>
       </button>
       <div class="sb-qr-wrap" id="sbQrWrap">
@@ -95,12 +94,32 @@
       </div>
       <div style="display:flex;gap:12px;align-items:center">
         <div class="health" id="rfidStatus" style="display:none"><span class="pulse"></span><span id="rfidLabel">RFID: —</span></div>
-        <div class="health" id="health" data-tooltip="Backend: idle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+        <div class="health" id="health" data-tooltip="Backend: idle"><span class="icon icon-cloud icon-20"></span></div>
       </div>
     </header>
 
+    <!-- sign-in placeholder (visible when no account is active) -->
+    <div id="signInPlaceholder" class="signin-placeholder">
+      <div class="signin-ph-icon">T</div>
+      <div class="signin-ph-title">TigerTag Studio Manager</div>
+      <div class="signin-ph-sub" data-i18n="loginSignInSubtitle">Manage your filament inventory</div>
+      <button class="primary signin-ph-btn" id="btnSignInPlaceholder">
+        <span data-i18n="btnSignIn">Sign in</span>
+      </button>
+      <div class="signin-ph-links">
+        <button class="signin-ph-link" id="btnSignInPlaceholderGh">
+          <span class="icon icon-github icon-14"></span>
+          <span data-i18n="githubBtn">View on GitHub</span>
+        </button>
+        <button class="signin-ph-link" id="btnSignInPlaceholderDiscord">
+          <span class="icon icon-discord icon-14"></span>
+          <span data-i18n="discordBtn">Join us on Discord</span>
+        </button>
+      </div>
+    </div>
+
     <!-- inventory -->
-    <section class="card" id="card-inv">
+    <section class="card hidden" id="card-inv">
       <div class="row between" style="gap:10px">
         <input id="searchInv" type="text" placeholder="Search material, brand, color, UID…" data-i18n-placeholder="searchPlaceholder" style="flex:1;max-width:340px;margin:0" />
         <div class="view-toggle" style="flex-shrink:0">
@@ -173,19 +192,52 @@
 <!-- debug panel -->
 <div class="panel-overlay" id="debugOverlay"></div>
 <div class="detail-panel" id="debugPanel">
+  <div class="panel-resize" id="debugResize"></div>
   <div class="panel-header">
     <span class="panel-title" data-i18n="debugLabel">Debug</span>
     <button class="panel-close" id="debugPanelClose">✕</button>
   </div>
-  <div class="panel-body" style="padding:16px;display:flex;flex-direction:column;gap:10px">
-    <div class="debug-meta" id="debugMeta" data-i18n="debugNoReqs">No requests yet.</div>
-    <pre class="json" id="debugBody" style="flex:1;margin:0">{}</pre>
+  <div class="panel-body" style="padding:0;display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- tab bar -->
+    <div class="dbg-tabs">
+      <button class="dbg-tab active" data-tab="api">API</button>
+      <button class="dbg-tab" data-tab="fs">Firestore</button>
+    </div>
+
+    <!-- API tab -->
+    <div class="dbg-pane" id="dbgPaneApi" style="display:flex;flex-direction:column;gap:10px;padding:16px;flex:1;overflow:auto">
+      <div class="debug-meta" id="debugMeta" data-i18n="debugNoReqs">No requests yet.</div>
+      <pre class="json" id="debugBody" style="flex:1;margin:0">{}</pre>
+    </div>
+
+    <!-- Firestore explorer tab -->
+    <div class="dbg-pane hidden" id="dbgPaneFs" style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;flex:1;overflow:hidden">
+
+      <!-- quick-access chips -->
+      <div class="fse-chips" id="fseChips"></div>
+
+      <!-- path input + fetch -->
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <input id="fsePath" class="dbg-select" style="flex:1;font-family:var(--mono);font-size:11px" placeholder="users/{uid}/…" />
+        <button id="fseFetch" class="ghost sm">Fetch</button>
+        <button id="fseCopy" class="ghost sm">📋</button>
+      </div>
+
+      <!-- result label -->
+      <div id="fseLabel" style="font-size:11px;color:var(--muted);flex-shrink:0"></div>
+
+      <!-- result -->
+      <pre class="json" id="fsExplPre" style="flex:1;margin:0;overflow:auto">{}</pre>
+    </div>
+
   </div>
 </div>
 
 <!-- detail panel -->
 <div class="panel-overlay" id="panelOverlay"></div>
 <div class="detail-panel" id="detailPanel">
+  <div class="panel-resize" id="detailResize"></div>
   <div class="panel-header">
     <span class="panel-title" id="panelTitle">Spool details</span>
     <button class="panel-close" id="panelClose">✕</button>
@@ -214,7 +266,10 @@
       <div class="eac-ident">
         <div class="eac-avatar" id="eacAvatar">?</div>
         <div class="eac-ident-text">
-          <div class="eac-name" id="eacName"></div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <div class="eac-name" id="eacName"></div>
+            <span class="eac-admin-badge hidden" id="eacAdminBadge">Admin</span>
+          </div>
           <div class="eac-email" id="eacEmail"></div>
         </div>
       </div>
@@ -234,26 +289,49 @@
         <button class="eac-swatch" data-color="slate"   style="background:linear-gradient(135deg,#475569,#64748b)"  title="Slate"></button>
         <label class="eac-swatch eac-swatch-custom" id="eacSwatchCustom" title="Custom color">
           <input type="color" id="eacCustomColor" tabindex="-1" />
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+          <span class="icon icon-palette icon-13"></span>
         </label>
       </div>
     </div>
     <!-- body -->
     <div class="eac-body">
+      <!-- display name -->
+      <div class="eac-field-label" data-i18n="displayNameLabel">Display name</div>
+      <div class="eac-name-row">
+        <input class="eac-name-input" id="eacDisplayNameInput" type="text" maxlength="40" placeholder="—" autocomplete="off" />
+        <button class="ghost sm eac-name-save" id="btnSaveDisplayName">
+          <span class="icon icon-check icon-13"></span>
+        </button>
+      </div>
+      <div id="eacNameResult" style="min-height:16px;font-size:11px;margin-top:4px"></div>
+
       <!-- language (auto-saves) -->
-      <div class="eac-field-label" data-i18n="settingsLang">Language</div>
+      <div class="eac-field-label" data-i18n="settingsLang" style="margin-top:12px">Language</div>
       <select class="lang-select" id="langSelect">
         <option value="en">🇺🇸 English</option>
         <option value="fr">🇫🇷 Français</option>
         <option value="de">🇩🇪 Deutsch</option>
         <option value="es">🇪🇸 Español</option>
         <option value="it">🇮🇹 Italiano</option>
+        <option value="pt">🇧🇷 Português (BR)</option>
+        <option value="pt-pt">🇵🇹 Português (PT)</option>
         <option value="zh">🇨🇳 中文</option>
-        <option value="pt">🇧🇷 Português</option>
       </select>
+      <!-- debug toggle (admin only) -->
+      <div class="eac-debug-row hidden" id="eacDebugRow">
+        <span class="eac-debug-label">
+          <span class="icon icon-info icon-13"></span>
+          Debug mode
+        </span>
+        <label class="eac-toggle">
+          <input type="checkbox" id="eacDebugToggle" />
+          <span class="eac-toggle-track"><span class="eac-toggle-thumb"></span></span>
+        </label>
+      </div>
+
       <!-- sign out -->
       <button class="eac-disconnect" id="btnEditModalDisconnect" style="margin-top:18px">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="icon icon-signout icon-13"></span>
         <span data-i18n="btnDisconnect">Disconnect</span>
       </button>
     </div>
@@ -262,41 +340,97 @@
 
 <!-- ── login modal (Firebase auth) ── -->
 <div class="modal-overlay" id="addAccountModalOverlay">
-  <div class="modal-card login-card">
-    <div class="modal-header">
-      <span class="modal-title" data-i18n="addAccountLabel">Add account</span>
-      <button class="modal-close" id="addModalClose">✕</button>
+  <div class="modal-card lm-card">
+    <button class="modal-close lm-close" id="addModalClose">✕</button>
+
+    <!-- branded hero -->
+    <div class="lm-hero">
+      <div class="lm-hero-icon">T</div>
+      <div>
+        <div class="lm-title" id="lmTitle" data-i18n="loginSignInTitle">Sign in to TigerTag</div>
+        <div class="lm-subtitle" id="lmSubtitle" data-i18n="loginSignInSubtitle">Manage your filament inventory</div>
+      </div>
     </div>
 
+    <!-- language switcher -->
+    <select class="lm-lang-select" id="lmLangSelect">
+      <option value="en">🇺🇸 English</option>
+      <option value="fr">🇫🇷 Français</option>
+      <option value="de">🇩🇪 Deutsch</option>
+      <option value="es">🇪🇸 Español</option>
+      <option value="it">🇮🇹 Italiano</option>
+      <option value="pt">🇧🇷 Português (BR)</option>
+      <option value="pt-pt">🇵🇹 Português (PT)</option>
+      <option value="zh">🇨🇳 中文</option>
+    </select>
+
     <!-- Google sign-in -->
-    <button class="login-google-btn" id="btnGoogleSignIn">
-      <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
-        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-      </svg>
+    <button class="lm-google-btn" id="btnGoogleSignIn">
+      <img src="../assets/svg/icons/icon_google.svg" width="18" height="18" style="flex-shrink:0" alt="">
       <span data-i18n="loginGoogle">Continue with Google</span>
     </button>
 
-    <div class="login-or"><span data-i18n="loginOr">or</span></div>
+    <div class="lm-or"><span data-i18n="loginOr">or</span></div>
 
-    <!-- Email / password -->
-    <div class="sb-field-wrap" style="margin-top:0">
-      <div class="sb-field-row">
-        <input class="sb-field-input" id="stgEmail" type="email" autocomplete="email" placeholder="Email" data-i18n-placeholder="loginEmailPlaceholder" />
-      </div>
+    <!-- Email field (floating label) -->
+    <div class="lm-field">
+      <input class="lm-input" id="stgEmail" type="email" autocomplete="email" placeholder=" " />
+      <label class="lm-label" for="stgEmail" data-i18n="loginEmailPlaceholder">Email address</label>
     </div>
-    <div class="sb-field-wrap">
-      <div class="pass-wrap">
-        <input class="sb-field-input pass-input" id="stgPassword" type="password" autocomplete="current-password" placeholder="Password" data-i18n-placeholder="loginPasswordPlaceholder" />
-        <button class="pass-eye" id="btnToggleStgPassword" type="button" title="Show / hide"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></button>
-      </div>
+
+    <!-- Password field (floating label + eye toggle) -->
+    <div class="lm-field">
+      <input class="lm-input lm-pass-input" id="stgPassword" type="password" autocomplete="current-password" placeholder=" " />
+      <label class="lm-label" for="stgPassword" data-i18n="loginPasswordPlaceholder">Password</label>
+      <button class="lm-eye" id="btnToggleStgPassword" type="button" title="Show / hide"><span class="icon icon-eye-off icon-14"></span></button>
     </div>
-    <div id="addModalResult" style="margin-top:8px"></div>
-    <button class="primary" id="btnStgSave" style="width:100%;height:40px;margin-top:12px;border-radius:10px;font-size:14px;font-weight:600">
-      <span class="spinner"></span><span class="label" data-i18n="btnSignIn">Sign in</span>
+
+    <!-- Confirm password (create-account mode only) -->
+    <div class="lm-field hidden" id="lmConfirmWrap">
+      <input class="lm-input lm-pass-input" id="stgConfirmPassword" type="password" autocomplete="new-password" placeholder=" " />
+      <label class="lm-label" for="stgConfirmPassword" data-i18n="loginConfirmPasswordPlaceholder">Confirm password</label>
+      <button class="lm-eye" id="btnToggleConfirmPassword" type="button" title="Show / hide"><span class="icon icon-eye-off icon-14"></span></button>
+    </div>
+
+    <!-- Remember me + forgot password (sign-in mode only) -->
+    <div class="lm-row" id="lmSignInExtras">
+      <label class="lm-check-wrap">
+        <input type="checkbox" id="stgRememberMe" checked />
+        <span class="lm-check-box"></span>
+        <span data-i18n="loginRememberMe">Stay signed in</span>
+      </label>
+      <button class="lm-forgot-btn" id="btnForgotPassword" type="button" data-i18n="loginForgotPassword">Forgot password?</button>
+    </div>
+
+    <!-- Feedback -->
+    <div id="addModalResult"></div>
+
+    <!-- Submit -->
+    <button class="primary lm-submit-btn" id="btnStgSave">
+      <span class="spinner"></span>
+      <span class="label" id="lmSubmitLabel" data-i18n="btnSignIn">Sign in</span>
     </button>
+
+    <!-- Mode toggle: sign-in ↔ create account -->
+    <div class="lm-mode-toggle">
+      <span id="lmToggleText" data-i18n="loginNoAccount">Don't have an account?</span>
+      <button class="lm-mode-btn" id="btnToggleAuthMode" data-i18n="loginCreateAccount">Create account</button>
+    </div>
+  </div>
+</div>
+
+<!-- Container picker modal -->
+<div class="modal-overlay" id="containerPickerOverlay">
+  <div class="modal-card cp-card">
+    <div class="cp-header">
+      <span class="cp-title" data-i18n="containerPickerTitle">Choose a container</span>
+      <button class="modal-close cp-close" id="containerPickerClose">✕</button>
+    </div>
+    <div class="cp-search-wrap">
+      <span class="icon icon-search icon-14 cp-search-icon"></span>
+      <input id="containerPickerSearch" class="cp-search" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="Search…" />
+    </div>
+    <div id="containerPickerList" class="cp-list"></div>
   </div>
 </div>
 

@@ -167,5 +167,24 @@
   "agoYear": {
     "one": "vor 1 Jahr",
     "other": "vor {{n}} Jahren"
-  }
+  },
+  "loginSignInTitle": "Bei TigerTag anmelden",
+  "loginSignInSubtitle": "Filamentinventar verwalten",
+  "loginCreateTitle": "Konto erstellen",
+  "loginCreateSubtitle": "Werde Teil von TigerTag",
+  "loginForgotPassword": "Passwort vergessen?",
+  "loginRememberMe": "Angemeldet bleiben",
+  "loginNoAccount": "Noch kein Konto?",
+  "loginCreateAccount": "Konto erstellen",
+  "loginHaveAccount": "Bereits ein Konto?",
+  "loginConfirmPasswordPlaceholder": "Passwort bestätigen",
+  "loginResetSent": "E-Mail gesendet — prüfe deinen Posteingang!",
+  "loginPasswordMismatch": "Passwörter stimmen nicht überein.",
+  "loginPasswordTooShort": "Das Passwort muss mindestens 6 Zeichen haben.",
+  "loginAccountCreated": "Konto erstellt! Anmeldung läuft…",
+  "loginEmailInUse": "Diese E-Mail-Adresse ist bereits registriert.",
+  "invLoading": "Inventar wird geladen…",
+  "containerPickerTitle": "Behälter auswählen",
+  "btnChangeContainer": "Ändern",
+  "displayNameLabel": "Anzeigename"
 }
