@@ -183,5 +183,6 @@
   "invLoading": "Loading inventory…",
   "containerPickerTitle": "Choose a container",
   "btnChangeContainer": "Change",
+  "cwEditWeight": "Edit container weight",
   "displayNameLabel": "Display name"
 }

@@ -186,5 +186,6 @@
   "invLoading": "Chargement de l'inventaire…",
   "containerPickerTitle": "Choisir un conteneur",
   "btnChangeContainer": "Changer",
+  "cwEditWeight": "Modifier le poids du récipient",
   "displayNameLabel": "Nom d'affichage"
 }

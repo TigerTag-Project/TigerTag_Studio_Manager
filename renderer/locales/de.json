@@ -186,5 +186,6 @@
   "invLoading": "Inventar wird geladen…",
   "containerPickerTitle": "Behälter auswählen",
   "btnChangeContainer": "Ändern",
+  "cwEditWeight": "Behältergewicht bearbeiten",
   "displayNameLabel": "Anzeigename"
 }

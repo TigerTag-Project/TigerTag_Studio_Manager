@@ -1353,13 +1353,58 @@
 
     if ($("btnChangeContainerCard")) {
       $("btnChangeContainerCard").addEventListener("click", () => openContainerPicker(r));
-      // JS hover fallback — ensures the edit icon appears reliably on hover
+      // JS hover — shows both edit-container and edit-weight buttons on hover
       const ccSec = document.querySelector(".cc-section");
       const ccBtn = $("btnChangeContainerCard");
       if (ccSec && ccBtn) {
-        ccSec.addEventListener("mouseenter", () => ccBtn.classList.add("cc-visible"));
-        ccSec.addEventListener("mouseleave", () => ccBtn.classList.remove("cc-visible"));
+        ccSec.addEventListener("mouseenter", () => {
+          ccBtn.classList.add("cc-visible");
+          if ($("btnEditCw")) $("btnEditCw").classList.add("cc-visible");
+        });
+        ccSec.addEventListener("mouseleave", () => {
+          ccBtn.classList.remove("cc-visible");
+          if ($("btnEditCw")) $("btnEditCw").classList.remove("cc-visible");
+        });
       }
+    }
+
+    // Inline container weight edit
+    if ($("btnEditCw")) {
+      const openCwEdit = () => {
+        $("ccCwVal").style.display = "none";
+        $("btnEditCw").style.display = "none";
+        $("ccCwEditRow").style.display = "flex";
+        $("ccCwInput").focus();
+        $("ccCwInput").select();
+      };
+      const closeCwEdit = () => {
+        $("ccCwVal").style.display = "";
+        $("btnEditCw").style.display = "";
+        $("ccCwEditRow").style.display = "none";
+      };
+      const confirmCwEdit = async () => {
+        const val = parseInt($("ccCwInput").value, 10);
+        if (isNaN(val) || val < 0) return;
+        const uid = state.activeAccountId; if (!uid) return;
+        const okBtn = $("ccCwOk"); if (okBtn) okBtn.disabled = true;
+        try {
+          await fbDb().collection("users").doc(uid).collection("inventory").doc(r.spoolId).update({
+            container_weight: val,
+            last_update:      Date.now()
+          });
+          // onSnapshot propagates change and re-renders the panel automatically
+        } catch (e) {
+          console.error("[CW edit] update error:", e);
+          if (okBtn) okBtn.disabled = false;
+        }
+      };
+      $("btnEditCw").addEventListener("click", openCwEdit);
+      $("ccCwOk").addEventListener("click", confirmCwEdit);
+      $("ccCwCancel").addEventListener("click", closeCwEdit);
+      $("ccCwInput").addEventListener("keydown", e => {
+        if (e.key === "Enter")  { e.preventDefault(); confirmCwEdit(); }
+        if (e.key === "Escape") closeCwEdit();
+      });
     }
   }
   function closeDetail() {
@@ -1620,7 +1665,15 @@
           <img src="${esc(container.img)}" alt="${esc(container.brand)}" onerror="this.style.display='none'" />
           <div class="cc-meta">
             <div class="cc-type">${esc(container.type)}</div>
-            <div class="cc-cw">${container.container_weight} g</div>
+            <div class="cc-cw-row">
+              <span id="ccCwVal" class="cc-cw">${r.containerWeight} g</span>
+              <button id="btnEditCw" class="cc-cw-btn" title="${t("cwEditWeight")}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+            </div>
+            <div id="ccCwEditRow" class="cc-cw-edit-row">
+              <input id="ccCwInput" type="number" class="cc-cw-input" value="${r.containerWeight}" min="0" max="9999" step="1" />
+              <button id="ccCwOk" class="cc-cw-ok">✓</button>
+              <button id="ccCwCancel" class="cc-cw-cancel">✕</button>
+            </div>
           </div>
           <button id="btnChangeContainerCard" class="cc-edit" title="${t("btnChangeContainer")}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         </div>

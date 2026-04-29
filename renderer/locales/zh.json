@@ -186,5 +186,6 @@
   "invLoading": "正在加载库存…",
   "containerPickerTitle": "选择容器",
   "btnChangeContainer": "更换",
+  "cwEditWeight": "编辑容器重量",
   "displayNameLabel": "显示名称"
 }

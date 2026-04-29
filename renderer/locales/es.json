@@ -186,5 +186,6 @@
   "invLoading": "Cargando inventario…",
   "containerPickerTitle": "Elegir un contenedor",
   "btnChangeContainer": "Cambiar",
+  "cwEditWeight": "Editar peso del recipiente",
   "displayNameLabel": "Nombre de usuario"
 }

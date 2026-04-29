@@ -198,5 +198,6 @@
   "invLoading": "Carregando inventário…",
   "containerPickerTitle": "Escolher um recipiente",
   "btnChangeContainer": "Alterar",
+  "cwEditWeight": "Editar peso do recipiente",
   "displayNameLabel": "Nome de exibição"
 }
