@@ -134,7 +134,7 @@
     const d = new Date((ts + CHIP_EPOCH_OFFSET) * 1000);
     return isNaN(d.getTime()) ? null : d.toLocaleDateString();
   }
-  function setLoading(btn, on) { btn.classList.toggle("loading", !!on); btn.disabled = !!on; }
+  function setLoading(btn, on) { if (!btn) return; btn.classList.toggle("loading", !!on); btn.disabled = !!on; }
   function toast(el, kind, msg) {
     if (!el) return; el.innerHTML = "";
     const div = document.createElement("div"); div.className = `alert ${kind}`; div.textContent = msg; el.appendChild(div);
@@ -978,14 +978,14 @@
     const totalW = active.reduce((s, r) => s + (Number(r.weightAvailable)||0), 0);
     const el = $("sbStats");
     if (!all.length) { el.classList.add("hidden"); return; }
-    const kgFull = (totalW / 1000).toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:2});
-    const kgMini = `${Math.round(totalW / 1000)} kg`;
+    const kgFull = `${Math.round(totalW / 1000)} kg`;
+    const kgMini = kgFull;
     el.innerHTML = [
-      { label: t("statActive"), mini: t("statActiveMini"), value: active.length,           miniVal: active.length },
-      { label: t("statPlus"),   mini: t("statPlusMini"),   value: plus.length,              miniVal: plus.length },
+      { label: t("statActive"), mini: t("statActiveMini"), value: active.length,            miniVal: active.length },
+      { label: t("statTotal"),  mini: t("statTotalMini"),  value: kgFull,                    miniVal: kgMini },
       { label: t("statDiy"),    mini: t("statDiyMini"),    value: active.length-plus.length, miniVal: active.length-plus.length },
-      { label: t("statTotal"),  mini: t("statTotalMini"),  value: `${kgFull} kg`,           miniVal: kgMini },
-    ].map(s => `<div class="sb-stat" data-mini="${s.mini}" data-mini-val="${s.miniVal}"><div class="label">${s.label}</div><div class="value">${s.value}</div></div>`).join("");
+      { label: t("statPlus"),   mini: t("statPlusMini"),   value: plus.length,               miniVal: plus.length },
+    ].map(s => `<div class="sb-stat" data-mini="${s.mini}" data-mini-val="${s.miniVal}"><div class="value">${s.value}</div><div class="label">${s.label}</div></div>`).join("");
     el.classList.remove("hidden");
   }
 
@@ -1608,10 +1608,7 @@
               </button>
               <div class="wb-inline-edit hidden" id="wbInlineEdit">
                 <input type="number" id="wbInlineInput" min="0" max="${cap}" step="1" value="${curW}" />
-                <span class="wb-inline-unit">g</span>
-                <button id="wbInlineConfirm" class="wb-inline-ok" title="Confirm">
-                  <span class="icon icon-check icon-13"></span>
-                </button>
+                <button id="wbInlineConfirm" class="wb-inline-ok" title="Confirm">✓</button>
                 <button id="wbInlineCancel" class="wb-inline-cancel" title="Cancel">✕</button>
               </div>
             </div>
@@ -1737,9 +1734,9 @@
     const uid = state.activeAccountId; if (!uid) return;
     if (w === "" || isNaN(Number(w))) { toast($("panelWeightResult"), "bad", t("enterNumeric")); return; }
 
-    const btn = $("panelWeightBtn");
-    setLoading(btn, true);
+    const btn = $("panelWeightBtn"); // may be null when called from slider/inline edit
     try {
+      setLoading(btn, true);
       const rawW = Number(w);
       const cw   = Number(r.containerWeight) || 0;
       const cap  = Number(r.capacity) || 1000;

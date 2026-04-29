@@ -177,6 +177,7 @@ function initNFC() {
   });
 }
 
+
 // ── Auto-updater
 function initUpdater() {
   autoUpdater.checkForUpdatesAndNotify();

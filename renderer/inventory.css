@@ -184,6 +184,9 @@
     flex: 1; overflow-y: auto; padding: 14px 12px 12px;
     display: flex; flex-direction: column; gap: 7px;
   }
+  .sidebar:not(.collapsed) .sb-stats-wrap {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
+  }
   .sb-stats-wrap::-webkit-scrollbar { width: 3px; }
   .sb-stats-wrap::-webkit-scrollbar-track { background: transparent; }
   .sb-stats-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
@@ -195,16 +198,14 @@
     background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
     border-radius: 10px; padding: 10px 12px;
     transition: background .15s, border-color .15s; cursor: default;
+    text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px;
   }
   .sb-stat:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.11); }
   .sb-stat .label {
     font-size: 10px; color: rgba(255,255,255,.38); text-transform: uppercase;
-    letter-spacing: .06em; display: flex; align-items: center; gap: 6px;
+    letter-spacing: .06em;
   }
-  .sb-stat .label::before {
-    content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--primary);
-    flex-shrink: 0; box-shadow: 0 0 6px rgba(255,122,24,.6);
-  }
+  .sb-stat .label::before { display: none; }
   .sb-stat .value {
     font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
     color: #fff; margin-top: 4px; letter-spacing: -.02em;
@@ -1138,15 +1139,15 @@
   }
   .wb-inline-edit input::-webkit-outer-spin-button,
   .wb-inline-edit input::-webkit-inner-spin-button { -webkit-appearance: none; }
-  .wb-inline-unit { font-size: 12px; color: var(--muted); }
   .wb-inline-ok, .wb-inline-cancel {
-    width: 24px; height: 24px; padding: 0; border-radius: 6px; border: none;
+    width: 26px; height: 26px; padding: 0; border-radius: 6px; border: none;
     display: flex; align-items: center; justify-content: center;
-    cursor: pointer; flex-shrink: 0;
+    cursor: pointer; flex-shrink: 0; font-size: 13px;
+    transition: background .15s, color .15s;
   }
-  .wb-inline-ok     { background: var(--primary); color: #fff; }
-  .wb-inline-ok:hover { background: var(--primary-dark, #e06a00); }
-  .wb-inline-cancel { background: var(--surface-2); color: var(--muted); font-size: 12px; }
+  .wb-inline-ok     { background: var(--primary-soft); color: var(--primary); }
+  .wb-inline-ok:hover { background: var(--primary); color: #fff; }
+  .wb-inline-cancel { background: var(--surface-2); color: var(--muted); }
   .wb-inline-cancel:hover { background: var(--border); color: var(--text); }
   .weight-bar-wrap .wb-fill {
     height: 100%; background: linear-gradient(90deg, var(--primary), #ffb056);

@@ -96,7 +96,7 @@
     "label": "Standard",
     "type": "cardboard",
     "container_weight": 157,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_cardboard.png"
   },
   {
     "id": "amazon_basic_black",
@@ -114,7 +114,7 @@
     "label": "Clear",
     "type": "plastic",
     "container_weight": 150,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "anycubic_black",
@@ -132,7 +132,7 @@
     "label": "Black, Blue, Grey",
     "type": "plastic",
     "container_weight": 220,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "azurfilm_transparent",
@@ -168,7 +168,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 165,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "creality_black",
@@ -204,7 +204,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 183,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "eryone_standard_carton",
@@ -213,7 +213,7 @@
     "label": "Standard",
     "type": "cardboard",
     "container_weight": 154,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_cardboard.png"
   },
   {
     "id": "esun_epla_carton",
@@ -240,7 +240,7 @@
     "label": "Clear",
     "type": "plastic",
     "container_weight": 205,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "extrudr_clear",
@@ -249,7 +249,7 @@
     "label": "Clear",
     "type": "plastic",
     "container_weight": 241,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "flashforge_black",
@@ -267,7 +267,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 128,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "g3dpro_black",
@@ -276,7 +276,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 232,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "giantarm_transparent",
@@ -285,7 +285,7 @@
     "label": "Transparent",
     "type": "plastic",
     "container_weight": 180,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "geeetech_black",
@@ -294,7 +294,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 176,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "gst3d_anthracite",
@@ -303,7 +303,7 @@
     "label": "Anthracite",
     "type": "plastic",
     "container_weight": 205,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "longer_black",
@@ -312,7 +312,7 @@
     "label": "Black",
     "type": "plastic",
     "container_weight": 180,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "overture_carton",
@@ -330,7 +330,7 @@
     "label": "Standard",
     "type": "cardboard",
     "container_weight": 139,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_cardboard.png"
   },
   {
     "id": "sovb3d_red",
@@ -339,7 +339,7 @@
     "label": "Red",
     "type": "plastic",
     "container_weight": 149,
-    "img": "../assets/img/spool_filament/custom.png"
+    "img": "../assets/img/spool_filament/oem_plastic.png"
   },
   {
     "id": "sunlu_midnight_blue_v1",
