@@ -87,6 +87,9 @@
     friends: [],             // [{ uid, displayName, addedAt, key }]
     friendRequests: [],      // [{ uid, displayName, requestedAt }]
     blacklist: [],           // [{ uid, displayName, blockedAt }]
+    racks: [],               // [{ id, name, level, position, order, createdAt, lastUpdate }]
+    rackPresets: [],         // loaded from data/rack-presets.json
+    unsubRacks: null,        // Firestore unsubscribe handle for racks
     unsubFriendRequests: null,
     friendView: null,        // { uid, displayName, avatarColor } — set when viewing a friend's inventory
     td1sConnected: false,
@@ -205,6 +208,10 @@
     try {
       const r = await fetch('../data/container_spool/spools_filament.json');
       if (r.ok) state.db.containers = await r.json();
+    } catch {}
+    try {
+      const r = await fetch('../data/rack-presets.json');
+      if (r.ok) state.rackPresets = await r.json();
     } catch {}
   }
   function dbFind(key, id) { return state.db[key].find(x => x.id === id) || null; }
@@ -939,7 +946,7 @@
   // Common handler called when a named-instance user session becomes active.
   // uid must equal user.uid and be the current active account.
   async function handleSignedIn(user, uid) {
-    unsubscribeInventory(); unsubscribeFriendRequests();
+    unsubscribeInventory(); unsubscribeFriendRequests(); unsubscribeRacks();
     // Always reset friend-view mode on account change — the new account's own inventory is what we want to show.
     // We also clear the inventory/rows so the previous (friend) data isn't briefly shown as if it belonged to the new account.
     if (state.friendView) {
@@ -1003,6 +1010,7 @@
     subscribeFriendRequests(uid);
     loadFriendsList();  // populate state.friends early so dropdown + profiles modal show friends immediately
     loadBlacklist();    // populate state.blacklist for the Friends panel
+    subscribeRacks(uid);// live-sync the user's storage racks
   }
 
   // Track which account ids already have an onAuthStateChanged listener set up.
@@ -1019,11 +1027,11 @@
         if (uid === getActiveId()) await handleSignedIn(user, uid);
       } else if (uid === getActiveId()) {
         // Active account's session expired → show login
-        unsubscribeInventory(); unsubscribeFriendRequests();
+        unsubscribeInventory(); unsubscribeFriendRequests(); unsubscribeRacks();
         state.inventory = null; state.rows = [];
         state.isAdmin = false; state.debugEnabled = false;
         state.publicKey = null; state.privateKey = null;
-        state.friends = []; state.friendRequests = []; state.blacklist = [];
+        state.friends = []; state.friendRequests = []; state.blacklist = []; state.racks = [];
         applyDebugMode(); renderStats(); renderInventory();
         renderAccountDropdown();
         setDisconnected();
@@ -1157,11 +1165,11 @@
     // Sign out the named instance so its IndexedDB session is cleared
     try { firebase.app(id).auth().signOut(); } catch (_) {}
     if (wasActive) {
-      unsubscribeInventory(); unsubscribeFriendRequests();
+      unsubscribeInventory(); unsubscribeFriendRequests(); unsubscribeRacks();
       state.inventory = null; state.rows = [];
       state.isAdmin = false; state.debugEnabled = false;
       state.publicKey = null; state.privateKey = null;
-      state.friends = []; state.friendRequests = []; state.blacklist = [];
+      state.friends = []; state.friendRequests = []; state.blacklist = []; state.racks = [];
       applyDebugMode(); renderStats(); renderInventory();
       setDisconnected();
       // Switch to another account if available, otherwise show login
@@ -2917,6 +2925,226 @@
       if ($("profilesModalOverlay").classList.contains("open")) renderAccountList();
     } catch (e) { console.warn("[friends]", e.message); }
   }
+
+  /* ── Racks (storage shelves) ───────────────────────────────────────────── */
+  function subscribeRacks(uid) {
+    unsubscribeRacks();
+    // No orderBy — Firestore would silently filter out docs without the field.
+    // We sort client-side instead by `order` (fallback createdAt) for stability.
+    state.unsubRacks = fbDb(uid)
+      .collection("users").doc(uid).collection("racks")
+      .onSnapshot(snap => {
+        if (uid !== state.activeAccountId) return;
+        const racks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        racks.sort((a, b) => {
+          const oa = a.order ?? 999, ob = b.order ?? 999;
+          if (oa !== ob) return oa - ob;
+          const ta = a.createdAt?.seconds || 0;
+          const tb = b.createdAt?.seconds || 0;
+          return ta - tb;
+        });
+        state.racks = racks;
+        console.log(`[racks] snapshot: ${racks.length} rack(s)`, racks.map(r => r.name));
+        renderRacksList();
+      }, err => console.warn("[racks]", err.code, err.message));
+  }
+  function unsubscribeRacks() {
+    if (state.unsubRacks) { state.unsubRacks(); state.unsubRacks = null; }
+  }
+
+  async function createRack({ name, level, position }) {
+    const user = fbAuth().currentUser;
+    if (!user) { console.warn("[createRack] no user"); return null; }
+    const ts = firebase.firestore.FieldValue.serverTimestamp();
+    const order = state.racks.length;
+    const payload = {
+      name: name.trim() || "Rack",
+      level: Math.max(1, Math.min(15, parseInt(level, 10) || 1)),
+      position: Math.max(1, Math.min(20, parseInt(position, 10) || 1)),
+      order,
+      createdAt: ts,
+      lastUpdate: ts
+    };
+    console.log(`[createRack] writing to users/${user.uid}/racks/`, payload);
+    const doc = await fbDb().collection("users").doc(user.uid)
+      .collection("racks").add(payload);
+    console.log(`[createRack] OK → id=${doc.id}`);
+    return doc.id;
+  }
+
+  async function updateRack(rackId, fields) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    await fbDb().collection("users").doc(user.uid)
+      .collection("racks").doc(rackId).set({
+        ...fields,
+        lastUpdate: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+  }
+
+  async function deleteRack(rackId) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    // Free all spools assigned to this rack
+    const invSnap = await fbDb().collection("users").doc(user.uid)
+      .collection("inventory").where("rack_id", "==", rackId).get();
+    const batch = fbDb().batch();
+    invSnap.forEach(d => batch.update(d.ref, {
+      rack_id: null, level: null, position: null
+    }));
+    batch.delete(fbDb().collection("users").doc(user.uid)
+      .collection("racks").doc(rackId));
+    await batch.commit();
+  }
+
+  // Render the racks list inside the racks panel
+  function renderRacksList() {
+    const list = $("racksList");
+    if (!list) return;
+    if (!state.racks.length) {
+      list.innerHTML = `
+        <div class="rp-empty">
+          <div class="rp-empty-icon"><span class="icon icon-package icon-14"></span></div>
+          <div class="rp-empty-title">${t("racksEmpty")}</div>
+          <div class="rp-empty-sub">${t("racksEmptySub")}</div>
+        </div>`;
+      return;
+    }
+    list.innerHTML = state.racks.map(r => {
+      // Build the empty grid (top-row = highest level for visual order: top → bottom)
+      const rows = [];
+      for (let lv = r.level - 1; lv >= 0; lv--) {
+        const cells = [];
+        for (let pos = 0; pos < r.position; pos++) {
+          cells.push(`<div class="rp-slot" data-rack="${esc(r.id)}" data-level="${lv}" data-pos="${pos}"></div>`);
+        }
+        rows.push(`<div class="rp-row"><span class="rp-row-label">${lv + 1}</span><div class="rp-row-slots" style="grid-template-columns:repeat(${r.position},minmax(0,1fr))">${cells.join("")}</div></div>`);
+      }
+      const totalSlots = r.level * r.position;
+      return `<div class="rp-rack" data-rack-id="${esc(r.id)}">
+        <div class="rp-rack-head">
+          <div class="rp-rack-info">
+            <div class="rp-rack-name">${esc(r.name)}</div>
+            <div class="rp-rack-meta">${r.level} × ${r.position} = ${totalSlots} ${t("rackSlots")}</div>
+          </div>
+          <div class="rp-rack-actions">
+            <button class="rp-rack-btn" data-action="edit" title="${t("rackEdit")}"><span class="icon icon-edit icon-13"></span></button>
+            <button class="rp-rack-btn rp-rack-btn--danger" data-action="delete" title="${t("rackDelete")}"><span class="icon icon-trash icon-13"></span></button>
+          </div>
+        </div>
+        <div class="rp-grid">${rows.join("")}</div>
+      </div>`;
+    }).join("");
+
+    // Wire actions
+    list.querySelectorAll(".rp-rack-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const rackId = btn.closest("[data-rack-id]").dataset.rackId;
+        const rack = state.racks.find(r => r.id === rackId);
+        if (!rack) return;
+        if (btn.dataset.action === "edit") openRackEditModal(rack);
+        else if (btn.dataset.action === "delete") confirmDeleteRack(rack);
+      });
+    });
+  }
+
+  /* ── Rack panel open/close ── */
+  function openRacks() {
+    $("racksPanel").classList.add("open");
+    $("racksOverlay").classList.add("open");
+    renderRacksList();
+    // Safety: if no listener is active (e.g. user was logged in before this
+    // feature shipped), re-subscribe now.
+    if (!state.unsubRacks && state.activeAccountId) {
+      subscribeRacks(state.activeAccountId);
+    }
+  }
+  function closeRacks() {
+    $("racksPanel").classList.remove("open");
+    $("racksOverlay").classList.remove("open");
+  }
+
+  /* ── Rack create/edit modal ── */
+  let _editingRackId = null;
+  function openRackEditModal(rack) {
+    _editingRackId = rack?.id || null;
+    $("recTitle").textContent = rack ? t("rackEdit") : t("rackNew");
+    $("rackNameInput").value = rack?.name || "";
+    $("rackLevelInput").value = rack?.level || 5;
+    $("rackPositionInput").value = rack?.position || 8;
+    $("rackEditResult").textContent = "";
+    renderRackPresets();
+    $("rackEditOverlay").classList.add("open");
+    setTimeout(() => $("rackNameInput").focus(), 80);
+  }
+  function closeRackEditModal() {
+    $("rackEditOverlay").classList.remove("open");
+    _editingRackId = null;
+  }
+
+  function renderRackPresets() {
+    const el = $("recPresets");
+    if (!el) return;
+    const currentLevel = parseInt($("rackLevelInput").value, 10);
+    const currentPos   = parseInt($("rackPositionInput").value, 10);
+    el.innerHTML = (state.rackPresets || []).map(p => {
+      const matches = p.level === currentLevel && p.position === currentPos;
+      return `<button class="rec-preset${matches ? " rec-preset--active" : ""}" data-preset-id="${esc(p.id)}">
+        <span class="rec-preset-name">${esc(p.name)}</span>
+        <span class="rec-preset-dim">${p.level} × ${p.position}</span>
+      </button>`;
+    }).join("");
+    el.querySelectorAll("[data-preset-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const p = state.rackPresets.find(x => x.id === btn.dataset.presetId);
+        if (!p) return;
+        $("rackLevelInput").value = p.level;
+        $("rackPositionInput").value = p.position;
+        if (!$("rackNameInput").value.trim()) $("rackNameInput").value = p.name;
+        renderRackPresets();
+      });
+    });
+  }
+
+  function confirmDeleteRack(rack) {
+    const msg = t("rackDeleteConfirm", { name: rack.name });
+    if (!confirm(msg)) return;
+    deleteRack(rack.id).catch(e => console.warn("[deleteRack]", e.message));
+  }
+
+  // Wire panel + modal once at boot
+  $("btnOpenRacks")?.addEventListener("click", openRacks);
+  $("racksPanelClose")?.addEventListener("click", closeRacks);
+  $("racksOverlay")?.addEventListener("click", closeRacks);
+  $("btnNewRack")?.addEventListener("click", () => openRackEditModal(null));
+  $("rackEditClose")?.addEventListener("click", closeRackEditModal);
+  $("rackEditCancel")?.addEventListener("click", closeRackEditModal);
+  $("rackEditOverlay")?.addEventListener("click", e => {
+    if (e.target === $("rackEditOverlay")) closeRackEditModal();
+  });
+  $("rackLevelInput")?.addEventListener("input", renderRackPresets);
+  $("rackPositionInput")?.addEventListener("input", renderRackPresets);
+  $("rackEditSave")?.addEventListener("click", async () => {
+    const name     = $("rackNameInput").value.trim();
+    const level    = parseInt($("rackLevelInput").value, 10);
+    const position = parseInt($("rackPositionInput").value, 10);
+    if (!name) { $("rackEditResult").textContent = "⚠ " + t("rackNameRequired"); return; }
+    if (!level || level < 1 || level > 15) { $("rackEditResult").textContent = "⚠ " + t("rackLevelInvalid"); return; }
+    if (!position || position < 1 || position > 20) { $("rackEditResult").textContent = "⚠ " + t("rackPositionInvalid"); return; }
+    $("rackEditSave").disabled = true;
+    try {
+      if (_editingRackId) {
+        await updateRack(_editingRackId, { name, level, position });
+      } else {
+        await createRack({ name, level, position });
+      }
+      closeRackEditModal();
+    } catch (e) {
+      $("rackEditResult").textContent = "⚠ " + (e.message || t("networkError"));
+    } finally {
+      $("rackEditSave").disabled = false;
+    }
+  });
 
   /* ── Friend inventory panel ──────────────────────────────────────────────── */
   function openFriendInventory(friendUid, friendName, avatarColor) {

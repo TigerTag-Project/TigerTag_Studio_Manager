@@ -262,5 +262,22 @@
   "blacklistTitle": "Blockierte Nutzer",
   "unblockBtn": "Entsperren",
   "blockedOn": "Blockiert {{date}}",
-  "friendNotSharing": "Dieser Nutzer möchte sein Inventar nicht teilen."
+  "friendNotSharing": "Dieser Nutzer möchte sein Inventar nicht teilen.",
+  "racksTitle": "Lagerung",
+  "racksEmpty": "Noch kein Regal",
+  "racksEmptySub": "Erstelle ein Regal, um deine Spulen zu organisieren.",
+  "rackNew": "Neues Regal",
+  "rackEdit": "Regal bearbeiten",
+  "rackEditSub": "Wähle eine Vorlage oder erstelle ein eigenes Layout.",
+  "rackName": "Name",
+  "rackPreset": "Vorlage",
+  "rackLevels": "Ebenen",
+  "rackPositions": "Slots / Ebene",
+  "rackSave": "Speichern",
+  "rackDelete": "Löschen",
+  "rackDeleteConfirm": "Regal \"{{name}}\" löschen? Zugewiesene Spulen werden freigegeben.",
+  "rackSlots": "Slots",
+  "rackNameRequired": "Name ist erforderlich",
+  "rackLevelInvalid": "Ebenen müssen 1-15 sein",
+  "rackPositionInvalid": "Slots müssen 1-20 sein"
 }

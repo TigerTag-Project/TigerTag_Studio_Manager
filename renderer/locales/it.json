@@ -262,5 +262,22 @@
   "blacklistTitle": "Utenti bloccati",
   "unblockBtn": "Sblocca",
   "blockedOn": "Bloccato {{date}}",
-  "friendNotSharing": "Questo utente non desidera condividere il suo inventario."
+  "friendNotSharing": "Questo utente non desidera condividere il suo inventario.",
+  "racksTitle": "Stoccaggio",
+  "racksEmpty": "Ancora nessuno scaffale",
+  "racksEmptySub": "Crea uno scaffale per organizzare le bobine.",
+  "rackNew": "Nuovo scaffale",
+  "rackEdit": "Modifica scaffale",
+  "rackEditSub": "Scegli un preset o crea un layout personalizzato.",
+  "rackName": "Nome",
+  "rackPreset": "Preset",
+  "rackLevels": "Ripiani",
+  "rackPositions": "Slot / ripiano",
+  "rackSave": "Salva",
+  "rackDelete": "Elimina",
+  "rackDeleteConfirm": "Eliminare lo scaffale \"{{name}}\"? Le bobine assegnate saranno rilasciate.",
+  "rackSlots": "slot",
+  "rackNameRequired": "Il nome è obbligatorio",
+  "rackLevelInvalid": "Ripiani deve essere 1-15",
+  "rackPositionInvalid": "Slot deve essere 1-20"
 }

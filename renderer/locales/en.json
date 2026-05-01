@@ -259,5 +259,22 @@
   "blacklistTitle": "Blocked users",
   "unblockBtn": "Unblock",
   "blockedOn": "Blocked {{date}}",
-  "friendNotSharing": "This user does not wish to share their inventory."
+  "friendNotSharing": "This user does not wish to share their inventory.",
+  "racksTitle": "Storage",
+  "racksEmpty": "No rack yet",
+  "racksEmptySub": "Create a rack to organise your spool storage.",
+  "rackNew": "New rack",
+  "rackEdit": "Edit rack",
+  "rackEditSub": "Pick a preset or create a custom layout.",
+  "rackName": "Name",
+  "rackPreset": "Preset",
+  "rackLevels": "Shelves",
+  "rackPositions": "Slots / shelf",
+  "rackSave": "Save",
+  "rackDelete": "Delete rack",
+  "rackDeleteConfirm": "Delete the rack \"{{name}}\"? Spools assigned to it will be unassigned.",
+  "rackSlots": "slots",
+  "rackNameRequired": "Name is required",
+  "rackLevelInvalid": "Shelves must be 1-15",
+  "rackPositionInvalid": "Slots must be 1-20"
 }

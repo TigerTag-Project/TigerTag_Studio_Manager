@@ -1,0 +1,5 @@
+[
+  { "id": "panda_mini",     "name": "Panda Mini",     "level": 3, "position": 8 },
+  { "id": "panda",          "name": "Panda Rack",     "level": 5, "position": 8 },
+  { "id": "panda_extended", "name": "Panda Extended", "level": 7, "position": 8 }
+]

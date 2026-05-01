@@ -274,5 +274,22 @@
   "blacklistTitle": "Usuários bloqueados",
   "unblockBtn": "Desbloquear",
   "blockedOn": "Bloqueado {{date}}",
-  "friendNotSharing": "Este usuário não deseja compartilhar seu inventário."
+  "friendNotSharing": "Este usuário não deseja compartilhar seu inventário.",
+  "racksTitle": "Armazenamento",
+  "racksEmpty": "Nenhuma estante ainda",
+  "racksEmptySub": "Crie uma estante para organizar suas bobinas.",
+  "rackNew": "Nova estante",
+  "rackEdit": "Editar estante",
+  "rackEditSub": "Escolha um preset ou crie um layout personalizado.",
+  "rackName": "Nome",
+  "rackPreset": "Preset",
+  "rackLevels": "Prateleiras",
+  "rackPositions": "Espaços / prateleira",
+  "rackSave": "Salvar",
+  "rackDelete": "Excluir",
+  "rackDeleteConfirm": "Excluir a estante \"{{name}}\"? As bobinas atribuídas serão liberadas.",
+  "rackSlots": "espaços",
+  "rackNameRequired": "Nome é obrigatório",
+  "rackLevelInvalid": "Prateleiras deve ser 1-15",
+  "rackPositionInvalid": "Espaços deve ser 1-20"
 }

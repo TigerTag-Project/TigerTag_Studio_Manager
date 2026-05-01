@@ -262,5 +262,22 @@
   "blacklistTitle": "已屏蔽用户",
   "unblockBtn": "解除屏蔽",
   "blockedOn": "屏蔽于 {{date}}",
-  "friendNotSharing": "该用户不希望分享其库存。"
+  "friendNotSharing": "该用户不希望分享其库存。",
+  "racksTitle": "存储",
+  "racksEmpty": "暂无货架",
+  "racksEmptySub": "创建货架以整理您的线轴。",
+  "rackNew": "新建货架",
+  "rackEdit": "编辑货架",
+  "rackEditSub": "选择预设或创建自定义布局。",
+  "rackName": "名称",
+  "rackPreset": "预设",
+  "rackLevels": "层数",
+  "rackPositions": "每层位数",
+  "rackSave": "保存",
+  "rackDelete": "删除",
+  "rackDeleteConfirm": "删除货架 \"{{name}}\"?分配的线轴将被释放。",
+  "rackSlots": "位",
+  "rackNameRequired": "名称为必填项",
+  "rackLevelInvalid": "层数必须为1-15",
+  "rackPositionInvalid": "位数必须为1-20"
 }

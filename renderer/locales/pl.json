@@ -273,5 +273,22 @@
   "blacklistTitle": "Zablokowani użytkownicy",
   "unblockBtn": "Odblokuj",
   "blockedOn": "Zablokowano {{date}}",
-  "friendNotSharing": "Ten użytkownik nie chce udostępniać swojego inwentarza."
+  "friendNotSharing": "Ten użytkownik nie chce udostępniać swojego inwentarza.",
+  "racksTitle": "Przechowywanie",
+  "racksEmpty": "Brak regałów",
+  "racksEmptySub": "Utwórz regał, aby uporządkować swoje szpule.",
+  "rackNew": "Nowy regał",
+  "rackEdit": "Edytuj regał",
+  "rackEditSub": "Wybierz szablon lub utwórz własny układ.",
+  "rackName": "Nazwa",
+  "rackPreset": "Szablon",
+  "rackLevels": "Półki",
+  "rackPositions": "Sloty / półka",
+  "rackSave": "Zapisz",
+  "rackDelete": "Usuń",
+  "rackDeleteConfirm": "Usunąć regał \"{{name}}\"? Przypisane szpule zostaną zwolnione.",
+  "rackSlots": "slotów",
+  "rackNameRequired": "Nazwa jest wymagana",
+  "rackLevelInvalid": "Półki muszą być 1-15",
+  "rackPositionInvalid": "Sloty muszą być 1-20"
 }

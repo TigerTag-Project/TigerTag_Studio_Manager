@@ -45,6 +45,7 @@
       <div class="sb-actions">
         <button id="btnSbReload" class="primary"><span class="icon icon-refresh icon-13"></span><span class="label" data-i18n="btnRefresh">Refresh</span></button>
         <button id="btnOpenFriends" class="ghost sb-friends-btn"><span class="icon icon-user icon-13"></span><span class="label" data-i18n="friendsTitle">Friends</span><span id="friendsBadge" class="friends-badge hidden"></span></button>
+        <button id="btnOpenRacks" class="ghost"><span class="icon icon-package icon-13"></span><span class="label" data-i18n="racksTitle">Storage</span></button>
         <button id="btnOpenSettings"><span class="icon icon-download icon-13"></span><span class="label" data-i18n="settingsOpenBtn">Export</span></button>
       </div>
     </div>
@@ -258,6 +259,72 @@
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- racks (storage) panel -->
+<div class="panel-overlay" id="racksOverlay"></div>
+<div class="detail-panel racks-panel" id="racksPanel">
+  <div class="panel-header">
+    <span class="panel-title" data-i18n="racksTitle">Storage</span>
+    <button class="panel-close" id="racksPanelClose">✕</button>
+  </div>
+  <div class="panel-body racks-body">
+
+    <!-- Top action bar -->
+    <div class="rp-actions">
+      <button class="rp-cta" id="btnNewRack">
+        <span class="icon icon-plus icon-14"></span>
+        <span data-i18n="rackNew">New rack</span>
+      </button>
+    </div>
+
+    <!-- Racks list (scrollable) -->
+    <div id="racksList" class="rp-list"></div>
+
+  </div>
+</div>
+
+<!-- new/edit rack modal -->
+<div class="modal-overlay" id="rackEditOverlay">
+  <div class="modal-card rec-card">
+    <div class="rec-header">
+      <div class="rec-header-text">
+        <div class="rec-title" id="recTitle" data-i18n="rackNew">New rack</div>
+        <div class="rec-sub" data-i18n="rackEditSub">Pick a preset or create a custom layout</div>
+      </div>
+      <button class="modal-close" id="rackEditClose">✕</button>
+    </div>
+
+    <div class="rec-body">
+      <label class="rec-field">
+        <span class="rec-field-label" data-i18n="rackName">Name</span>
+        <input type="text" id="rackNameInput" maxlength="60" placeholder="Atelier" />
+      </label>
+
+      <div class="rec-field">
+        <span class="rec-field-label" data-i18n="rackPreset">Preset</span>
+        <div class="rec-presets" id="recPresets"></div>
+      </div>
+
+      <div class="rec-dim-row">
+        <label class="rec-field rec-field--dim">
+          <span class="rec-field-label" data-i18n="rackLevels">Shelves</span>
+          <input type="number" id="rackLevelInput" min="1" max="15" value="5" />
+        </label>
+        <label class="rec-field rec-field--dim">
+          <span class="rec-field-label" data-i18n="rackPositions">Slots / shelf</span>
+          <input type="number" id="rackPositionInput" min="1" max="20" value="8" />
+        </label>
+      </div>
+
+      <div id="rackEditResult" class="rec-result"></div>
+    </div>
+
+    <div class="rec-footer">
+      <button class="adf-btn adf-btn--ghost" id="rackEditCancel" data-i18n="cancelLabel">Cancel</button>
+      <button class="adf-btn adf-btn--primary" id="rackEditSave" data-i18n="rackSave">Save</button>
+    </div>
   </div>
 </div>
 

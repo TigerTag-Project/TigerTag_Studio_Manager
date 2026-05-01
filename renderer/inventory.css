@@ -588,6 +588,162 @@
   .fp-cta:active { transform: scale(.98); }
   .fp-cta .icon  { background: #fff; }
 
+  /* ═══════════════════════════════════════════════════════════════════
+     Racks (storage) panel
+     ═══════════════════════════════════════════════════════════════════ */
+  .racks-panel { width: min(560px, 95vw); }
+  .racks-body {
+    padding: 16px 16px 18px;
+    display: flex; flex-direction: column; gap: 14px;
+    height: calc(100% - 50px);
+    overflow: hidden;
+  }
+  .rp-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .rp-cta {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 10px 14px;
+    background: var(--primary); border: 1px solid var(--primary); color: #fff;
+    border-radius: 10px; font-size: 13px; font-weight: 600; font-family: inherit;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .rp-cta:hover { background: #f0670d; border-color: #f0670d; }
+  .rp-cta .icon { background: #fff; }
+
+  .rp-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+    padding-right: 2px;
+  }
+  .rp-list::-webkit-scrollbar { width: 4px; }
+  .rp-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Single rack card */
+  .rp-rack {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .rp-rack-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .rp-rack-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rp-rack-name { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rp-rack-meta { font-size: 11px; color: var(--muted); }
+  .rp-rack-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .rp-rack-btn {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 8px;
+    cursor: pointer; transition: background .15s;
+  }
+  .rp-rack-btn:hover { background: var(--border); }
+  .rp-rack-btn .icon { background: var(--muted); }
+  .rp-rack-btn:hover .icon { background: var(--text); }
+  .rp-rack-btn--danger:hover { background: var(--danger-soft); }
+  .rp-rack-btn--danger:hover .icon { background: var(--danger); }
+
+  /* Grid */
+  .rp-grid { display: flex; flex-direction: column; gap: 4px; }
+  .rp-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rp-row-label {
+    width: 16px; flex-shrink: 0; text-align: right;
+    font-size: 10px; font-weight: 600; color: var(--muted); font-family: var(--mono);
+  }
+  .rp-row-slots {
+    flex: 1; display: grid;
+    grid-template-columns: repeat(var(--slots, 8), minmax(0, 1fr));
+    gap: 4px;
+  }
+  /* fallback for browsers ignoring the var (we set it inline below) */
+  .rp-row-slots { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .rp-slot {
+    aspect-ratio: 1;
+    border: 1.5px dashed var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    transition: border-color .15s, background .15s;
+  }
+  .rp-slot:hover { border-color: var(--primary); background: var(--primary-soft); }
+
+  /* Empty state */
+  .rp-empty {
+    text-align: center;
+    padding: 36px 18px;
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    background: var(--surface-2);
+  }
+  .rp-empty-icon {
+    width: 48px; height: 48px; margin: 0 auto 12px;
+    background: var(--primary-soft, rgba(249,115,22,.1));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rp-empty-icon .icon { background: var(--primary); }
+  .rp-empty-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .rp-empty-sub { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     Rack create/edit modal — same look as Add Friend modal
+     ═══════════════════════════════════════════════════════════════════ */
+  #rackEditOverlay .rec-card {
+    width: min(420px, calc(100vw - 32px));
+    padding: 22px 22px 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .rec-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .rec-header-text { flex: 1; min-width: 0; }
+  .rec-title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .rec-sub   { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+  .rec-body { display: flex; flex-direction: column; gap: 14px; }
+  .rec-field { display: flex; flex-direction: column; gap: 6px; }
+  .rec-field-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .rec-field input {
+    padding: 10px 12px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  .rec-field input:focus { border-color: var(--primary); background: var(--surface); }
+
+  .rec-presets { display: flex; flex-direction: column; gap: 6px; }
+  .rec-preset {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text); font-family: inherit;
+    cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .rec-preset:hover { background: var(--surface); border-color: var(--muted); }
+  .rec-preset--active { border-color: var(--primary); background: var(--primary-soft); }
+  .rec-preset-name { font-size: 13px; font-weight: 600; }
+  .rec-preset-dim { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+  .rec-dim-row { display: flex; gap: 10px; }
+  .rec-field--dim { flex: 1; }
+  .rec-field--dim input { text-align: center; font-family: var(--mono); font-weight: 700; font-size: 16px; }
+
+  .rec-result {
+    min-height: 16px; font-size: 12px; color: var(--danger);
+    text-align: center; line-height: 1.4;
+  }
+
+  .rec-footer { display: flex; gap: 8px; }
+  .rec-footer .adf-btn { flex: 1; }
+
   /* ── Friend inventory panel ────────────────────────────────────────────── */
   #friendInvPanel { width: min(460px, 92vw); }
   .fi-avatar {
