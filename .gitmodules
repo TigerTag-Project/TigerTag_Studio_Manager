@@ -1,0 +1,3 @@
+[submodule "OpenRFID"]
+	path = OpenRFID
+	url = https://github.com/suchmememanyskill/OpenRFID
