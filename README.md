@@ -1,4 +1,4 @@
-# TigerTag Studio Manager
+# Tiger Studio Manager
 
 > Desktop application to manage your 3D printing filament inventory via NFC RFID tags and your TigerTag account.
 
@@ -41,6 +41,13 @@
 
 ## Changelog
 
+### v1.4.2 — 2026-05-02
+
+- **CI — macOS code signing + notarization.** Releases for macOS are now signed with our Apple Developer ID Application certificate and notarized by Apple via `notarytool`. Users opening the `.dmg` no longer see any Gatekeeper warning. The auto-updater accepts notarized `.zip` updates from GitHub Releases. The [`build.yml`](./.github/workflows/build.yml) workflow decodes the certificate and the App Store Connect API Key from GitHub Secrets at build time. See the new [Code signing & notarization](#code-signing--notarization-macos) section in this README for verification commands and instructions for setting up signing in a fork.
+- **Native modules** (`@pokusew/pcsclite`, `@serialport/bindings-cpp`) are now correctly signed inside the bundle via `entitlementsInherit` and `cs.disable-library-validation`, so the Hardened Runtime accepts them at launch.
+- **New `build:mac:unsigned`** script for fast local builds without Apple credentials. The default `build:mac` now runs the full sign + notarize pipeline.
+- New `build/entitlements.mac.plist` with `allow-jit`, `allow-unsigned-executable-memory`, `disable-library-validation`, `allow-dyld-environment-variables` — minimum set for Electron + native modules under Hardened Runtime.
+
 ### v1.4.1 — 2026-05-01
 
 - **Fix — silent login failure on email/password** sign-in (and Google sign-in for fresh accounts) on desktop. The auth listener was gated on `getActiveId()` matching the new uid, but `setActiveId()` only ran inside the listener — a chicken-and-egg that left a successfully authenticated user with no UI update. Reordered so `setActiveId` runs after `updateCurrentUser` and before `setupNamedAuth`. (`renderer/inventory.js`)
@@ -54,11 +61,13 @@
 
 **[⬇ Download the latest release](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/releases/latest)**
 
-| Platform | File |
-|---|---|
-| macOS | `.dmg` |
-| Windows | `.exe` |
-| Linux | `.AppImage` |
+| Platform | File | Signed |
+|---|---|---|
+| macOS (Intel + Apple Silicon) | `.dmg` | ✅ Apple Developer ID + Notarized |
+| Windows | `.exe` | ❌ Not yet (planned) |
+| Linux | `.AppImage` | N/A |
+
+> **macOS** — the `.dmg` is signed with our Developer ID certificate and notarized by Apple. Gatekeeper opens it without any warning. See [Code signing & notarization](#code-signing--notarization-macos) below for verification commands.
 
 ---
 
@@ -78,6 +87,7 @@
 | NFC reading | [nfc-pcsc](https://github.com/pokusew/nfc-pcsc) + ACR122U reader |
 | Auto-update | [electron-updater](https://www.electron.build/auto-update) |
 | Build & packaging | [electron-builder](https://www.electron.build/) |
+| macOS code signing | Apple Developer ID Application + `notarytool` (App Store Connect API Key) |
 | CI / Releases | GitHub Actions |
 
 ---
@@ -127,25 +137,108 @@ The app launches directly into the inventory view if an account is already saved
 
 | Platform | Command | Output |
 |---|---|---|
-| macOS | `npm run build:mac` | `.dmg` (x64 + arm64) |
+| macOS (signed + notarized) | `npm run build:mac` | `.dmg` + `.zip` (x64 + arm64) |
+| macOS (unsigned, fast)     | `npm run build:mac:unsigned` | `.dmg` + `.zip` (no Apple credentials needed) |
 | Windows | `npm run build:win` | `.exe` NSIS installer |
 | Linux | `npm run build:linux` | `.AppImage` |
 | All | `npm run build:all` | All three |
 
 Built installers are placed in the `dist/` folder (ignored by git).
 
+> `npm run build:mac` requires Apple Developer credentials in a local `.env` file (see [`.env.example`](./.env.example) for the expected variables). For development without credentials, use `build:mac:unsigned` — the app builds and runs locally but Gatekeeper will refuse to open it without right-click → Open. The full signing pipeline is documented in [Code signing & notarization](#code-signing--notarization-macos) below.
+
 ---
 
 ## Releases via GitHub Actions
 
-Pushing a version tag automatically triggers a build on all three platforms and publishes a GitHub Release with the installers attached.
+Pushing a version tag automatically triggers a parallel build on **macOS, Windows, and Linux** and publishes a GitHub Release with the installers attached.
 
 ```bash
-git tag v1.4.1
-git push origin v1.4.1
+git tag v1.4.2
+git push origin v1.4.2
 ```
 
-The workflow file is at [`.github/workflows/build.yml`](.github/workflows/build.yml).
+| Platform | Output | Signed? |
+|---|---|---|
+| macOS | `.dmg` + `.zip` (Intel + Apple Silicon) | ✅ Developer ID + notarized by Apple |
+| Windows | `.exe` (NSIS) | ❌ Not yet (planned) |
+| Linux | `.AppImage` | N/A (no signing on Linux) |
+
+The workflow is at [`.github/workflows/build.yml`](./.github/workflows/build.yml). For the macOS signing setup details, see the [Code signing & notarization](#code-signing--notarization-macos) section below.
+
+---
+
+## Code signing & notarization (macOS)
+
+Releases for macOS are **signed with an Apple Developer ID Application certificate and notarized by Apple**, which means:
+
+- The `.dmg` opens with **no Gatekeeper warning** when downloaded from GitHub Releases
+- macOS verifies the binary hasn't been tampered with after leaving our build server
+- The auto-updater (`electron-updater`) accepts incoming `.zip` updates because they carry the notarization staple
+
+### Verifying a downloaded release
+
+After downloading from [Releases](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/releases/latest), you can audit the signature yourself:
+
+```bash
+# Mount the DMG, then:
+spctl --assess --type execute --verbose \
+  "/Volumes/Tiger Studio Manager/Tiger Studio Manager.app"
+# Expected: "accepted" — "source=Notarized Developer ID"
+
+codesign --verify --deep --strict --verbose=2 \
+  "/Volumes/Tiger Studio Manager/Tiger Studio Manager.app"
+# Expected: "valid on disk" — "satisfies its Designated Requirement"
+```
+
+### How the CI signs builds
+
+The [`build.yml`](./.github/workflows/build.yml) workflow runs on `macos-latest` and:
+
+1. **Decodes** the Developer ID `.p12` certificate from a base64 GitHub Secret. electron-builder reads `CSC_LINK` + `CSC_KEY_PASSWORD` and imports the cert into the runner's temporary keychain
+2. **Decodes** the App Store Connect API Key (`.p8`) from a base64 secret to a file, exposed via `APPLE_API_KEY` env var
+3. Runs `electron-builder --mac --publish always` with `hardenedRuntime: true` and the entitlements declared in [`build/entitlements.mac.plist`](./build/entitlements.mac.plist)
+4. electron-builder signs the `.app` bundle (Electron framework + native modules + main app), packages the `.dmg` + `.zip`, then calls Apple's `notarytool` and **staples** the notarization ticket onto the artifacts
+
+Notarization usually completes in 1–5 minutes on Apple's side.
+
+### For forks / contributors who want signed builds
+
+If you fork this repo and want your own signed releases, you need:
+
+| Requirement | Where |
+|---|---|
+| **Apple Developer Program** membership ($99/year) | [developer.apple.com](https://developer.apple.com/) |
+| **Developer ID Application** certificate, exported as `.p12` | Keychain Access → My Certificates → Export |
+| **App Store Connect API Key** with role *Developer* | [App Store Connect → Users and Access → Integrations](https://appstoreconnect.apple.com/access/integrations/api) |
+
+Then add these **6 secrets** to your fork's `Settings → Secrets and variables → Actions`:
+
+| Secret name | Value |
+|---|---|
+| `MACOS_CERTIFICATE` | base64 of your Developer ID `.p12` export |
+| `MACOS_CERTIFICATE_PASSWORD` | the password you set when exporting the `.p12` |
+| `APPLE_API_KEY_BASE64` | base64 of your App Store Connect API `.p8` file |
+| `APPLE_API_KEY_ID` | 10-char Key ID from App Store Connect |
+| `APPLE_API_ISSUER` | UUID Issuer ID from App Store Connect |
+| `APPLE_TEAM_ID` | your Apple Developer Team ID (10-char) |
+
+The repo includes [`scripts/print-github-secrets.sh`](./scripts/print-github-secrets.sh), a helper that reads your local `.env` + `.p12` and prints all six values formatted ready to paste into GitHub:
+
+```bash
+cp .env.example .env   # then edit .env with your API key info
+./scripts/print-github-secrets.sh ~/path/to/your/DeveloperID.p12
+```
+
+### Local signed build (full pipeline)
+
+For testing the signing + notarization pipeline locally before tagging a release:
+
+1. Copy `.env.example` → `.env` and fill in your API key path + Key ID + Issuer ID + Team ID
+2. Make sure your Developer ID Application certificate is in your **login** keychain
+3. Run `npm run build:mac` — the [`build/sign-and-notarize.sh`](./build/sign-and-notarize.sh) wrapper loads `.env`, validates credentials, and invokes electron-builder with the notarization step enabled
+
+Notarization runs against Apple's servers and adds 1–5 min to the build. For iteration loops, prefer `npm run build:mac:unsigned`.
 
 ---
 
