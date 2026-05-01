@@ -11,3 +11,10 @@ const FIREBASE_CONFIG = {
 };
 
 firebase.initializeApp(FIREBASE_CONFIG);
+
+// Return (or create) a named Firebase app instance for a given account uid.
+// Each instance maintains its own independent auth session in IndexedDB.
+function ensureFirebaseApp(id) {
+  try   { return firebase.app(id); }
+  catch { return firebase.initializeApp(FIREBASE_CONFIG, id); }
+}

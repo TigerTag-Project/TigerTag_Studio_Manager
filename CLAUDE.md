@@ -52,6 +52,18 @@ Third-party apps can fetch this URL to get the Firebase project config and call 
 
 ### Firestore data structure
 ```
+publicKeys/
+  {key}/                    — key = public code e.g. "4X7-K3M" (XXX-XXX format)
+    uid         string      — owner uid
+    claimedAt   timestamp   — when claimed
+
+userProfiles/
+  {uid}/                    — public profile, readable by all authenticated users
+    publicKey   string      — same as publicKeys entry (denormalised for display)
+    displayName string      — user's chosen pseudo
+    isPublic    boolean     — whether inventory is publicly visible
+    (color fields for avatar)
+
 users/
   {uid}/
     displayName   string   — user's chosen pseudo
@@ -61,6 +73,9 @@ users/
     email         string
     roles         string   — "admin" | undefined
     Debug         boolean  — debug mode enabled
+    publicKey     string   — discovery code XXX-XXX (also in publicKeys/{key})
+    privateKey    string   — 40-char hex access token (used by Firestore rules)
+    isPublic      boolean  — inventory publicly visible
     
     inventory/
       {spoolId}/            — one document per spool
@@ -77,6 +92,23 @@ users/
         deleted             boolean
         deleted_at          number?
         twin_uid            string?  — linked RFID tag UID
+
+    friends/
+      {friendUid}/
+        displayName string
+        addedAt     timestamp
+        key         string   — friend's privateKey at time of accept (used to verify access)
+
+    friendRequests/
+      {requesterUid}/
+        displayName string
+        requestedAt timestamp
+        key         string   — requester's privateKey (used for bidirectional accept)
+
+    blacklist/
+      {blockedUid}/
+        displayName string
+        blockedAt   timestamp
         
     prefs/
       app/
@@ -146,6 +178,9 @@ All modals: `.modal-overlay` + `.modal-card`, toggled via `.open` class. Backdro
 - `#editAccountModalOverlay` — edit active account (openEditAccountModal / closeEditAccountModal)
 - `#containerPickerOverlay` — pick a spool container (openContainerPicker / closeContainerPicker)
 - `#profilesModalOverlay` — manage multiple accounts
+- `#friendsPanel` + `#friendsOverlay` — dedicated Friends slide-in panel (openFriends / closeFriends)
+- `#addFriendOverlay` — add friend by code (split field `[XXX]—[XXX]`, auto-advance on 3 chars)
+- `#friendRequestOverlay` — incoming request modal (accept / refuse / block)
 
 ### Resizable panels
 Both `#detailPanel` and `#debugPanel` are resizable via a drag handle on their left edge.
@@ -182,6 +217,11 @@ state = {
   invLoading,       // true while waiting for first Firestore snapshot
   isAdmin,          // from users/{uid}.roles === "admin"
   debugEnabled,     // from users/{uid}.Debug (admin only)
+  publicKey,        // user's discovery code XXX-XXX (from users/{uid}.publicKey)
+  privateKey,       // user's 40-char hex access token (from users/{uid}.privateKey)
+  isPublic,         // whether inventory is publicly visible (from users/{uid}.isPublic)
+  friends,          // [{ uid, displayName, addedAt, key }]
+  friendRequests,   // [{ uid, displayName, requestedAt, key }]
   db                // { brand, material, aspect, type, diameter, unit, version, containers }
 }
 ```
@@ -193,8 +233,17 @@ state = {
 - `displayName` (pseudo) → sidebar, localStorage (priority over Google Auth name)
 - `roles` → `state.isAdmin`
 - `Debug` → `state.debugEnabled` → shows/hides `#btnDebug`
+- `publicKey` / `privateKey` → `state.publicKey` / `state.privateKey` (generated via `claimPublicKey` on first login if missing)
+- `isPublic` → `state.isPublic`
 
 Google real name (`user.displayName` from Firebase Auth) is saved to Firestore as `googleName` / `firstName` / `lastName` for admin reference but **never displayed in the UI**.
+
+### Friends system
+- **`publicKey`** (`XXX-XXX` format) — discovery code shared with friends. Stored in both `users/{uid}.publicKey` and `publicKeys/{key}.uid`. Lookup is O(1) by document ID.
+- **`privateKey`** (40-char hex) — access token. Stored in `users/{uid}.privateKey` and copied into each friend's `friends/{uid}.key`. Firestore rules grant inventory read access if `friends/{uid}.key == users/{uid}.privateKey`.
+- **`claimPublicKey(uid, oldKey)`** — atomic transaction: generates `XXX-XXX`, checks `publicKeys/{candidate}` doesn't exist, writes it. Retries up to 10 times. Deletes `oldKey` after success.
+- **Bidirectional friendship**: when Alice accepts Bob's request, a batch writes to both `users/alice/friends/bob` (key=alice.privateKey) and `users/bob/friends/alice` (key=bob.privateKey from request doc). Removal also deletes from both sides.
+- **`openFriends()`** — auto-generates a publicKey if `state.publicKey` is null before opening the panel.
 
 ### Container picker
 `openContainerPicker(r)` — opens `#containerPickerOverlay` with all 46 containers from `data/container_spool/spools_filament.json`, filtered by search. Selecting one writes `container_id` + `container_weight` to Firestore `users/{uid}/inventory/{spoolId}`. onSnapshot propagates the change automatically.
@@ -391,6 +440,30 @@ Do NOT re-read locale JSON files; use this table instead. All **8 locales** (en/
 
 ### Time ago
 `agoNow` `agoMin {{n}}` `agoHour {{n}}` `agoDay {{n}}` `agoMonth {{n}}` `agoYear {{n}}` (object with one/other in most locales)
+
+### Friends system
+| Key | Purpose |
+|-----|---------|
+| `friendsTitle` | Section title / sidebar button label |
+| `friendsMyCode` | "My code" label above publicKey display |
+| `friendsPublicLabel` | Public inventory toggle label |
+| `friendsPublicSub` | Toggle sub-label ("Visible to everyone") |
+| `friendsList` | "My friends" section heading |
+| `friendsEmpty` | Empty state when no friends |
+| `friendsAdd` | Add friend button |
+| `friendRemove` | Remove friend button on each row |
+| `friendReqSub` | Subtitle on incoming request modal ("wants to view your inventory") |
+| `friendReqBlock` | Block button on request modal |
+| `friendReqRefuse` | Decline button on request modal |
+| `friendReqAccept` | Accept button on request modal |
+| `addFriendTitle` | Add friend modal title |
+| `addFriendSub` | Add friend modal subtitle |
+| `addFriendSend` | Send request button |
+| `friendSearching` | Preview state: searching |
+| `friendNotFound` | Preview state: no user found |
+| `friendSelf` | Preview state: own code entered |
+| `friendRequestSent` | Success message after sending |
+| `friendRegenConfirm` | (kept in locales, no longer used in UI — reserved) |
 
 ---
 

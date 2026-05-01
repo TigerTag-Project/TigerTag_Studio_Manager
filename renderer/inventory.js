@@ -1,9 +1,19 @@
 (() => {
   const API_BASE         = "https://cdn.tigertag.io";
 
-  // ── Firebase helpers (SDK initialised in firebase.js) ──────────────────────
-  const fbAuth = () => firebase.auth();
-  const fbDb   = () => firebase.firestore();
+  // ── Firebase helpers — one named app instance per account ────────────────
+  // Each account has its own firebase.app(uid) with independent auth session.
+  // Falls back to the DEFAULT app only during the sign-in flow (uid not known yet).
+  const fbAuth = (id) => {
+    const appId = id || state.activeAccountId;
+    if (appId) { try { return firebase.app(appId).auth(); } catch (_) {} }
+    return firebase.auth();
+  };
+  const fbDb = (id) => {
+    const appId = id || state.activeAccountId;
+    if (appId) { try { return firebase.app(appId).firestore(); } catch (_) {} }
+    return firebase.firestore();
+  };
   let _unsubInventory  = null; // active Firestore onSnapshot unsubscribe handle
   let _sliderDebounce  = null; // pending auto-save timer for weight slider
 
@@ -71,6 +81,13 @@
     invLoading: false,
     isAdmin: false,
     debugEnabled: false,
+    publicKey: null,
+    privateKey: null,
+    isPublic: false,
+    friends: [],             // [{ uid, displayName, addedAt, key }]
+    friendRequests: [],      // [{ uid, displayName, requestedAt }]
+    unsubFriendRequests: null,
+    friendView: null,        // { uid, displayName, avatarColor } — set when viewing a friend's inventory
     td1sConnected: false,
     db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [], containers: [] }
   };
@@ -167,7 +184,7 @@
 
   /* ── lookups ── */
   async function loadLocales() {
-    await Promise.all(["en", "fr", "de", "es", "it", "zh", "pt", "pt-pt"].map(async lang => {
+    await Promise.all(["en", "fr", "de", "es", "it", "zh", "pt", "pt-pt", "pl"].map(async lang => {
       try {
         const r = await fetch(`locales/${lang}.json`);
         if (r.ok) state.i18n[lang] = await r.json();
@@ -267,6 +284,7 @@
       deleted: !!data.deleted || !!data.deleted_at,
       productType: typeName(data.id_type),
       chipTimestamp: data.timestamp || null,
+      needUpdateAt: data.needUpdateAt || null,
       raw: data,
     };
   }
@@ -309,7 +327,8 @@
     $("sbUser").classList.remove("sb-user--empty");
     applyAvatarStyle(activeAccount());
     $("signInPlaceholder").classList.add("hidden");
-    $("card-inv").classList.remove("hidden");
+    $("card-inv").classList.add("hidden");
+    $("card-welcome").classList.add("hidden");
     state.invLoading = true;
     renderInventory(); // show spinner immediately, before first Firestore snapshot
   }
@@ -332,6 +351,7 @@
     $("sbStats").classList.add("hidden");
     $("signInPlaceholder").classList.remove("hidden");
     $("card-inv").classList.add("hidden");
+    $("card-welcome").classList.add("hidden");
     state.invLoading = false;
     setHealthIdle();
   }
@@ -365,17 +385,66 @@
     const accounts = getAccounts();
     const activeId = state.activeAccountId;
     const list = $("acctDropdownList");
-    list.innerHTML = accounts.map(acc => `
+
+    // ── Connected accounts ──
+    let html = accounts.map(acc => `
       <button class="acct-drop-item${acc.id===activeId?' active':''}" data-drop-id="${esc(acc.id)}">
         <span class="acct-drop-avatar" style="background:${getAccGradient(acc)}">${esc(getInitials(acc))}</span>
         <span class="acct-drop-name">${esc(acc.displayName || acc.email)}</span>
         ${acc.id===activeId ? '<span class="acct-drop-check">✓</span>' : ''}
       </button>`).join("");
+
+    // ── Manage profiles action — right under connected accounts ──
+    html += `<div class="acct-drop-sep"></div>
+      <button class="acct-drop-action" data-drop-action="manage-profiles">
+        <span class="icon icon-user icon-13"></span>
+        <span>${t("btnManageProfiles")}</span>
+      </button>`;
+
+    // ── Friends section ──
+    if (state.friends && state.friends.length) {
+      html += `<div class="acct-drop-sep"></div>
+        <div class="acct-drop-section-label">${t("friendsList")}</div>`;
+      html += state.friends.map(f => {
+        const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+        const color = friendColor(f);
+        const isActive = state.friendView?.uid === f.uid;
+        return `<button class="acct-drop-item${isActive ? ' acct-drop-friend-active' : ''}" data-drop-friend-uid="${esc(f.uid)}" data-drop-friend-name="${esc(f.displayName || f.uid)}" data-drop-friend-color="${esc(color)}">
+          <span class="acct-drop-avatar" style="background:${color}">${initials}</span>
+          <span class="acct-drop-name">${esc(f.displayName || f.uid)}</span>
+          ${isActive ? '<span class="acct-drop-check">✓</span>' : '<span class="acct-drop-eye"><span class="icon icon-eye-on icon-11"></span></span>'}
+        </button>`;
+      }).join("");
+    }
+
+    // ── Add friend action — always visible at the bottom ──
+    html += `<div class="acct-drop-sep"></div>
+      <button class="acct-drop-action" data-drop-action="add-friend">
+        <span class="icon icon-plus icon-13"></span>
+        <span>${t("friendsAdd")}</span>
+      </button>`;
+
+    list.innerHTML = html;
+
     list.querySelectorAll("[data-drop-id]").forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.dataset.dropId;
         closeAccountDropdown();
         if (id !== activeId) switchAccountUI(id);
+      });
+    });
+    list.querySelectorAll("[data-drop-friend-uid]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        closeAccountDropdown();
+        switchToFriendView(btn.dataset.dropFriendUid, btn.dataset.dropFriendName, btn.dataset.dropFriendColor);
+      });
+    });
+    list.querySelectorAll("[data-drop-action]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.dropAction;
+        closeAccountDropdown();
+        if (action === "manage-profiles") openProfilesModal();
+        else if (action === "add-friend") openAddFriendModal();
       });
     });
   }
@@ -385,6 +454,8 @@
     closeAccountDropdown();
     renderAccountList();
     $("profilesModalOverlay").classList.add("open");
+    // Refresh friends list so the friends section stays up-to-date
+    loadFriendsList().then(() => renderAccountList());
   }
   function closeProfilesModal() {
     $("profilesModalOverlay").classList.remove("open");
@@ -403,6 +474,20 @@
   $("settingsClose").addEventListener("click", closeSettings);
   $("settingsOverlay").addEventListener("click", closeSettings);
 
+  async function openFriends() {
+    // Auto-generate public key on first open if missing
+    if (!state.publicKey) await regeneratePublicKey();
+    loadFriendsList();
+    renderFriendsSection();
+    $("friendsPanel").classList.add("open"); $("friendsOverlay").classList.add("open");
+  }
+  function closeFriends() {
+    $("friendsPanel").classList.remove("open"); $("friendsOverlay").classList.remove("open");
+  }
+  $("btnOpenFriends").addEventListener("click", openFriends);
+  $("friendsPanelClose").addEventListener("click", closeFriends);
+  $("friendsOverlay").addEventListener("click", closeFriends);
+
   const SVG_CHECK = `<span class="icon icon-check icon-13"></span>`;
 
   $("btnStgExport").addEventListener("click", () => {
@@ -412,7 +497,7 @@
     a.href = url; a.download = `tigertag-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { closeSettings(); closeFriends(); } });
   $("btnSbReload").addEventListener("click", () => loadInventory());
 
   const SVG_EYE_OFF = `<span class="icon icon-eye-off icon-14"></span>`;
@@ -482,8 +567,7 @@
     }
   });
   $("btnAddFirstAccount").addEventListener("click", openAddAccountModal);
-  $("btnManageProfiles").addEventListener("click", () => { closeAccountDropdown(); openProfilesModal(); });
-  $("btnDropdownSettings").addEventListener("click", () => { closeAccountDropdown(); openSettings(); });
+  // btnManageProfiles is now rendered dynamically in renderAccountDropdown — listener attached there
 
   // profiles modal
   $("profilesModalClose").addEventListener("click", closeProfilesModal);
@@ -491,6 +575,25 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape" && $("profilesModalOverlay").classList.contains("open")) closeProfilesModal(); });
 
   // preset color swatches
+  // Resolve the primary hex of an account's chosen colour
+  function accPrimaryHex(acc) {
+    if (acc?.color === "custom" && acc.customColor) return acc.customColor;
+    return (ACCOUNT_COLORS[acc?.color] || ACCOUNT_COLORS.orange)[0];
+  }
+
+  // Persist avatar colour as RGB integers in users/{uid} so any surface can read it
+  function saveColorToFirestore(acc) {
+    try {
+      const user = fbAuth().currentUser;
+      if (!user || user.uid !== acc.id) return;
+      const hex = accPrimaryHex(acc).replace(/^#/, "");
+      const r = parseInt(hex.slice(0,2), 16);
+      const g = parseInt(hex.slice(2,4), 16);
+      const b = parseInt(hex.slice(4,6), 16);
+      fbDb().collection("users").doc(user.uid).set({ color_r: r, color_g: g, color_b: b }, { merge: true });
+    } catch (e) { /* non-blocking */ }
+  }
+
   $("eacSwatches").querySelectorAll(".eac-swatch[data-color]").forEach(sw => {
     sw.addEventListener("click", () => {
       if (!_editingAccount) return;
@@ -503,9 +606,11 @@
       $("eacAvatar").style.background = getAccGradient(_editingAccount);
       if (_editingAccount.id === state.activeAccountId) applyAvatarStyle(_editingAccount);
       renderAccountDropdown();
+      saveColorToFirestore(_editingAccount);
     });
   });
-  // custom color picker
+  // custom color picker — debounce Firestore write, apply UI instantly
+  let _colorDebounce = null;
   $("eacCustomColor").addEventListener("input", () => {
     if (!_editingAccount) return;
     const hex = $("eacCustomColor").value;
@@ -518,6 +623,8 @@
     $("eacAvatar").style.background = getAccGradient(_editingAccount);
     if (_editingAccount.id === state.activeAccountId) applyAvatarStyle(_editingAccount);
     renderAccountDropdown();
+    clearTimeout(_colorDebounce);
+    _colorDebounce = setTimeout(() => saveColorToFirestore(_editingAccount), 600);
   });
 
   $("editAccountModalClose").addEventListener("click", closeEditAccountModal);
@@ -608,6 +715,7 @@
     $("btnToggleStgPassword").innerHTML = SVG_EYE_OFF;
     $("btnToggleConfirmPassword").innerHTML = SVG_EYE_OFF;
     $("addModalResult").innerHTML = "";
+    $("stgRememberMe").checked = true;
     lmSetMode("signin");
     // Sync language select to current app language
     $("lmLangSelect").value = state.lang;
@@ -652,14 +760,21 @@
     }
   });
 
-  // Google sign-in via popup (opens inside Electron, see main.js)
+  // Google sign-in via popup — sign in on DEFAULT app, then transfer session
+  // to a named instance (uid) so multiple accounts can coexist independently.
   $("btnGoogleSignIn").addEventListener("click", async () => {
     setLoading($("btnGoogleSignIn"), true);
     $("addModalResult").innerHTML = "";
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
-      await fbAuth().signInWithPopup(provider);
-      // onAuthStateChanged handles the rest
+      provider.setCustomParameters({ prompt: "select_account" });
+      const result = await firebase.auth().signInWithPopup(provider);
+      const uid = result.user.uid;
+      // Transfer session to named instance and sign out DEFAULT
+      ensureFirebaseApp(uid);
+      setupNamedAuth(uid); // register listener before updateCurrentUser fires it
+      await firebase.app(uid).auth().updateCurrentUser(result.user);
+      await firebase.auth().signOut();
       closeAddAccountModal();
     } catch (err) {
       const code = err.code || "";
@@ -677,11 +792,10 @@
     setLoading($("btnStgSave"), true);
     $("addModalResult").innerHTML = "";
     try {
-      // Apply "Stay signed in" persistence preference
       const remember = $("stgRememberMe").checked;
-      await fbAuth().setPersistence(
-        remember ? firebase.auth.Auth.Persistence.LOCAL : firebase.auth.Auth.Persistence.SESSION
-      );
+      const persistence = remember
+        ? firebase.auth.Auth.Persistence.LOCAL
+        : firebase.auth.Auth.Persistence.SESSION;
       if (_lmMode === "create") {
         const confirm = $("stgConfirmPassword").value;
         if (password !== confirm) {
@@ -694,12 +808,25 @@
           setLoading($("btnStgSave"), false);
           return;
         }
-        await fbAuth().createUserWithEmailAndPassword(email, password);
+        // Create on DEFAULT, transfer to named instance
+        const result = await firebase.auth().createUserWithEmailAndPassword(email, password);
+        const uid = result.user.uid;
+        ensureFirebaseApp(uid);
+        setupNamedAuth(uid);
+        await firebase.app(uid).auth().setPersistence(persistence);
+        await firebase.app(uid).auth().updateCurrentUser(result.user);
+        await firebase.auth().signOut();
         toast($("addModalResult"), "ok", t("loginAccountCreated"));
         setTimeout(closeAddAccountModal, 1400);
       } else {
-        await fbAuth().signInWithEmailAndPassword(email, password);
-        // onAuthStateChanged handles the rest
+        // Sign in on DEFAULT, transfer to named instance
+        const result = await firebase.auth().signInWithEmailAndPassword(email, password);
+        const uid = result.user.uid;
+        ensureFirebaseApp(uid);
+        setupNamedAuth(uid);
+        await firebase.app(uid).auth().setPersistence(persistence);
+        await firebase.app(uid).auth().updateCurrentUser(result.user);
+        await firebase.auth().signOut();
         closeAddAccountModal();
       }
     } catch (err) {
@@ -756,11 +883,12 @@
     console.info("[Migration] Legacy API-key accounts wiped. Please sign in with Firebase Auth.");
   }
 
-  /* ── Firebase sign-out ── */
+  /* ── Firebase sign-out (named instance of active account) ── */
   async function fbSignOut() {
     unsubscribeInventory();
-    await fbAuth().signOut();
-    // onAuthStateChanged(null) will call setDisconnected() and show login
+    const id = state.activeAccountId;
+    if (id) { try { await firebase.app(id).auth().signOut(); } catch (_) {} }
+    try { await firebase.auth().signOut(); } catch (_) {} // clean up DEFAULT too
   }
 
   /* ── Firestore inventory subscription ── */
@@ -777,10 +905,10 @@
           setHealthLive();
         }
 
-        // Skip data re-processing on metadata-only updates
-        if (snapshot.docChanges().length === 0 && !snapshot.metadata.hasPendingWrites) return;
-
+        // Skip data re-processing on metadata-only updates (but never skip the first load)
+        const wasLoading = state.invLoading;
         state.invLoading = false;
+        if (!wasLoading && snapshot.docChanges().length === 0 && !snapshot.metadata.hasPendingWrites) return;
         const raw = {};
         snapshot.forEach(doc => { raw[doc.id] = doc.data(); });
         state.inventory = raw;
@@ -806,81 +934,109 @@
   }
 
   /* ── Firebase auth state → app state ── */
-  function initAuth() {
-    fbAuth().onAuthStateChanged(async (user) => {
-      if (user) {
-        const uid      = user.uid;
-        const email    = user.email        || "";
-        const authName = user.displayName  || "";   // Google real name — stored for admin, never shown
-        const photo    = user.photoURL     || null;
 
-        // Upsert account in localStorage — never store the Google real name as the UI name
-        const accounts = getAccounts();
-        let acc = accounts.find(a => a.id === uid);
-        if (!acc) {
-          // New account: no pseudo yet — syncUserDoc will fill it in if one exists in Firestore
-          acc = { id: uid, email, displayName: "", photoURL: photo, lang: state.lang };
-          accounts.push(acc);
-          saveAccounts(accounts);
-        } else {
-          // Only update photo — displayName (pseudo) is managed via Firestore syncUserDoc
-          let changed = false;
-          if (photo && acc.photoURL !== photo) { acc.photoURL = photo; changed = true; }
-          if (changed) saveAccounts(accounts);
-        }
-        setActiveId(uid);
+  // Common handler called when a named-instance user session becomes active.
+  // uid must equal user.uid and be the current active account.
+  async function handleSignedIn(user, uid) {
+    unsubscribeInventory(); unsubscribeFriendRequests();
+    // Always reset friend-view mode on account change — the new account's own inventory is what we want to show.
+    // We also clear the inventory/rows so the previous (friend) data isn't briefly shown as if it belonged to the new account.
+    if (state.friendView) {
+      state.friendView = null;
+      state.inventory  = null;
+      state.rows       = [];
+      renderFriendBanner();
+      // Close any open detail panel — its content was rendered for the friend and is now stale
+      if ($("detailPanel")?.classList.contains("open")) closeDetail();
+    }
+    const email    = user.email       || "";
+    const authName = user.displayName || "";
+    const photo    = user.photoURL    || null;
 
-        // Save real name + email to Firestore users/{uid} for admin reference (non-blocking, silent)
-        if (authName || email) {
-          const parts     = authName.trim().split(/\s+/);
-          const firstName = parts[0] || "";
-          const lastName  = parts.slice(1).join(" ") || "";
-          fbDb().collection("users").doc(uid).set(
-            { googleName: authName, firstName, lastName, email },
-            { merge: true }
-          ).catch(() => {});
-        }
+    // Upsert account in localStorage
+    const accounts = getAccounts();
+    let acc = accounts.find(a => a.id === uid);
+    if (!acc) {
+      acc = { id: uid, email, displayName: "", photoURL: photo, lang: state.lang };
+      accounts.push(acc);
+      saveAccounts(accounts);
+    } else {
+      let changed = false;
+      if (photo && acc.photoURL !== photo) { acc.photoURL = photo; changed = true; }
+      if (changed) saveAccounts(accounts);
+    }
+    setActiveId(uid);
 
-        // Restore this account's language preference
-        if (acc.lang && state.i18n[acc.lang]) {
-          state.lang = acc.lang;
-          localStorage.setItem("tigertag.lang", acc.lang);
-          applyTranslations();
-        }
+    // Save Google real name to Firestore (admin reference, never shown in UI)
+    if (authName || email) {
+      const parts = authName.trim().split(/\s+/);
+      fbDb(uid).collection("users").doc(uid).set(
+        { googleName: authName, firstName: parts[0]||"", lastName: parts.slice(1).join(" ")||"", email },
+        { merge: true }
+      ).catch(() => {});
+    }
 
-        // Show connected state — use pseudo if known, fall back to email (never the Google real name)
-        setConnected(acc.displayName || email, email);
+    // Restore language preference
+    if (acc.lang && state.i18n[acc.lang]) {
+      state.lang = acc.lang;
+      localStorage.setItem("tigertag.lang", acc.lang);
+      applyTranslations();
+    }
 
-        // Display cached inventory while Firestore connects
-        try {
-          const raw = JSON.parse(localStorage.getItem(invKey(uid)) || "null");
-          if (raw && typeof raw === "object") {
-            state.inventory = raw;
-            state.rows = Object.entries(raw).map(([k,vv]) => normalizeRow(k, vv || {}));
-            await preCacheImages(state.rows);
-            sortRows(); renderStats(); renderInventory();
-          }
-        } catch {}
+    setConnected(acc.displayName || email, email);
 
-        // Subscribe to live Firestore data
-        subscribeInventory(uid);
-        // Sync language preference from Firestore (non-blocking, cross-device)
-        syncLangFromFirestore(uid);
-        // Sync admin status + debug mode from user doc
-        syncUserDoc(uid);
+    // Show cached inventory while Firestore connects
+    try {
+      const raw = JSON.parse(localStorage.getItem(invKey(uid)) || "null");
+      if (raw && typeof raw === "object") {
+        state.inventory = raw;
+        state.rows = Object.entries(raw).map(([k,vv]) => normalizeRow(k, vv || {}));
+        await preCacheImages(state.rows);
+        sortRows(); renderStats(); renderInventory();
+      }
+    } catch {}
 
-      } else {
-        // Signed out
-        unsubscribeInventory();
+    subscribeInventory(uid);
+    syncLangFromFirestore(uid);
+    syncUserDoc(uid);
+    subscribeFriendRequests(uid);
+    loadFriendsList();  // populate state.friends early so dropdown + profiles modal show friends immediately
+  }
+
+  // Track which account ids already have an onAuthStateChanged listener set up.
+  const _namedAuthSetup = new Set();
+
+  // Set up an independent Firebase auth listener for one account (named instance).
+  function setupNamedAuth(uid) {
+    if (_namedAuthSetup.has(uid)) return;
+    _namedAuthSetup.add(uid);
+    ensureFirebaseApp(uid);
+    firebase.app(uid).auth().onAuthStateChanged(async user => {
+      if (user && user.uid === uid) {
+        // Session active or restored from IndexedDB
+        if (uid === getActiveId()) await handleSignedIn(user, uid);
+      } else if (uid === getActiveId()) {
+        // Active account's session expired → show login
+        unsubscribeInventory(); unsubscribeFriendRequests();
         state.inventory = null; state.rows = [];
         state.isAdmin = false; state.debugEnabled = false;
-        applyDebugMode();
-        renderStats(); renderInventory();
+        state.publicKey = null; state.privateKey = null;
+        state.friends = []; state.friendRequests = [];
+        applyDebugMode(); renderStats(); renderInventory();
+        renderAccountDropdown();
         setDisconnected();
-        // Always show login modal when signed out
         setTimeout(() => openAddAccountModal(), 300);
       }
     });
+  }
+
+  function initAuth() {
+    // Restore named instances for all saved accounts (sessions auto-reload from IndexedDB)
+    const accounts = getAccounts();
+    for (const acc of accounts) setupNamedAuth(acc.id);
+
+    // If no saved accounts, show login immediately
+    if (!accounts.length) setTimeout(() => openAddAccountModal(), 300);
   }
 
 
@@ -916,6 +1072,34 @@
       }).join("")}</div>`;
     }
     html += `<button class="stg-add-btn" id="btnShowAddAccount">${SVG_PLUS} ${t("addAccountLabel")}</button>`;
+
+    // ── Friends section ───────────────────────────────────────────────────────
+    const SVG_EYE = `<span class="icon icon-eye-on icon-13"></span>`;
+    html += `<div class="prf-section-sep"></div>
+      <div class="prf-section-label">${t("friendsList")}</div>`;
+    if (state.friends && state.friends.length) {
+      html += `<div class="prf-list">${state.friends.map(f => {
+          const name = esc(f.displayName || f.uid);
+          const color = friendColor(f);
+          const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+          const isActive = state.friendView?.uid === f.uid;
+          return `
+          <button class="prf-account-card prf-friend-card${isActive ? " prf-friend-active" : ""}"
+                  data-fv-uid="${esc(f.uid)}" data-fv-name="${esc(f.displayName || f.uid)}" data-fv-color="${esc(color)}">
+            <span class="prf-account-avatar" style="background:${color}">${initials}</span>
+            <span class="prf-account-info">
+              <span class="prf-account-name">${name}</span>
+              <span class="prf-account-email prf-friend-sub">${t("friendViewInv")}</span>
+            </span>
+            <span class="prf-account-chevron">${SVG_EYE}</span>
+          </button>`;
+        }).join("")}</div>`;
+    } else {
+      html += `<div class="prf-friends-empty">${t("friendsEmpty")}</div>`;
+    }
+    // Always show the "Add a friend" button under the friends list
+    html += `<button class="stg-add-btn" id="btnPrfAddFriend">${SVG_PLUS} ${t("friendsAdd")}</button>`;
+
     el.innerHTML = html;
 
     el.querySelectorAll("[data-prf-id]").forEach(card => {
@@ -924,21 +1108,41 @@
         if (acc) { closeProfilesModal(); openEditAccountModal(acc); }
       });
     });
-    $("btnShowAddAccount").addEventListener("click", openAddAccountModal);
+    el.querySelectorAll("[data-fv-uid]").forEach(card => {
+      card.addEventListener("click", () => {
+        switchToFriendView(card.dataset.fvUid, card.dataset.fvName, card.dataset.fvColor);
+      });
+    });
+    $("btnShowAddAccount").addEventListener("click", () => { closeProfilesModal(); openAddAccountModal(); });
+    $("btnPrfAddFriend")?.addEventListener("click", () => { closeProfilesModal(); openAddFriendModal(); });
   }
 
   async function switchAccountUI(id) {
-    // With Firebase Auth there is only one active session at a time.
-    // Switching to a different account signs out the current user and opens the login modal.
-    const currentUser = fbAuth().currentUser;
-    if (currentUser && currentUser.uid === id) {
-      // Already signed in as this account — just close any open panels
+    if (id === state.activeAccountId) {
+      // Even if active account didn't change, exit friend-view if user is in it
+      if (state.friendView) switchBackToOwnView();
       closeProfilesModal(); closeSettings(); return;
     }
-    // Sign out and let onAuthStateChanged open the login modal
-    await fbSignOut();
-    closeProfilesModal(); closeSettings();
-    setTimeout(() => openAddAccountModal(), 250);
+    // Always exit friend-view before switching accounts
+    if (state.friendView) {
+      state.friendView = null;
+      renderFriendBanner();
+    }
+    // Check if the target account has an active named Firebase session
+    let targetUser = null;
+    try { targetUser = firebase.app(id).auth().currentUser; } catch (_) {}
+
+    if (targetUser && targetUser.uid === id) {
+      // Session alive — switch instantly, no re-authentication needed
+      setActiveId(id);
+      closeProfilesModal(); closeSettings();
+      await handleSignedIn(targetUser, id);
+    } else {
+      // Session missing or expired — pre-select the account and ask for credentials
+      setActiveId(id);
+      closeProfilesModal(); closeSettings();
+      setTimeout(() => openAddAccountModal(), 250);
+    }
   }
 
   function deleteAccountUI(id) {
@@ -947,8 +1151,29 @@
     accounts = accounts.filter(a => a.id !== id);
     saveAccounts(accounts);
     localStorage.removeItem(invKey(id));
+    _namedAuthSetup.delete(id);
+    // Sign out the named instance so its IndexedDB session is cleared
+    try { firebase.app(id).auth().signOut(); } catch (_) {}
     if (wasActive) {
-      fbSignOut(); // triggers onAuthStateChanged(null) which cleans up
+      unsubscribeInventory(); unsubscribeFriendRequests();
+      state.inventory = null; state.rows = [];
+      state.isAdmin = false; state.debugEnabled = false;
+      state.publicKey = null; state.privateKey = null;
+      state.friends = []; state.friendRequests = [];
+      applyDebugMode(); renderStats(); renderInventory();
+      setDisconnected();
+      // Switch to another account if available, otherwise show login
+      const remaining = getAccounts();
+      if (remaining.length) {
+        setActiveId(remaining[0].id);
+        setupNamedAuth(remaining[0].id);
+        const u = firebase.app(remaining[0].id).auth().currentUser;
+        if (u) handleSignedIn(u, remaining[0].id);
+        else setTimeout(() => openAddAccountModal(), 300);
+      } else {
+        state.activeAccountId = null;
+        setTimeout(() => openAddAccountModal(), 300);
+      }
     } else {
       renderAccountList();
     }
@@ -1049,15 +1274,136 @@
   /* ── render ── */
   function renderInventory() {
     const rows = filteredRows();
+    renderFriendBanner();
+
+    // ── Loading or truly empty → dedicated welcome card ──────────────────────
+    // In friendView, keep card-inv visible so the banner stays; show spinner there
+    if (state.invLoading || (state.inventory !== null && state.rows.length === 0)) {
+      if (state.friendView) {
+        $("card-welcome").classList.add("hidden");
+        $("card-inv").classList.remove("hidden");
+        $("invTableWrap").classList.add("hidden"); $("invGrid").classList.add("hidden");
+        $("invEmpty").classList.add("hidden");
+        if (state.invLoading) {
+          $("mainResult").innerHTML = `<div class="inv-loading"><div class="inv-loading-spin"></div><span>${t("invLoading")}</span></div>`;
+        } else if (state.friendView.error) {
+          $("mainResult").innerHTML = `
+            <div class="friend-inv-error">
+              <div class="friend-inv-error-icon">⚠</div>
+              <div class="friend-inv-error-title">${t("friendInvErrorTitle")}</div>
+              <div class="friend-inv-error-msg">${esc(state.friendView.error)}</div>
+              <div class="friend-inv-error-hint">${t("friendInvErrorHint")}</div>
+              <div class="friend-inv-error-actions">
+                <button class="fie-btn" id="fieRetry">
+                  <span class="icon icon-refresh icon-13"></span>
+                  ${t("friendInvErrorRetry")}
+                </button>
+                <button class="fie-btn fie-btn--danger" id="fieRemove">
+                  <span class="icon icon-trash icon-13"></span>
+                  ${t("friendInvErrorRemove")}
+                </button>
+              </div>
+            </div>`;
+          $("fieRetry")?.addEventListener("click", () => {
+            const fv = state.friendView;
+            if (fv) switchToFriendView(fv.uid, fv.displayName, fv.avatarColor);
+          });
+          $("fieRemove")?.addEventListener("click", async () => {
+            const fv = state.friendView;
+            if (!fv) return;
+            const btn = $("fieRemove");
+            if (btn) btn.disabled = true;
+            try {
+              await removeFriend(fv.uid);
+              await loadFriendsList();
+              switchBackToOwnView();
+            } catch (e) {
+              console.error("[FriendView] remove failed:", e);
+              if (btn) btn.disabled = false;
+            }
+          });
+        } else {
+          $("mainResult").innerHTML = "";
+          $("invEmpty").textContent = t("noInventory");
+          $("invEmpty").classList.remove("hidden");
+        }
+        return;
+      }
+      $("card-inv").classList.add("hidden");
+      $("card-welcome").classList.remove("hidden");
+
+      if (state.invLoading) {
+        $("invWelcome").innerHTML = `<div class="inv-loading"><div class="inv-loading-spin"></div><span>${t("invLoading")}</span></div>`;
+      } else {
+        // Connected + 0 spools → Apple-style welcome with 2 QR cards
+        const qrUniversal  = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Ftaap.it%2FDF1Aqt&bgcolor=ffffff&color=1d1d1f&margin=16&qzone=1`;
+        const qrTestflight = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https%3A%2F%2Ftestflight.apple.com%2Fjoin%2FjVHhmK4C&bgcolor=ffffff&color=1d1d1f&margin=16&qzone=1`;
+        $("invWelcome").innerHTML = `
+          <div class="inv-welcome">
+            <div class="inv-welcome-hero">
+              <div class="inv-welcome-logo">
+                <img src="../assets/svg/logos/logo_tigertag.svg" width="36" height="36" alt="TigerTag" />
+              </div>
+              <h1 class="inv-welcome-h1">${t("invWelcomeTitle")}</h1>
+              <p class="inv-welcome-p">${t("invWelcomeSub")}</p>
+            </div>
+            <div class="inv-welcome-grid">
+              <!-- Card 1 : App Store + Google Play (lien universel taap.it) -->
+              <div class="inv-qr-card">
+                <div class="inv-qr-card-head inv-qr-card-head--dark">
+                  <span class="icon icon-apple icon-13"></span>
+                  <span class="icon icon-android icon-13"></span>
+                  App Store &amp; Google Play
+                </div>
+                <div class="inv-qr-card-body">
+                  <img class="inv-qr-img" src="${qrUniversal}" alt="QR" onerror="this.style.opacity='.15'" />
+                  <div class="inv-qr-store-row">
+                    <a class="inv-qr-store-pill" href="https://taap.it/DF1Aqt" target="_blank" rel="noopener">
+                      <span class="icon icon-apple icon-12"></span> App Store
+                    </a>
+                    <a class="inv-qr-store-pill" href="https://taap.it/DF1Aqt" target="_blank" rel="noopener">
+                      <span class="icon icon-android icon-12"></span> Google Play
+                    </a>
+                  </div>
+                </div>
+                <div class="inv-qr-card-foot">${t("invQrScanHint")}</div>
+              </div>
+              <!-- Card 2 : TestFlight beta -->
+              <div class="inv-qr-card">
+                <div class="inv-qr-card-head inv-qr-card-head--orange">
+                  <span class="icon icon-apple icon-13"></span>
+                  TestFlight
+                  <span class="inv-qr-beta-badge">BETA</span>
+                </div>
+                <div class="inv-qr-card-body">
+                  <img class="inv-qr-img" src="${qrTestflight}" alt="QR" onerror="this.style.opacity='.15'" />
+                  <div class="inv-qr-store-row">
+                    <a class="inv-qr-store-pill" href="https://testflight.apple.com/join/jVHhmK4C" target="_blank" rel="noopener">
+                      <span class="icon icon-apple icon-12"></span> TestFlight
+                    </a>
+                  </div>
+                </div>
+                <div class="inv-qr-card-foot">${t("invQrBetaNote")}</div>
+              </div>
+            </div>
+          </div>`;
+      }
+      return;
+    }
+
+    // ── Has spools → inventory card ───────────────────────────────────────────
+    $("card-welcome").classList.add("hidden");
+    $("card-inv").classList.remove("hidden");
+    $("mainResult").innerHTML = "";  // clear any spinner left by friendView loading
+
+    // Filter returned no results
     if (rows.length === 0) {
       $("invTableWrap").classList.add("hidden"); $("invGrid").classList.add("hidden");
-      if (state.invLoading) {
-        $("invEmpty").innerHTML = `<div class="inv-loading"><div class="inv-loading-spin"></div><span>${t("invLoading")}</span></div>`;
-      } else {
-        $("invEmpty").textContent = state.rows.length === 0 ? t("noInventory") : t("noMatch");
-      }
-      $("invEmpty").classList.remove("hidden"); return;
+      $("invEmpty").textContent = t("noMatch");
+      $("invEmpty").classList.remove("hidden");
+      return;
     }
+
     $("invEmpty").classList.add("hidden");
     if (state.viewMode === "grid") {
       $("invTableWrap").classList.add("hidden"); $("invGrid").classList.remove("hidden"); renderGrid(rows);
@@ -1161,10 +1507,11 @@
     const src = row.imgUrl ? resolvedImg(row.imgUrl) : null;
     const overlay = twinOverlayBadge(row);
     const tdBadge = row.td != null ? `<span class="thumb-td-badge">TD ${row.td}</span>` : "";
+    const chipBadge = row.needUpdateAt ? `<span class="chip-badge thumb-chip-badge" title="${t("chipPendingHint")}"><span class="icon icon-refresh icon-9"></span></span>` : "";
     const inner = src
       ? `<img class="thumb" src="${esc(src)}" width="${size}" height="${size}" loading="lazy" />`
       : `<span class="thumb-color" style="width:${size}px;height:${size}px;background:${colorBg(row)}"><img src="${logoSrc(colorBg(row))}" /></span>`;
-    return `<span class="thumb-wrap">${inner}${overlay}${tdBadge}</span>`;
+    return `<span class="thumb-wrap">${inner}${overlay}${tdBadge}${chipBadge}</span>`;
   }
 
   function renderTable(rows) {
@@ -1209,8 +1556,9 @@
       const swatch = colorCircleHTML(r);
       const badge = r.isPlus ? '<span class="tag-plus">TigerTag+</span>' : '<span class="tag-diy">TigerTag</span>';
       const tdBadge = r.td != null ? `<span class="card-td-badge">TD ${r.td}</span>` : "";
+      const chipDot = r.needUpdateAt ? `<span class="chip-badge card-chip-badge" title="${t("chipPendingHint")}"><span class="icon icon-refresh icon-11"></span></span>` : "";
       card.innerHTML = `
-        <div class="card-img-wrap">${imgHtml}${twinOverlayBadge(r)}${tdBadge}</div>
+        <div class="card-img-wrap">${imgHtml}${twinOverlayBadge(r)}${tdBadge}${chipDot}</div>
         <div class="card-body">
           <div class="card-name">${swatch}${esc(v(r.colorName) !== "-" ? r.colorName : [r.aspect1, r.aspect2].filter(a => a && a !== "-" && a !== "None").join(" ") || r.material)}</div>
           <div class="card-sub">${esc(v(r.material))} · ${esc(v(r.brand))}</div>
@@ -1427,6 +1775,29 @@
     if ($("btnEditColor")) {
       $("btnEditColor").addEventListener("click", () => openColorEditModal(r));
     }
+    // Chip done → clear needUpdateAt (and twin)
+    if ($("btnChipDone")) {
+      $("btnChipDone").addEventListener("click", async () => {
+        const uid = state.activeAccountId; if (!uid) return;
+        $("btnChipDone").disabled = true;
+        const invRef = fbDb().collection("users").doc(uid).collection("inventory");
+        try {
+          const batch = fbDb().batch();
+          batch.update(invRef.doc(r.spoolId), { needUpdateAt: null });
+          if (r.twinUid) {
+            const tr = state.rows.find(x =>
+              x.spoolId !== r.spoolId &&
+              (String(x.uid) === String(r.twinUid) || String(x.spoolId) === String(r.twinUid))
+            );
+            if (tr) batch.update(invRef.doc(tr.spoolId), { needUpdateAt: null });
+          }
+          await batch.commit();
+        } catch (err) {
+          console.error("[chipDone] error:", err);
+          $("btnChipDone").disabled = false;
+        }
+      });
+    }
   }
   function closeDetail() {
     // Cancel any pending auto-save (don't fire on close)
@@ -1449,7 +1820,19 @@
     if (clamped !== null) el.value = clamped;
   }
   function _tdClampLive(el) {
-    if (!el || el.value === "") return;
+    if (!el) return;
+    // Strip any character that isn't a digit, dot, or comma; then convert comma → dot.
+    // TD values are always stored with a dot decimal separator (no commas).
+    const cleaned = el.value
+      .replace(/[^\d.,]/g, "")   // keep only digits, dot, comma
+      .replace(/,/g, ".")        // convert comma → dot
+      .replace(/(\..*)\./g, "$1"); // collapse multiple dots into one
+    if (cleaned !== el.value) {
+      const pos = el.selectionStart;
+      el.value = cleaned;
+      try { el.setSelectionRange(pos, pos); } catch (_) {}
+    }
+    if (el.value === "") return;
     const n = parseFloat(el.value);
     if (!isNaN(n) && n > 100) el.value = 100;
   }
@@ -1479,10 +1862,15 @@
     }
   }
   // Generic Firestore save: writes TD and/or HEX color to a spool + its twin
+  // Fields that live on the physical RFID chip — editing them requires re-tagging the spool
+  const CHIP_FIELDS = ["TD", "online_color_list"];
+
   async function _saveTdHex(row, update, lockBtns, unlockBtns, closeFn, tag) {
     if (!row) return;
     const uid = state.activeAccountId; if (!uid) return;
     lockBtns.forEach(b => { if (b) b.disabled = true; });
+    // If any chip field is being changed, flag the spool for re-tagging
+    if (CHIP_FIELDS.some(f => f in update)) update.needUpdateAt = Date.now();
     const invRef = fbDb().collection("users").doc(uid).collection("inventory");
     try {
       const batch = fbDb().batch();
@@ -1832,12 +2220,18 @@
       ? '<span class="tag-plus panel-img-badge panel-img-badge--tl">TigerTag+</span>'
       : '<span class="tag-diy panel-img-badge panel-img-badge--tl">TigerTag</span>';
     const badgeTwin = r.hasTwinPair
-      ? `<span class="tag-twin panel-img-badge panel-img-badge--tr"><span class="icon icon-link icon-9"></span>${t("twinBadge")}</span>`
+      ? `<span class="tag-twin panel-img-badge-tr-item panel-img-icon-badge" title="${t("twinBadge")} — ${t("twinTitle")}"><span class="icon icon-link icon-11"></span></span>`
+      : "";
+    const badgeChip = r.needUpdateAt
+      ? `<span class="chip-badge panel-img-badge-tr-item panel-img-icon-badge" title="${t("chipPendingHint")}"><span class="icon icon-refresh icon-11"></span></span>`
       : "";
     const badgeTd = r.td != null
       ? `<span class="panel-img-badge panel-img-badge--bl panel-td-badge">TD ${r.td}</span>`
       : "";
-    const overlays = badgeLeft + badgeTwin + badgeTd;
+    const badgeTrGroup = (badgeTwin || badgeChip)
+      ? `<div class="panel-img-badge panel-img-badge--tr panel-img-badge-tr-group">${badgeTwin}${badgeChip}</div>`
+      : "";
+    const overlays = badgeLeft + badgeTrGroup + badgeTd;
     let imgSection = "";
     const _resolvedPanel = r.imgUrl ? resolvedImg(r.imgUrl) : null;
     if (_resolvedPanel) {
@@ -1853,11 +2247,16 @@
     const temps = r.temps;
     const hasDirect = temps.nozzleMin || temps.nozzleMax || temps.bedMin || temps.bedMax || temps.dryTemp || temps.dryTime;
     const rec = mat && mat.recommended;
-    // TD chip — always editable, always shown in print section
-    const tdChipEl = `<div class="temp-chip temp-chip--editable" id="btnEditTd" title="${t("tdEditTitle")}">
-        <div class="tc-label">TD</div>
-        <div class="tc-value">${r.td != null ? r.td : `<span class="tc-add">${t("tdNotSet")}</span>`}</div>
-      </div>`;
+    // TD chip — editable only when viewing own inventory
+    const tdChipEl = state.friendView
+      ? `<div class="temp-chip">
+          <div class="tc-label">TD</div>
+          <div class="tc-value">${r.td != null ? r.td : "—"}</div>
+        </div>`
+      : `<div class="temp-chip temp-chip--editable" id="btnEditTd" title="${t("tdEditTitle")}">
+          <div class="tc-label">TD</div>
+          <div class="tc-value">${r.td != null ? r.td : `<span class="tc-add">${t("tdNotSet")}</span>`}</div>
+        </div>`;
 
     let tempHtml = "";
     {
@@ -1935,7 +2334,24 @@
     // weight
     const cap = r.capacity || 1000;
     const curW = r.weightAvailable != null ? r.weightAvailable : 0;
-    const weightHtml = `
+    const weightHtml = state.friendView ? `
+      <div class="panel-section">
+        <div class="panel-label">${t("sectionWeight")}</div>
+        <div class="weight-bar-wrap">
+          <div class="wb-labels">
+            <div class="wb-val-group">
+              <div class="wb-val">${curW}<span>g</span></div>
+            </div>
+            <div class="wb-cap">${cap >= 1000 ? (cap/1000).toFixed(cap % 1000 === 0 ? 0 : 1) + ' kg' : cap + ' g'} total</div>
+          </div>
+          <div class="wb-track wb-track--ro">
+            <div class="wb-fill" style="width:${Math.round(curW/cap*100)}%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:5px">
+            <span>0 g</span><span>${cap} g</span>
+          </div>
+        </div>
+      </div>` : `
       <div class="panel-section">
         <div class="panel-label">${t("sectionWeight")}</div>
         <div class="weight-bar-wrap">
@@ -2004,15 +2420,15 @@
             <div class="cc-type">${esc(container.type)}</div>
             <div class="cc-cw-row">
               <span id="ccCwVal" class="cc-cw">${r.containerWeight} g</span>
-              <button id="btnEditCw" class="cc-cw-btn" title="${t("cwEditWeight")}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              ${state.friendView ? "" : `<button id="btnEditCw" class="cc-cw-btn" title="${t("cwEditWeight")}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`}
             </div>
-            <div id="ccCwEditRow" class="cc-cw-edit-row">
+            ${state.friendView ? "" : `<div id="ccCwEditRow" class="cc-cw-edit-row">
               <input id="ccCwInput" type="number" class="cc-cw-input" value="${r.containerWeight}" min="0" max="9999" step="1" />
               <button id="ccCwOk" class="cc-cw-ok">✓</button>
               <button id="ccCwCancel" class="cc-cw-cancel">✕</button>
-            </div>
+            </div>`}
           </div>
-          <button id="btnChangeContainerCard" class="cc-edit" title="${t("btnChangeContainer")}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          ${state.friendView ? "" : `<button id="btnChangeContainerCard" class="cc-edit" title="${t("btnChangeContainer")}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`}
         </div>
       </div>` : "";
 
@@ -2040,9 +2456,17 @@
         ${hasMat || displayName ? `<div class="pi-row2">${[hasMat ? esc(r.material) : "", displayName ? esc(displayName) : ""].filter(Boolean).join(" ")}</div>` : ""}
       </div>`;
 
+    const chipBannerHtml = r.needUpdateAt ? `
+      <div class="chip-update-banner">
+        <span class="chip-update-icon"><span class="icon icon-refresh icon-13"></span></span>
+        <span class="chip-update-text">${t("chipPendingHint")}</span>
+        <button class="btn chip-update-done" id="btnChipDone">${t("btnChipDone")}</button>
+      </div>` : "";
+
     return `
       ${imgSection}
       ${identityHtml}
+      ${chipBannerHtml}
       <div class="panel-section">
         <div class="panel-label">${t("sectionColors", {n: r.colorList.length})} &amp; Aspect</div>
         <div class="color-aspect-row">
@@ -2345,10 +2769,697 @@
     if (!state.debugEnabled) closeDebug();
   }
 
-  async function syncUserDoc(uid) {
+  /* ── Friends UI ───────────────────────────────────────────────────────── */
+
+  function renderFriendsList() {
+    const list = $("stgFriendsList");
+    const count = $("stgFriendsCount");
+    if (!list) return;
+    if (count) count.textContent = state.friends.length;
+
+    if (!state.friends.length) {
+      list.innerHTML = `
+        <div class="fp-empty">
+          <div class="fp-empty-icon"><span class="icon icon-user icon-14"></span></div>
+          <div class="fp-empty-title">${t("friendsEmpty")}</div>
+          <div class="fp-empty-sub">${t("friendsEmptySub")}</div>
+        </div>`;
+      return;
+    }
+
+    const search = ($("fpSearch")?.value || "").trim().toLowerCase();
+    const filtered = search
+      ? state.friends.filter(f => (f.displayName || f.uid).toLowerCase().includes(search))
+      : state.friends;
+
+    if (!filtered.length) {
+      list.innerHTML = `<div class="fp-empty fp-empty--mini">${t("noMatch")}</div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map(f => {
+      const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+      const color = friendColor(f);
+      const date = f.addedAt ? timeAgo(f.addedAt.seconds ? f.addedAt.seconds * 1000 : f.addedAt) : "";
+      return `<div class="fp-friend" data-uid="${esc(f.uid)}" data-name="${esc(f.displayName || f.uid)}" data-color="${esc(color)}">
+        <div class="fp-friend-avatar" style="background:${color}">${initials}</div>
+        <div class="fp-friend-main">
+          <div class="fp-friend-name">${esc(f.displayName || f.uid)}</div>
+          <div class="fp-friend-date">${date ? t("friendAddedOn", { date }) : ""}</div>
+        </div>
+        <div class="fp-friend-actions">
+          <button class="fp-friend-btn fp-friend-view" data-action="view" title="${t('friendViewInv')}">
+            <span class="icon icon-eye-on icon-13"></span>
+          </button>
+          <button class="fp-friend-btn fp-friend-remove" data-action="remove" title="${t('friendRemove')}">
+            <span class="icon icon-trash icon-13"></span>
+          </button>
+        </div>
+      </div>`;
+    }).join("");
+
+    // Click on the row body switches to that friend's inventory
+    list.querySelectorAll(".fp-friend").forEach(row => {
+      row.addEventListener("click", e => {
+        if (e.target.closest("[data-action='remove']")) return;
+        switchToFriendView(row.dataset.uid, row.dataset.name, row.dataset.color);
+      });
+    });
+    list.querySelectorAll(".fp-friend-remove").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const row = btn.closest(".fp-friend");
+        await removeFriend(row.dataset.uid);
+        renderFriendsList();
+      });
+    });
+    list.querySelectorAll(".fp-friend-view").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const row = btn.closest(".fp-friend");
+        switchToFriendView(row.dataset.uid, row.dataset.name, row.dataset.color);
+      });
+    });
+  }
+
+  // Extract avatar color from a userProfiles document (single `color` hex field).
+  function profileColor(data) {
+    return data.color || null;
+  }
+  // Fallback color when no profile color is available.
+  function friendColorFallback(uid) {
+    return `hsl(${Math.abs(uid.split("").reduce((a,c) => a+c.charCodeAt(0), 0)) % 360}, 55%, 50%)`;
+  }
+  // Resolve the display color for a friend object (uses stored color, falls back to hash).
+  function friendColor(f) {
+    return f.color || friendColorFallback(f.uid);
+  }
+
+  // Load friends list from Firestore, then sync displayName + avatar color from userProfiles
+  // (userProfiles/{uid} is the live source of truth for public profile data).
+  async function loadFriendsList() {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    const uid = user.uid;
     try {
-      const snap = await fbDb().collection("users").doc(uid).get();
+      const db = fbDb(uid);   // use named instance — safe even if active account changes during await
+      const snap = await db.collection("users").doc(uid).collection("friends").get();
+      const friends = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+
+      // Fetch current public profiles in parallel
+      const profileSnaps = await Promise.all(
+        friends.map(f => db.collection("userProfiles").doc(f.uid).get().catch(() => null))
+      );
+
+      // Batch-update stale fields in our friends sub-collection (fire-and-forget)
+      const batch = db.batch();
+      let batchDirty = false;
+
+      friends.forEach((f, i) => {
+        const ps = profileSnaps[i];
+        if (!ps || !ps.exists) return;
+        const pd = ps.data();
+        const liveDisplayName = pd.displayName || "";
+        const liveColor       = profileColor(pd);   // "#rrggbb" or null
+        const updates = {};
+
+        if (liveDisplayName && liveDisplayName !== f.displayName) {
+          f.displayName = liveDisplayName;
+          updates.displayName = liveDisplayName;
+        }
+        if (liveColor && liveColor !== f.color) {
+          f.color = liveColor;
+          updates.color = liveColor;
+        } else if (liveColor) {
+          f.color = liveColor;   // always apply in-memory even if already stored
+        }
+
+        if (Object.keys(updates).length) {
+          batch.update(
+            db.collection("users").doc(uid).collection("friends").doc(f.uid),
+            updates
+          );
+          batchDirty = true;
+        }
+      });
+
+      if (batchDirty) batch.commit().catch(() => {});
+
+      // Guard: only update UI if this is still the active account
+      if (uid !== state.activeAccountId) return;
+
+      state.friends = friends;
+      renderFriendsList();
+      // Refresh everywhere friends are shown
+      renderAccountDropdown();
+      if ($("profilesModalOverlay").classList.contains("open")) renderAccountList();
+    } catch (e) { console.warn("[friends]", e.message); }
+  }
+
+  /* ── Friend inventory panel ──────────────────────────────────────────────── */
+  function openFriendInventory(friendUid, friendName, avatarColor) {
+    // Header
+    const av = $("friendInvAvatar");
+    if (av) {
+      const initials = (friendName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+      av.textContent = initials;
+      av.style.background = avatarColor || "#888";
+    }
+    if ($("friendInvName")) $("friendInvName").textContent = friendName || friendUid;
+
+    // Reset body
+    const grid    = $("friendInvGrid");
+    const loading = $("friendInvLoading");
+    const sub     = $("friendInvSub");
+    if (grid)    { grid.innerHTML = ""; grid.classList.add("hidden"); }
+    if (loading) loading.classList.remove("hidden");
+    if (sub)     sub.textContent = "";
+
+    // Open panel
+    $("friendInvPanel").classList.add("open");
+    $("friendInvOverlay").classList.add("open");
+
+    // Fetch friend's inventory (Firestore rules allow access if friendship keys match)
+    fbDb().collection("users").doc(friendUid).collection("inventory").get()
+      .then(snap => {
+        if (loading) loading.classList.add("hidden");
+        const rows = snap.docs
+          .map(d => normalizeRow(d.id, d.data()))
+          .filter(r => !r.deleted)
+          .sort((a, b) => (a.brand + a.material + a.colorName).localeCompare(b.brand + b.material + b.colorName));
+        if (sub) sub.textContent = t("loadedSpools", { n: rows.length });
+        if (!rows.length) {
+          grid.innerHTML = `<div class="fi-empty">${t("noMatch")}</div>`;
+        } else {
+          grid.innerHTML = rows.map(r => {
+            const swatch = r.colors?.length
+              ? `background:linear-gradient(135deg,${r.colors.slice(0,2).join(",")})` : "background:#888";
+            return `<div class="fi-spool-card">
+              <div class="fi-spool-swatch" style="${swatch}"></div>
+              <div class="fi-spool-info">
+                <div class="fi-spool-name">${esc(r.colorName || r.brand)}</div>
+                <div class="fi-spool-meta">${esc(r.material)} · ${esc(r.brand)}</div>
+                <div class="fi-spool-weight">${r.weightAvailable != null ? r.weightAvailable + " g" : "—"}</div>
+              </div>
+            </div>`;
+          }).join("");
+        }
+        grid.classList.remove("hidden");
+      })
+      .catch(err => {
+        if (loading) loading.classList.add("hidden");
+        if (sub) sub.textContent = "⚠ " + (err.message || t("networkError"));
+      });
+  }
+
+  function closeFriendInventory() {
+    $("friendInvPanel").classList.remove("open");
+    $("friendInvOverlay").classList.remove("open");
+  }
+
+  $("friendInvBack").addEventListener("click", closeFriendInventory);
+  $("friendInvOverlay").addEventListener("click", closeFriendInventory);
+
+  /* ── Friend view: friend inventory in main interface ────────────────────── */
+  function renderFriendBanner() {
+    const banner = $("friendViewBanner");
+    if (!banner) return;
+    if (!state.friendView) { banner.classList.add("hidden"); return; }
+    const { displayName, avatarColor, error } = state.friendView;
+    const initials = (displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+    banner.innerHTML = `
+      <div class="fvb-inner">
+        <span class="fvb-avatar" style="background:${avatarColor || "var(--accent)"}">${esc(initials)}</span>
+        <span class="fvb-name">${esc(displayName || "—")}</span>
+        ${error
+          ? `<span class="fvb-badge fvb-badge--error" title="${esc(error)}">⚠ ${t("friendInvErrorBadge")}</span>`
+          : `<span class="fvb-badge">${t("friendViewReadOnly")}</span>`}
+      </div>
+      <button class="fvb-back" id="btnFriendViewBack">
+        <span class="icon icon-chevron-l icon-11"></span>
+        ${t("friendViewBack")}
+      </button>`;
+    banner.classList.toggle("fvb--error", !!error);
+    banner.classList.remove("hidden");
+    $("btnFriendViewBack")?.addEventListener("click", switchBackToOwnView);
+  }
+
+  async function switchToFriendView(friendUid, friendName, avatarColor) {
+    closeProfilesModal(); closeFriends();
+    const ownerUid = state.activeAccountId;  // capture so async errors land on the right account
+    state.friendView = { uid: friendUid, displayName: friendName, avatarColor, error: null };
+    state.inventory = null; state.rows = [];
+    state.invLoading = true;
+    renderFriendBanner();
+    renderStats(); renderInventory();
+    try {
+      console.log(`[FriendView] reading users/${friendUid}/inventory as ${ownerUid}`);
+      const snap = await fbDb(ownerUid).collection("users").doc(friendUid).collection("inventory").get();
+      console.log(`[FriendView] received ${snap.docs.length} docs`);
+      const raw = {};
+      snap.forEach(doc => { raw[doc.id] = doc.data(); });
+      state.inventory = raw;
+      state.rows = snap.docs.map(doc => normalizeRow(doc.id, doc.data()));
+      await preCacheImages(state.rows);
+      // Guard: user might have switched away during the await
+      if (state.friendView?.uid !== friendUid) return;
+      state.invLoading = false;
+      sortRows(); renderStats(); renderInventory();
+    } catch (e) {
+      console.error("[FriendView] read failed:", e.code, e.message, e);
+      if (state.friendView?.uid !== friendUid) return;
+      state.invLoading = false;
+      state.inventory = {}; state.rows = [];
+      // Surface the error in the banner + empty state
+      state.friendView.error = e.code === "permission-denied"
+        ? t("friendInvPermDenied")
+        : (e.message || t("networkError"));
+      renderFriendBanner();
+      renderStats(); renderInventory();
+    }
+  }
+
+  function switchBackToOwnView() {
+    if (!state.friendView) return;
+    state.friendView = null;
+    state.inventory = null; state.rows = [];
+    renderFriendBanner();
+    const uid = state.activeAccountId;
+    if (uid) { state.invLoading = true; renderInventory(); subscribeInventory(uid); }
+  }
+
+  // Show public key and toggle in settings panel
+  function renderFriendsSection() {
+    const keyEl = $("stgPublicKey");
+    if (keyEl) keyEl.textContent = state.publicKey || "—";
+    const toggle = $("stgPublicToggle");
+    if (toggle) toggle.checked = state.isPublic;
+  }
+
+  // Incoming friend request modal
+  let _pendingRequest = null;
+  const _requestQueue  = [];
+
+  function showFriendRequestModal(uid, data) {
+    _requestQueue.push({ uid, data });
+    if (_requestQueue.length === 1) _showNextRequest();
+  }
+
+  function _showNextRequest() {
+    if (!_requestQueue.length) return;
+    _pendingRequest = _requestQueue[0];
+    const { uid, data } = _pendingRequest;
+    const initials = (data.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+    const color = friendColorFallback(uid);
+    $("frqAvatar").textContent = initials;
+    $("frqAvatar").style.background = color;
+    $("frqName").textContent = data.displayName || uid;
+    $("friendRequestOverlay").classList.add("open");
+  }
+
+  function _closeRequestModal() {
+    $("friendRequestOverlay").classList.remove("open");
+    _requestQueue.shift();
+    setTimeout(_showNextRequest, 300);
+  }
+
+  $("frqAccept").addEventListener("click", async () => {
+    if (!_pendingRequest) return;
+    await acceptFriendRequest(_pendingRequest.uid, _pendingRequest.data.displayName);
+    renderFriendsList();
+    _closeRequestModal();
+  });
+  $("frqRefuse").addEventListener("click", async () => {
+    if (!_pendingRequest) return;
+    await refuseFriendRequest(_pendingRequest.uid);
+    _closeRequestModal();
+  });
+  $("frqBlock").addEventListener("click", async () => {
+    if (!_pendingRequest) return;
+    await blockUser(_pendingRequest.uid, _pendingRequest.data.displayName);
+    _closeRequestModal();
+  });
+
+  // Add friend modal — split-field XXX-XXX
+  const ADF_CHARS = /[^A-Z0-9]/g;
+
+  function adfValue() {
+    return ($("adfA").value + "-" + $("adfB").value).toUpperCase();
+  }
+
+  function openAddFriendModal() {
+    $("adfA").value = "";
+    $("adfB").value = "";
+    $("adfResult").textContent = "";
+    $("adfPreview").classList.add("hidden");
+    $("adfSend").disabled = true;
+    $("addFriendOverlay").classList.add("open");
+    setTimeout(() => $("adfA").focus(), 80);
+  }
+  function closeAddFriendModal() { $("addFriendOverlay").classList.remove("open"); }
+
+  $("addFriendClose").addEventListener("click", closeAddFriendModal);
+  $("adfCancel").addEventListener("click", closeAddFriendModal);
+
+  let _adfDebounce = null;
+  let _adfFoundUid = null;
+  let _adfFoundName = null;
+
+  function _adfChanged() {
+    const val = adfValue();
+    $("adfPreview").classList.add("hidden");
+    $("adfSend").disabled = true;
+    $("adfResult").textContent = "";
+    _adfFoundUid = null;
+    clearTimeout(_adfDebounce);
+    if ($("adfA").value.length < 3 || $("adfB").value.length < 3) return;
+    $("adfResult").textContent = "🔍 " + t("friendSearching");
+    _adfDebounce = setTimeout(async () => {
+      try {
+        // O(1) lookup in publicKeys/{key}
+        const keySnap = await fbDb().collection("publicKeys").doc(val).get();
+        if (!keySnap.exists) { $("adfResult").textContent = "⚠ " + t("friendNotFound"); return; }
+        const targetUid = keySnap.data().uid;
+        if (targetUid === fbAuth().currentUser?.uid) { $("adfResult").textContent = "⚠ " + t("friendSelf"); return; }
+        const profileSnap = await fbDb().collection("userProfiles").doc(targetUid).get();
+        const p = profileSnap.exists ? profileSnap.data() : {};
+        _adfFoundUid = targetUid; _adfFoundName = p.displayName;
+        const initials = (p.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+        const color = profileColor(p) || friendColorFallback(targetUid);
+        $("adfPreviewAvatar").textContent = initials;
+        $("adfPreviewAvatar").style.background = color;
+        $("adfPreviewName").textContent = p.displayName || val;
+        $("adfPreview").classList.remove("hidden");
+        $("adfResult").textContent = "";
+        $("adfResult").className = "adf-result";
+        $("adfSend").disabled = false;
+      } catch (e) {
+        $("adfResult").textContent = "⚠ " + t("networkError");
+        $("adfResult").className = "adf-result adf-result--error";
+      }
+    }, 500);
+  }
+
+  // Sanitise + auto-advance on adfA
+  $("adfA").addEventListener("input", () => {
+    $("adfA").value = $("adfA").value.toUpperCase().replace(ADF_CHARS, "");
+    if ($("adfA").value.length === 3) $("adfB").focus();
+    _adfChanged();
+  });
+
+  // Handle paste of full key "XXX-XXX" into adfA
+  $("adfA").addEventListener("paste", e => {
+    e.preventDefault();
+    const raw = (e.clipboardData || window.clipboardData).getData("text").trim().toUpperCase();
+    const parts = raw.replace(ADF_CHARS.source.replace("[^", "["), "").match(/^([A-Z0-9]{3})[^A-Z0-9]?([A-Z0-9]{3})$/);
+    if (parts) {
+      $("adfA").value = parts[1]; $("adfB").value = parts[2];
+      $("adfB").focus(); _adfChanged();
+    }
+  });
+
+  // Sanitise adfB; backspace when empty → go back to adfA
+  $("adfB").addEventListener("input", () => {
+    $("adfB").value = $("adfB").value.toUpperCase().replace(ADF_CHARS, "");
+    _adfChanged();
+  });
+  $("adfB").addEventListener("keydown", e => {
+    if (e.key === "Backspace" && $("adfB").value === "") $("adfA").focus();
+    if (e.key === "Escape") closeAddFriendModal();
+  });
+  $("adfA").addEventListener("keydown", e => { if (e.key === "Escape") closeAddFriendModal(); });
+
+  $("adfSend").addEventListener("click", async () => {
+    if (!_adfFoundUid) return;
+    $("adfSend").disabled = true;
+    try {
+      await sendFriendRequest(adfValue());
+      $("adfResult").textContent = "✓ " + t("friendRequestSent");
+      $("adfPreview").classList.add("hidden");
+      setTimeout(closeAddFriendModal, 1500);
+    } catch (e) {
+      $("adfResult").textContent = "⚠ " + t("networkError");
+      $("adfSend").disabled = false;
+    }
+  });
+
+  // Settings panel — friends section wiring
+  $("btnAddFriend").addEventListener("click", openAddFriendModal);
+
+  // Live search filter
+  $("fpSearch")?.addEventListener("input", () => renderFriendsList());
+
+  $("btnCopyPublicKey").addEventListener("click", () => {
+    if (!state.publicKey) return;
+    navigator.clipboard.writeText(state.publicKey).then(() => {
+      const btn = $("btnCopyPublicKey");
+      btn.classList.add("fp-hero-btn--copied");
+      setTimeout(() => btn.classList.remove("fp-hero-btn--copied"), 1500);
+    });
+  });
+
+  $("btnRegenPublicKey").addEventListener("click", async () => {
+    await regeneratePublicKey();
+  });
+
+  $("stgPublicToggle").addEventListener("change", async () => {
+    const isPublic = $("stgPublicToggle").checked;
+    state.isPublic = isPublic;
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    await fbDb().collection("users").doc(user.uid).set({ isPublic }, { merge: true });
+    await syncUserProfile(user.uid, { isPublic });
+  });
+
+  /* ── Display-name setup modal ─────────────────────────────────────────── */
+  function openDisplayNameSetup() {
+    $("dnsInput").value = "";
+    $("dnsResult").textContent = "";
+    $("displayNameSetupOverlay").classList.add("open");
+    setTimeout(() => $("dnsInput").focus(), 80);
+  }
+  function closeDisplayNameSetup() {
+    $("displayNameSetupOverlay").classList.remove("open");
+  }
+
+  $("dnsSave").addEventListener("click", async () => {
+    const name = $("dnsInput").value.trim();
+    if (name.length < 1) { $("dnsResult").textContent = "⚠ " + t("setupNamePlaceholder"); return; }
+    $("dnsSave").disabled = true;
+    $("dnsResult").textContent = "";
+    try {
+      const user = fbAuth().currentUser;
+      if (!user) throw new Error("not signed in");
+      await fbDb().collection("users").doc(user.uid).set({ displayName: name }, { merge: true });
+      // Update local state
+      const accounts = getAccounts();
+      const acc = accounts.find(a => a.id === user.uid);
+      if (acc) { acc.displayName = name; saveAccounts(accounts); }
+      state.displayName       = name;
+      $("sbName").textContent = name;
+      $("sbAvatar").textContent = getInitials({ displayName: name, email: acc?.email || "" });
+      applyAvatarStyle(acc);
+      renderAccountDropdown();
+      closeDisplayNameSetup();
+    } catch (err) {
+      $("dnsResult").textContent = "⚠ " + (err.message || t("networkError"));
+    } finally {
+      $("dnsSave").disabled = false;
+    }
+  });
+
+  $("dnsInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") $("dnsSave").click();
+  });
+
+  /* ── Friends system ───────────────────────────────────────────────────── */
+
+  function subscribeFriendRequests(uid) {
+    unsubscribeFriendRequests();
+    state.unsubFriendRequests = fbDb()
+      .collection("users").doc(uid)
+      .collection("friendRequests")
+      .onSnapshot(snap => {
+        state.friendRequests = snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+        renderFriendRequestBadge();
+        // Show modal for each new incoming request
+        snap.docChanges().forEach(change => {
+          if (change.type === "added") showFriendRequestModal(change.doc.id, change.doc.data());
+        });
+      }, err => console.warn("[friendRequests]", err.message));
+  }
+
+  function unsubscribeFriendRequests() {
+    if (state.unsubFriendRequests) { state.unsubFriendRequests(); state.unsubFriendRequests = null; }
+  }
+
+  function renderFriendRequestBadge() {
+    const count = state.friendRequests.length;
+    const badge = $("friendsBadge");
+    if (!badge) return;
+    badge.textContent = count;
+    badge.classList.toggle("hidden", count === 0);
+  }
+
+  // Accept a friend request → bidirectional add (rules verify only friendship presence,
+  // no key check — see firestore.rules /inventory).
+  async function acceptFriendRequest(requesterUid, displayName) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    const batch = fbDb().batch();
+    const myRef    = fbDb().collection("users").doc(user.uid);
+    const theirRef = fbDb().collection("users").doc(requesterUid);
+    // Add requester to MY friends list
+    batch.set(myRef.collection("friends").doc(requesterUid), {
+      displayName: displayName || requesterUid,
+      addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    // Add ME to THEIR friends list (allowed because I have a friendRequest from them)
+    batch.set(theirRef.collection("friends").doc(user.uid), {
+      displayName: state.displayName || user.email,
+      addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    // Remove the pending request
+    batch.delete(myRef.collection("friendRequests").doc(requesterUid));
+    await batch.commit();
+    state.friends = [...state.friends.filter(f => f.uid !== requesterUid),
+      { uid: requesterUid, displayName, addedAt: Date.now() }];
+  }
+
+  // Refuse a friend request (just delete it — they can request again)
+  async function refuseFriendRequest(requesterUid) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    await fbDb().collection("users").doc(user.uid)
+      .collection("friendRequests").doc(requesterUid).delete();
+  }
+
+  // Block → blacklist + delete request
+  async function blockUser(requesterUid, displayName) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    const batch = fbDb().batch();
+    const myRef = fbDb().collection("users").doc(user.uid);
+    batch.set(myRef.collection("blacklist").doc(requesterUid), {
+      displayName: displayName || requesterUid,
+      blockedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.delete(myRef.collection("friendRequests").doc(requesterUid));
+    await batch.commit();
+  }
+
+  // Remove a friend — deletes from both sides (symmetric)
+  async function removeFriend(friendUid) {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    const batch = fbDb().batch();
+    batch.delete(fbDb().collection("users").doc(user.uid).collection("friends").doc(friendUid));
+    batch.delete(fbDb().collection("users").doc(friendUid).collection("friends").doc(user.uid));
+    await batch.commit();
+    state.friends = state.friends.filter(f => f.uid !== friendUid);
+    renderFriendsList();
+  }
+
+  // Claim a unique publicKey via O(1) document lookup + transaction
+  // Deletes the previous key from publicKeys if provided
+  async function claimPublicKey(uid, oldKey) {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = generatePublicKey();
+      const keyRef = fbDb().collection("publicKeys").doc(candidate);
+      try {
+        await fbDb().runTransaction(async tx => {
+          const snap = await tx.get(keyRef);
+          if (snap.exists) throw Object.assign(new Error("taken"), { code: "taken" });
+          tx.set(keyRef, { uid, claimedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        });
+        // Transaction succeeded — release old key if any
+        if (oldKey) {
+          try { await fbDb().collection("publicKeys").doc(oldKey).delete(); } catch (_) {}
+        }
+        return candidate;
+      } catch (e) {
+        if (e.code !== "taken") throw e;
+        // collision — try a new candidate
+      }
+    }
+    throw new Error("Could not generate a unique public key after 10 attempts");
+  }
+
+  // Regenerate publicKey and persist everywhere
+  async function regeneratePublicKey() {
+    const user = fbAuth().currentUser;
+    if (!user) return;
+    // Show loading state
+    const el  = $("stgPublicKey");
+    const btn = $("btnRegenPublicKey");
+    if (el)  { el.textContent = ""; el.classList.add("pkey-loading"); }
+    if (btn) btn.disabled = true;
+    try {
+      const newKey = await claimPublicKey(user.uid, state.publicKey);
+      await fbDb().collection("users").doc(user.uid).update({ publicKey: newKey });
+      await syncUserProfile(user.uid, { publicKey: newKey });
+      state.publicKey = newKey;
+      if (el) el.textContent = newKey;
+    } finally {
+      if (el)  el.classList.remove("pkey-loading");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // Send a friend request to another user (by their publicKey)
+  async function sendFriendRequest(targetPublicKey) {
+    const user = fbAuth().currentUser;
+    if (!user) return null;
+    const key = targetPublicKey.trim().toUpperCase();
+    // O(1) lookup in publicKeys/{key} — no query, no index needed
+    const keySnap = await fbDb().collection("publicKeys").doc(key).get();
+    if (!keySnap.exists) return { error: "notFound" };
+    const targetUid = keySnap.data().uid;
+    if (targetUid === user.uid) return { error: "self" };
+    // Fetch display name from userProfiles
+    const profileSnap = await fbDb().collection("userProfiles").doc(targetUid).get();
+    const displayName = profileSnap.exists ? profileSnap.data().displayName : targetUid;
+    // Write request to their friendRequests subcollection.
+    // No key needed — Firestore rules now verify friendship presence only (not key match).
+    await fbDb().collection("users").doc(targetUid)
+      .collection("friendRequests").doc(user.uid).set({
+        displayName: state.displayName || user.email,
+        requestedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    return { ok: true, displayName, uid: targetUid };
+  }
+
+  /* ── Key helpers ──────────────────────────────────────────────────────── */
+  function generatePublicKey() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let a = "", b = "";
+    for (let i = 0; i < 3; i++) a += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < 3; i++) b += chars[Math.floor(Math.random() * chars.length)];
+    return `${a}-${b}`; // e.g. "4X7-K3M"
+  }
+  function generatePrivateKey() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(20)))
+      .map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Write safe public fields to userProfiles/{uid} (readable by all authenticated users)
+  async function syncUserProfile(uid, fields) {
+    try {
+      await fbDb().collection("userProfiles").doc(uid).set(fields, { merge: true });
+    } catch (e) { console.warn("[userProfiles] write:", e.message); }
+  }
+
+  async function syncUserDoc(uid) {
+    // Always use the named Firestore instance for this specific uid,
+    // never fbDb() without parameter — that depends on state.activeAccountId
+    // at promise-resolution time and can point to the wrong account.
+    const db = fbDb(uid);
+    try {
+      const snap = await db.collection("users").doc(uid).get();
       if (!snap.exists) return;
+      // Guard: by the time the Firestore round-trip completes, the active account
+      // may have changed. Only apply UI side-effects for the current active account.
+      if (uid !== state.activeAccountId) return;
       const data = snap.data();
 
       // Admin + debug
@@ -2356,29 +3467,73 @@
       state.debugEnabled = state.isAdmin && !!data.Debug;
       applyDebugMode();
 
-      // Firestore displayName is the canonical name — takes priority over Google Auth name
-      if (data.displayName) {
-        const accounts = getAccounts();
-        const acc = accounts.find(a => a.id === uid);
-        if (acc && acc.displayName !== data.displayName) {
-          acc.displayName = data.displayName;
-          saveAccounts(accounts);
-        }
-        // Apply to sidebar immediately
-        state.displayName        = data.displayName;
-        $("sbName").textContent  = data.displayName;
-        $("sbAvatar").textContent = getInitials({ displayName: data.displayName, email: acc?.email || "" });
-        applyAvatarStyle(acc);
-        renderAccountDropdown();
+      // Generate publicKey + privateKey on first login if missing
+      const keysUpdate = {};
+      if (!data.publicKey)  keysUpdate.publicKey  = await claimPublicKey(uid, null);
+      if (!data.privateKey) keysUpdate.privateKey = generatePrivateKey();
+      if (Object.keys(keysUpdate).length) {
+        await db.collection("users").doc(uid).set(keysUpdate, { merge: true });
+        Object.assign(data, keysUpdate);
       }
+      // Store keys + public flag in state for easy access
+      state.publicKey  = data.publicKey;
+      state.privateKey = data.privateKey;
+      state.isPublic   = data.isPublic || false;
+
+      // Firestore displayName + color are canonical — sync to localStorage
+      const accounts = getAccounts();
+      const acc = accounts.find(a => a.id === uid);
+      let localDirty = false;
+
+      // Resolve display name: Firestore is authoritative, localStorage is fallback
+      const firestoreName = data.displayName || "";
+      const localName     = acc?.displayName  || "";
+      const resolvedName  = firestoreName || localName;
+
+      if (resolvedName) {
+        // We have a name — apply it everywhere
+        if (acc && acc.displayName !== resolvedName) { acc.displayName = resolvedName; localDirty = true; }
+        state.displayName         = resolvedName;
+        $("sbName").textContent   = resolvedName;
+        $("sbAvatar").textContent = getInitials({ displayName: resolvedName, email: acc?.email || "" });
+        // If Firestore was missing the name but localStorage had it, write it back
+        if (!firestoreName && localName) {
+          db.collection("users").doc(uid).set({ displayName: localName }, { merge: true }).catch(() => {});
+        }
+      } else {
+        // Truly no name anywhere — prompt the user (only for the active account)
+        openDisplayNameSetup();
+      }
+
+      if (acc && data.color_r !== undefined && data.color_g !== undefined && data.color_b !== undefined) {
+        const h = n => n.toString(16).padStart(2, "0");
+        const hex = `#${h(data.color_r)}${h(data.color_g)}${h(data.color_b)}`;
+        // Try to match a named swatch, fall back to "custom"
+        const match = Object.entries(ACCOUNT_COLORS).find(([, [c]]) => c.toLowerCase() === hex.toLowerCase());
+        if (match) { acc.color = match[0]; delete acc.customColor; }
+        else        { acc.color = "custom"; acc.customColor = hex; }
+        localDirty = true;
+      }
+
+      if (localDirty && acc) { saveAccounts(accounts); }
+      applyAvatarStyle(acc);
+      renderAccountDropdown();
+
+      // Keep userProfiles in sync with latest public info
+      syncUserProfile(uid, {
+        publicKey:   data.publicKey,
+        displayName: resolvedName,
+        isPublic:    data.isPublic || false,
+        color:       accPrimaryHex(acc),  // single hex field — simpler than color_r/g/b
+      });
 
       // Reflect in open edit-account modal if already open
       if ($("editAccountModalOverlay").classList.contains("open")) {
         $("eacAdminBadge").classList.toggle("hidden", !state.isAdmin);
         $("eacDebugRow").classList.toggle("hidden",   !state.isAdmin);
         $("eacDebugToggle").checked = state.debugEnabled;
-        $("eacName").textContent = data.displayName || "";
-        $("eacDisplayNameInput").value = data.displayName || "";
+        $("eacName").textContent = resolvedName;
+        $("eacDisplayNameInput").value = resolvedName;
       }
     } catch (err) {
       console.warn("[Firestore] syncUserDoc:", err.message);
@@ -2387,7 +3542,7 @@
 
   async function syncLangFromFirestore(uid) {
     try {
-      const doc = await fbDb().collection("users").doc(uid)
+      const doc = await fbDb(uid).collection("users").doc(uid)
         .collection("prefs").doc("app").get();
       if (!doc.exists) return;
       const cloudLang = doc.data().lang;

@@ -27,15 +27,6 @@
         </div>
         <div class="acct-dropdown" id="acctDropdown">
           <div id="acctDropdownList"></div>
-          <div class="acct-drop-sep"></div>
-          <button class="acct-drop-action" id="btnManageProfiles">
-            <span class="icon icon-user icon-13"></span>
-            <span data-i18n="btnManageProfiles">Manage profiles</span>
-          </button>
-          <button class="acct-drop-action" id="btnDropdownSettings">
-            <span class="icon icon-download icon-13"></span>
-            <span data-i18n="settingsOpenBtn">Export</span>
-          </button>
         </div>
       </div>
 
@@ -53,6 +44,7 @@
       <div class="sb-name" id="sbName">—</div>
       <div class="sb-actions">
         <button id="btnSbReload" class="primary"><span class="icon icon-refresh icon-13"></span><span class="label" data-i18n="btnRefresh">Refresh</span></button>
+        <button id="btnOpenFriends" class="ghost sb-friends-btn"><span class="icon icon-user icon-13"></span><span class="label" data-i18n="friendsTitle">Friends</span><span id="friendsBadge" class="friends-badge hidden"></span></button>
         <button id="btnOpenSettings"><span class="icon icon-download icon-13"></span><span class="label" data-i18n="settingsOpenBtn">Export</span></button>
       </div>
     </div>
@@ -119,8 +111,15 @@
       </div>
     </div>
 
+    <!-- empty / loading state — shown instead of the inventory card -->
+    <section class="card hidden" id="card-welcome">
+      <div id="invWelcome"></div>
+    </section>
+
     <!-- inventory -->
     <section class="card hidden" id="card-inv">
+      <!-- friend-view banner — shown when viewing a friend's inventory -->
+      <div id="friendViewBanner" class="fvb hidden"></div>
       <div class="row between" style="gap:10px">
         <input id="searchInv" type="text" placeholder="Search material, brand, color, UID…" data-i18n-placeholder="searchPlaceholder" style="flex:1;max-width:340px;margin:0" />
         <div class="view-toggle" style="flex-shrink:0">
@@ -129,7 +128,7 @@
         </div>
       </div>
       <div id="mainResult"></div>
-      <div id="invEmpty" class="empty">No inventory loaded yet.</div>
+      <div id="invEmpty" class="empty hidden"></div>
 
       <!-- table view -->
       <div id="invTableWrap" class="table-wrap hidden">
@@ -188,6 +187,87 @@
       <button id="btnTD1S" class="ghost sm" style="margin-top:6px;font-size:12px;color:var(--muted)"><span class="td1s-dev-icon"></span>⌥ Open TD1S panel</button>
     </div>
 
+  </div>
+</div>
+
+<!-- friends panel -->
+<div class="panel-overlay" id="friendsOverlay"></div>
+<div class="detail-panel friends-panel" id="friendsPanel">
+  <div class="panel-header">
+    <span class="panel-title" data-i18n="friendsTitle">Friends</span>
+    <button class="panel-close" id="friendsPanelClose">✕</button>
+  </div>
+  <div class="panel-body friends-body">
+
+    <!-- HERO: My code (the share moment) -->
+    <div class="fp-hero">
+      <div class="fp-hero-label" data-i18n="friendsMyCode">My code</div>
+      <div class="fp-hero-code" id="stgPublicKey">—</div>
+      <div class="fp-hero-actions">
+        <button class="fp-hero-btn" id="btnCopyPublicKey" title="Copy">
+          <span class="icon icon-copy icon-14"></span>
+          <span data-i18n="copyLabel">Copy</span>
+        </button>
+        <button class="fp-hero-btn" id="btnRegenPublicKey" title="Regenerate code">
+          <span class="icon icon-refresh icon-14"></span>
+          <span data-i18n="regenLabel">New code</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Public toggle row -->
+    <label class="fp-toggle-card">
+      <span class="fp-toggle-icon"><span class="icon icon-eye-on icon-14"></span></span>
+      <span class="fp-toggle-text">
+        <span class="fp-toggle-title" data-i18n="friendsPublicLabel">Public inventory</span>
+        <span class="fp-toggle-sub" data-i18n="friendsPublicSub">Anyone can view without approval</span>
+      </span>
+      <span class="eac-toggle">
+        <input type="checkbox" id="stgPublicToggle" />
+        <span class="eac-toggle-track"><span class="eac-toggle-thumb"></span></span>
+      </span>
+    </label>
+
+    <!-- Friends list -->
+    <div class="fp-list-block">
+      <div class="fp-list-head">
+        <span class="fp-list-title" data-i18n="friendsList">My friends</span>
+        <span class="fp-list-count" id="stgFriendsCount">0</span>
+      </div>
+      <div class="fp-search">
+        <input type="text" id="fpSearch" data-i18n-placeholder="friendsSearch" placeholder="Search friend…" />
+        <span class="icon icon-search icon-13"></span>
+      </div>
+      <div id="stgFriendsList" class="fp-list"></div>
+    </div>
+
+    <!-- Sticky CTA at bottom -->
+    <div class="fp-cta-wrap">
+      <button class="fp-cta" id="btnAddFriend">
+        <span class="icon icon-plus icon-14"></span>
+        <span data-i18n="friendsAdd">Add a friend</span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- friend inventory panel -->
+<div class="panel-overlay" id="friendInvOverlay"></div>
+<div class="detail-panel" id="friendInvPanel">
+  <div class="dp-header">
+    <button class="ghost sm dp-back" id="friendInvBack">← <span data-i18n="btnSwitchAccount"></span></button>
+    <div class="dp-header-identity">
+      <div class="fi-avatar" id="friendInvAvatar"></div>
+      <div>
+        <div class="fi-name" id="friendInvName"></div>
+        <div class="fi-sub" id="friendInvSub"></div>
+      </div>
+    </div>
+  </div>
+  <div class="dp-body fi-body" id="friendInvBody">
+    <div class="fi-loading" id="friendInvLoading" data-i18n="invLoading">Loading…</div>
+    <div id="friendInvGrid" class="inv-grid hidden"></div>
   </div>
 </div>
 
@@ -296,8 +376,8 @@
         <span class="td-edit-or-line"></span>
       </div>
       <div class="td-edit-manual">
-        <input type="number" id="tdEditManualInput" class="td-edit-manual-input"
-               placeholder="e.g. 6.3" step="0.1" min="0.1" max="100">
+        <input type="text" inputmode="decimal" id="tdEditManualInput" class="td-edit-manual-input"
+               placeholder="e.g. 6.3" pattern="[0-9]*[.,]?[0-9]*">
         <button class="btn primary td-edit-icon-btn" id="tdEditManualSaveBtn" title="Save"></button>
       </div>
     </div>
@@ -317,7 +397,7 @@
         </div>
         <div class="td-edit-result-row">
           <span class="td-edit-result-lbl">TD Value</span>
-          <input type="number" id="tdEditTdInput" class="td-edit-val-input" placeholder="—" step="0.1" min="0.1" max="100">
+          <input type="text" inputmode="decimal" id="tdEditTdInput" class="td-edit-val-input" placeholder="—" pattern="[0-9]*[.,]?[0-9]*">
         </div>
       </div>
       <div class="td-edit-save-row">
@@ -370,7 +450,7 @@
         </div>
         <div class="td-edit-result-row">
           <span class="td-edit-result-lbl">TD Value</span>
-          <input type="number" id="colorEditTdInput" class="td-edit-val-input" placeholder="—" step="0.1" min="0.1" max="100">
+          <input type="text" inputmode="decimal" id="colorEditTdInput" class="td-edit-val-input" placeholder="—" pattern="[0-9]*[.,]?[0-9]*">
         </div>
       </div>
       <div class="td-edit-save-row">
@@ -505,6 +585,7 @@
         <option value="de">🇩🇪 Deutsch</option>
         <option value="es">🇪🇸 Español</option>
         <option value="it">🇮🇹 Italiano</option>
+        <option value="pl">🇵🇱 Polski</option>
         <option value="pt">🇧🇷 Português (BR)</option>
         <option value="pt-pt">🇵🇹 Português (PT)</option>
         <option value="zh">🇨🇳 中文</option>
@@ -551,6 +632,7 @@
       <option value="de">🇩🇪 Deutsch</option>
       <option value="es">🇪🇸 Español</option>
       <option value="it">🇮🇹 Italiano</option>
+      <option value="pl">🇵🇱 Polski</option>
       <option value="pt">🇧🇷 Português (BR)</option>
       <option value="pt-pt">🇵🇹 Português (PT)</option>
       <option value="zh">🇨🇳 中文</option>
@@ -623,6 +705,84 @@
       <input id="containerPickerSearch" class="cp-search" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="Search…" />
     </div>
     <div id="containerPickerList" class="cp-list"></div>
+  </div>
+</div>
+
+<!-- Friend request incoming modal -->
+<div class="modal-overlay" id="friendRequestOverlay">
+  <div class="modal-card frq-card">
+    <div class="frq-avatar" id="frqAvatar"></div>
+    <div class="frq-name" id="frqName">—</div>
+    <div class="frq-sub" data-i18n="friendReqSub">wants to see your inventory</div>
+    <div class="frq-actions">
+      <button class="ghost sm frq-btn-block" id="frqBlock" data-i18n="friendReqBlock">Block</button>
+      <button class="ghost sm frq-btn-refuse" id="frqRefuse" data-i18n="friendReqRefuse">Refuse</button>
+      <button class="primary sm frq-btn-accept" id="frqAccept" data-i18n="friendReqAccept">Accept</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add friend modal -->
+<div class="modal-overlay" id="addFriendOverlay">
+  <div class="modal-card adf-card">
+    <!-- Header -->
+    <div class="adf-header">
+      <div class="adf-header-text">
+        <div class="adf-title" data-i18n="addFriendTitle">Add a friend</div>
+        <div class="adf-sub" data-i18n="addFriendSub">Enter your friend's TigerTag code</div>
+      </div>
+      <button class="modal-close" id="addFriendClose">✕</button>
+    </div>
+
+    <!-- Body -->
+    <div class="adf-body">
+      <div class="adf-code-group">
+        <input class="adf-seg" id="adfA" type="text" maxlength="3"
+               autocomplete="off" spellcheck="false" placeholder="XXX" />
+        <span class="adf-sep">—</span>
+        <input class="adf-seg" id="adfB" type="text" maxlength="3"
+               autocomplete="off" spellcheck="false" placeholder="XXX" />
+      </div>
+
+      <div id="adfPreview" class="adf-preview hidden">
+        <div class="adf-preview-avatar" id="adfPreviewAvatar"></div>
+        <div class="adf-preview-info">
+          <div class="adf-preview-name" id="adfPreviewName"></div>
+          <div class="adf-preview-status" data-i18n="addFriendFound">Found</div>
+        </div>
+        <div class="adf-preview-check">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+      </div>
+      <div id="adfResult" class="adf-result"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="adf-footer">
+      <button class="adf-btn adf-btn--ghost" id="adfCancel" data-i18n="cancelLabel">Cancel</button>
+      <button class="adf-btn adf-btn--primary" id="adfSend" data-i18n="addFriendSend" disabled>Send request</button>
+    </div>
+  </div>
+</div>
+
+<!-- display name setup — shown after first login when no pseudo is set -->
+<div class="modal-overlay" id="displayNameSetupOverlay">
+  <div class="modal-card dns-card">
+    <div class="dns-hero">
+      <div class="dns-emoji-wrap">👋</div>
+      <div class="dns-title" data-i18n="setupNameTitle">Choose your display name</div>
+    </div>
+    <div class="dns-body">
+      <div class="dns-sub" data-i18n="setupNameSub">Your display name is visible in the app and to your friends!</div>
+      <input class="dns-input" id="dnsInput" type="text" maxlength="40" autocomplete="off"
+             data-i18n-placeholder="setupNamePlaceholder" placeholder="Your display name" />
+      <div id="dnsResult" class="dns-result"></div>
+      <div class="dns-actions">
+        <button class="primary dns-btn-save" id="dnsSave" data-i18n="setupNameSave">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 
