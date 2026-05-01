@@ -2,11 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- Required by V8 / Electron runtime -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
   <true/>
+
+  <!-- Required to load native node modules (nfc-pcsc, serialport, electron-rebuild outputs) -->
   <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- Required for some native deps that read DYLD_* env vars at load time -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
   <true/>
 </dict>
 </plist>

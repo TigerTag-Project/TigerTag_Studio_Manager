@@ -45,12 +45,31 @@ jobs:
 
       - run: npm ci
 
+      # --- macOS only: decode the App Store Connect API Key (.p8) into a file so notarytool can read it ---
+      - name: Decode App Store Connect API Key (.p8)
+        if: matrix.os == 'macos-latest'
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$APPLE_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+          # Export the resolved path for the next step
+          echo "APPLE_API_KEY=$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
+
       - name: Build & publish
         run: npm run build:${{ matrix.platform }}
         env:
+          # GitHub Releases publish (electron-builder reads GH_TOKEN automatically)
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+
+          # macOS code signing — electron-builder reads CSC_LINK (base64 .p12) + CSC_KEY_PASSWORD
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+          # macOS notarization via App Store Connect API Key (preferred over Apple ID + password)
+          # APPLE_API_KEY is set in the previous step via GITHUB_ENV (path to decoded .p8)
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

@@ -1,7 +1,7 @@
 {
   "name": "tigertag-inventory",
-  "version": "1.4.1",
-  "description": "TigerTag Studio Manager — desktop app",
+  "version": "1.4.2",
+  "description": "Tiger Studio Manager — desktop app",
   "main": "main.js",
   "engines": {
     "node": ">=24"
@@ -9,10 +9,12 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder -wml"
+    "build:win": "electron-builder --win --publish always",
+    "build:mac": "electron-builder --mac --publish always",
+    "build:mac:local": "bash build/sign-and-notarize.sh",
+    "build:mac:unsigned": "electron-builder --mac -c.mac.identity=null -c.mac.notarize=false",
+    "build:linux": "electron-builder --linux --publish always",
+    "build:all": "electron-builder -wml --publish always"
   },
   "dependencies": {
     "electron-updater": "^6.1.7",
@@ -26,7 +28,7 @@
   },
   "build": {
     "appId": "io.tigertag.inventory",
-    "productName": "TigerTag Studio Manager",
+    "productName": "Tiger Studio Manager",
     "copyright": "TigerTag",
     "publish": {
       "provider": "github",
@@ -60,11 +62,26 @@
             "x64",
             "arm64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "assets/img/icon.icns",
       "category": "public.app-category.utilities",
-      "identity": null
+      "identity": "3D France (RT4W5WC9P2)",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "dmg": {
+      "sign": false
     },
     "linux": {
       "target": [
