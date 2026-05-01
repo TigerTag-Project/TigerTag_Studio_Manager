@@ -156,10 +156,41 @@ TigerTag_Studio_Manager/
 │   └── svg/
 │       ├── icons/           # UI icon SVGs (23 icons)
 │       └── logos/           # TigerTag logo SVGs (normal + contouring variant)
+├── docs/
+│   └── rfid-vendors/        # Per-vendor RFID tag spec sheets (read-only reference)
+├── OpenRFID/                # Git submodule — upstream multi-vendor RFID parsers
 ├── .github/
 │   └── workflows/
 │       └── build.yml        # CI: build + publish on tag push
+├── .gitmodules
 └── package.json
+```
+
+> **Note on `OpenRFID/`** — vendored as a Git submodule pointing at [suchmememanyskill/OpenRFID](https://github.com/suchmememanyskill/OpenRFID). Used as a **read-only reference** to extend tag support to other vendors (Bambu, Creality, Anycubic, Elegoo, Snapmaker, Qidi, Openspool). Source is **never modified** — sync upstream with `git submodule update --remote OpenRFID`. See `docs/rfid-vendors/README.md` for the per-vendor reference sheets distilled from the Python parsers.
+
+---
+
+## Multi-vendor RFID (planned)
+
+The app currently reads only TigerTag chips. To prepare for reading other vendors' tags **read-only** (no clone, no write), the project vendors the [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) Python project as a Git submodule under `OpenRFID/` and ships a set of per-vendor technical reference sheets in `docs/rfid-vendors/`.
+
+| Vendor | Tag type | Auth | Crypto | Spec |
+|---|---|---|---|---|
+| 🐯 TigerTag | NTAG/NDEF | None | Reserved sig slot | [tigertag.md](./docs/rfid-vendors/tigertag.md) |
+| 🟢 Bambu Lab | Mifare Classic 1K | HKDF-SHA256 | Salt operator-provisioned | [bambu.md](./docs/rfid-vendors/bambu.md) |
+| 🟠 Creality | Mifare Classic 1K | AES-128-ECB key (sector 1) | Optional payload encryption | [creality.md](./docs/rfid-vendors/creality.md) |
+| 🔴 Anycubic | Mifare Ultralight | None | None | [anycubic.md](./docs/rfid-vendors/anycubic.md) |
+| ⚫ Elegoo | Mifare Ultralight | None | Magic bytes | [elegoo.md](./docs/rfid-vendors/elegoo.md) |
+| 🟣 Snapmaker | Mifare Classic 1K | HKDF per-sector | RSA-2048 PKCS#1 v1.5 + SHA-256 | [snapmaker.md](./docs/rfid-vendors/snapmaker.md) |
+| 🟡 Qidi | Mifare Classic 1K | Default key | None | [qidi.md](./docs/rfid-vendors/qidi.md) |
+| 🌐 Openspool | NFC Type 2 (NDEF JSON) | None | None | [openspool.md](./docs/rfid-vendors/openspool.md) |
+
+Each spec sheet is self-contained: tag layout, field semantics, lookup tables transcribed verbatim, encoding pitfalls, and JS port notes. The plan is to write `renderer/lib/rfid/<vendor>.js` parsers from these specs without re-reading the Python source. Cloning the repo with submodules:
+
+```bash
+git clone --recurse-submodules https://github.com/TigerTag-Project/TigerTag_Studio_Manager.git
+# or, if already cloned:
+git submodule update --init --recursive
 ```
 
 ---
