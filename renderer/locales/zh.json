@@ -262,5 +262,12 @@
   "blacklistTitle": "已屏蔽用户",
   "unblockBtn": "解除屏蔽",
   "blockedOn": "屏蔽于 {{date}}",
-  "friendNotSharing": "该用户不希望分享其库存。"
+  "friendNotSharing": "该用户不希望分享其库存。",
+  "errReportBtn": "报告问题",
+  "errReportTitle": "诊断报告",
+  "errReportSub": "复制此报告并发送给支持团队以便我们提供帮助。",
+  "errReportCopy": "复制报告",
+  "errReportCopied": "已复制！",
+  "errReportClear": "清除日志",
+  "errDetailsLink": "详情"
 }

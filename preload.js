@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ask main process to install the downloaded update and restart
   installUpdate: () => ipcRenderer.send('install-update'),
 
+  // ── App info (version / platform — used by the diagnostic report) ──────
+  getAppInfo: () => ipcRenderer.invoke('app:info'),
+
   // ── Image cache (main-process side) ─────────────────────────────────────
   imgGet: (url) => ipcRenderer.invoke('img:get', url),
 

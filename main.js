@@ -455,6 +455,17 @@ ipcMain.handle('img:get', async (_, url) => {
   }
 });
 
+// ── App info (used by the diagnostic / error report panel) ─────────────────
+ipcMain.handle('app:info', () => ({
+  appVersion:     app.getVersion(),
+  electron:       process.versions.electron,
+  chrome:         process.versions.chrome,
+  node:           process.versions.node,
+  platform:       process.platform,
+  arch:           process.arch,
+  osRelease:      require('os').release(),
+}));
+
 // ── DB IPC handlers ──────────────────────────────────────────────────────────
 ipcMain.handle('db:getLabel',                (_, cat, id) => db.getLabel(cat, id));
 ipcMain.handle('db:getMaterialLabel',        (_, id)      => db.getMaterialLabel(id));

@@ -34,7 +34,19 @@
 - **Friend inventory view** — A friend appears as a switchable pseudo-account in the avatar dropdown and profiles modal; clicking opens their inventory in the same table/grid UI with a "Read-only" banner and a quick "← My inventory" button
 - **Multi-language** — EN, FR, DE, ES, IT, PL, PT (Brasil), PT (Portugal), 中文 — switch any time from the account modal
 - **Auto-updater** — Receives updates automatically via GitHub Releases
+- **Diagnostic report** — Built-in error-capture system: every uncaught error is logged with its stack and context. Users can open **Settings → Debug → Report a problem** (or the same link inside the Sign-in modal) to copy a self-contained Markdown report — app version, Electron/Chrome/Node versions, platform, locale, and the last 50 errors with stack traces — to send to support
 - **Cross-platform** — Windows, macOS (Intel + Apple Silicon), Linux
+
+---
+
+## Changelog
+
+### v1.4.1 — 2026-05-01
+
+- **Fix — silent login failure on email/password** sign-in (and Google sign-in for fresh accounts) on desktop. The auth listener was gated on `getActiveId()` matching the new uid, but `setActiveId()` only ran inside the listener — a chicken-and-egg that left a successfully authenticated user with no UI update. Reordered so `setActiveId` runs after `updateCurrentUser` and before `setupNamedAuth`. (`renderer/inventory.js`)
+- **New — diagnostic report system.** Every caught auth/network error and every `window.error` / `unhandledrejection` is captured into a circular buffer. Users open a copy-friendly Markdown report from **Settings → Debug → Report a problem** or directly from the Sign-in modal. The report includes app version, Electron/Chrome/Node versions, OS / arch / release, locale, account count, online state, and the last 50 errors with full stack traces. New IPC `app:info` exposes runtime info via the preload bridge.
+- **Storage / Rack feature gated off** in this build (button hidden, `tigertag.view = "rack"` falls back to `table`) until the visualisation skeleton is finalised.
+- 7 new i18n keys (`errReport*`, `errDetailsLink`) translated across all 9 locales.
 
 ---
 
@@ -129,8 +141,8 @@ Built installers are placed in the `dist/` folder (ignored by git).
 Pushing a version tag automatically triggers a build on all three platforms and publishes a GitHub Release with the installers attached.
 
 ```bash
-git tag v1.3.2
-git push origin v1.3.2
+git tag v1.4.1
+git push origin v1.4.1
 ```
 
 The workflow file is at [`.github/workflows/build.yml`](.github/workflows/build.yml).
@@ -374,6 +386,8 @@ Contributions are welcome! Here's how to get started:
 ### Reporting issues
 
 Please use [GitHub Issues](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/issues) to report bugs or suggest features. Include your OS, Node.js version, and steps to reproduce.
+
+> **Tip:** the app has a built-in diagnostic panel — open **Settings → Debug → Report a problem** (or the link at the bottom of the Sign-in modal). Click **Copy report** and paste the content into your issue. The report includes app version, Electron/Chrome/Node versions, platform, and the last 50 captured errors with full stack traces. No personal data is included.
 
 ---
 

@@ -1319,6 +1319,58 @@
   }
   #addAccountModalOverlay .lm-mode-btn:hover { opacity: .7; }
 
+  /* "Report a problem" link inside the login modal */
+  #addAccountModalOverlay .lm-report-link {
+    display: block; margin: 14px auto 0;
+    background: none; border: none; padding: 4px 8px;
+    font-size: 11.5px; color: var(--muted);
+    cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+    opacity: .8; transition: opacity .15s;
+  }
+  #addAccountModalOverlay .lm-report-link:hover { opacity: 1; color: var(--text); }
+
+  /* Inline "Details" link inside an alert toast */
+  .alert .alert-link {
+    background: none; border: none; padding: 0;
+    font: inherit; color: inherit;
+    text-decoration: underline; text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .alert .alert-link:hover { opacity: .75; }
+
+  /* Badge on the report-problem button when errors are queued */
+  .diag-badge {
+    display: inline-block; margin-left: 6px;
+    min-width: 16px; height: 16px; padding: 0 5px;
+    border-radius: 8px;
+    background: var(--danger); color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 16px;
+    text-align: center; vertical-align: middle;
+  }
+
+  /* Diagnostic modal */
+  #diagModalOverlay .modal-card.diag-card {
+    width: min(640px, 92vw); padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  #diagModalOverlay .diag-header {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #diagModalOverlay .diag-title { font-size: 16px; font-weight: 600; }
+  #diagModalOverlay .diag-sub { font-size: 12.5px; color: var(--muted); margin-top: -4px; }
+  #diagModalOverlay .diag-body {
+    width: 100%; min-height: 280px; max-height: 50vh;
+    padding: 12px 14px; resize: vertical;
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5;
+    white-space: pre; overflow: auto;
+  }
+  #diagModalOverlay .diag-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+
   /* main column */
   .main-col {
     flex: 1; min-width: 0;

@@ -274,5 +274,12 @@
   "blacklistTitle": "Usuários bloqueados",
   "unblockBtn": "Desbloquear",
   "blockedOn": "Bloqueado {{date}}",
-  "friendNotSharing": "Este usuário não deseja compartilhar seu inventário."
+  "friendNotSharing": "Este usuário não deseja compartilhar seu inventário.",
+  "errReportBtn": "Relatar um problema",
+  "errReportTitle": "Relatório de diagnóstico",
+  "errReportSub": "Copie este relatório e envie ao suporte para que possamos ajudar.",
+  "errReportCopy": "Copiar relatório",
+  "errReportCopied": "Copiado!",
+  "errReportClear": "Limpar registro",
+  "errDetailsLink": "Detalhes"
 }

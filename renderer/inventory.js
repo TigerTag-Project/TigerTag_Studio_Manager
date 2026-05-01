@@ -156,10 +156,123 @@
     return isNaN(d.getTime()) ? null : d.toLocaleDateString();
   }
   function setLoading(btn, on) { if (!btn) return; btn.classList.toggle("loading", !!on); btn.disabled = !!on; }
-  function toast(el, kind, msg) {
+  // toast(el, kind, msg, opts?) — opts.err + opts.context add a "Details" link that opens the diagnostic panel
+  function toast(el, kind, msg, opts) {
     if (!el) return; el.innerHTML = "";
-    const div = document.createElement("div"); div.className = `alert ${kind}`; div.textContent = msg; el.appendChild(div);
+    const div = document.createElement("div"); div.className = `alert ${kind}`; div.textContent = msg;
+    if (opts && opts.err) {
+      const sep = document.createElement("span"); sep.textContent = " — "; sep.style.opacity = ".7"; div.appendChild(sep);
+      const link = document.createElement("button");
+      link.type = "button"; link.className = "alert-link";
+      link.textContent = t("errDetailsLink");
+      link.addEventListener("click", e => { e.preventDefault(); openDiagnosticModal(); });
+      div.appendChild(link);
+    }
+    el.appendChild(div);
   }
+
+  /* ── Error reporting / diagnostic system ───────────────────────────────────
+     reportError(context, err) records errors in a circular buffer so users
+     who hit a problem can copy a full diagnostic report and send it back. */
+  const _errorLog = []; // [{ ts, context, code, message, stack }]
+  const _ERR_LOG_MAX = 50;
+  function reportError(context, err) {
+    const entry = {
+      ts: Date.now(),
+      context: String(context || "unknown"),
+      code: (err && (err.code || err.name)) || "",
+      message: (err && err.message) || String(err),
+      stack: (err && err.stack) || null,
+    };
+    _errorLog.unshift(entry);
+    if (_errorLog.length > _ERR_LOG_MAX) _errorLog.length = _ERR_LOG_MAX;
+    try { console.error(`[reportError] ${entry.context}`, err); } catch {}
+    try { renderDiagBadge(); } catch {}
+  }
+  // Capture globally — anything that bubbles up unhandled lands in the report
+  window.addEventListener("error", e => {
+    reportError("window.error", e.error || { message: e.message, stack: `${e.filename}:${e.lineno}:${e.colno}` });
+  });
+  window.addEventListener("unhandledrejection", e => {
+    reportError("unhandledrejection", e.reason || { message: String(e) });
+  });
+
+  // App / platform info — fetched once via the preload bridge (Electron) or stubbed (browser)
+  let _appInfo = null;
+  async function loadAppInfo() {
+    if (_appInfo) return _appInfo;
+    try {
+      if (window.electronAPI && window.electronAPI.getAppInfo) {
+        _appInfo = await window.electronAPI.getAppInfo();
+      }
+    } catch {}
+    if (!_appInfo) _appInfo = { appVersion: "?", platform: navigator.platform || "?", electron: "n/a" };
+    return _appInfo;
+  }
+
+  function renderDiagBadge() {
+    const el = document.getElementById("btnReportProblem");
+    const elLogin = document.getElementById("btnReportProblemLogin");
+    const n = _errorLog.length;
+    [el, elLogin].forEach(b => {
+      if (!b) return;
+      let badge = b.querySelector(".diag-badge");
+      if (n > 0) {
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.className = "diag-badge";
+          b.appendChild(badge);
+        }
+        badge.textContent = String(n);
+      } else if (badge) {
+        badge.remove();
+      }
+    });
+  }
+
+  function buildDiagnosticReport() {
+    const info = _appInfo || {};
+    const acc = (function(){ try { return JSON.parse(localStorage.getItem("tigertag.accounts") || "[]"); } catch { return []; } })();
+    const lines = [];
+    lines.push("# TigerTag Studio Manager — diagnostic report");
+    lines.push("");
+    lines.push(`- Generated: ${new Date().toISOString()}`);
+    lines.push(`- App version: ${info.appVersion || "?"}`);
+    lines.push(`- Electron: ${info.electron || "n/a"}  ·  Chrome: ${info.chrome || "n/a"}  ·  Node: ${info.node || "n/a"}`);
+    lines.push(`- Platform: ${info.platform || navigator.platform || "?"} ${info.arch || ""}  (${info.osRelease || ""})`);
+    lines.push(`- Locale: ${state.lang}  ·  UA: ${navigator.userAgent}`);
+    lines.push(`- Accounts (local): ${acc.length}  ·  Active: ${state.activeAccountId ? state.activeAccountId.slice(0,6)+"…" : "none"}`);
+    lines.push(`- Online: ${navigator.onLine ? "yes" : "no"}`);
+    lines.push("");
+    lines.push(`## Errors captured (${_errorLog.length})`);
+    if (!_errorLog.length) { lines.push("_(none)_"); }
+    else {
+      _errorLog.forEach((e, i) => {
+        lines.push("");
+        lines.push(`### ${i+1}. [${new Date(e.ts).toISOString()}] ${e.context}${e.code ? " · " + e.code : ""}`);
+        lines.push("```");
+        lines.push(e.message || "(no message)");
+        if (e.stack) { lines.push(""); lines.push(e.stack); }
+        lines.push("```");
+      });
+    }
+    return lines.join("\n");
+  }
+
+  function openDiagnosticModal() {
+    loadAppInfo().then(() => {
+      const overlay = document.getElementById("diagModalOverlay");
+      if (!overlay) return;
+      const body = document.getElementById("diagBody");
+      if (body) body.value = buildDiagnosticReport();
+      overlay.classList.add("open");
+    });
+  }
+  function closeDiagnosticModal() {
+    const overlay = document.getElementById("diagModalOverlay");
+    if (overlay) overlay.classList.remove("open");
+  }
+  window.openDiagnosticModal = openDiagnosticModal;
   function esc(s) {
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
   }
@@ -757,7 +870,8 @@
       await fbAuth().sendPasswordResetEmail(email);
       toast($("addModalResult"), "ok", t("loginResetSent"));
     } catch (err) {
-      toast($("addModalResult"), "bad", err.message || t("networkError"));
+      reportError("auth.resetPassword", err);
+      toast($("addModalResult"), "bad", err.message || t("networkError"), { err, context: "auth.resetPassword" });
     }
   });
 
@@ -771,16 +885,19 @@
       provider.setCustomParameters({ prompt: "select_account" });
       const result = await firebase.auth().signInWithPopup(provider);
       const uid = result.user.uid;
-      // Transfer session to named instance and sign out DEFAULT
+      // Transfer session to named instance, mark active, then register listener
       ensureFirebaseApp(uid);
-      setupNamedAuth(uid); // register listener before updateCurrentUser fires it
       await firebase.app(uid).auth().updateCurrentUser(result.user);
+      setActiveId(uid);          // ← must run BEFORE setupNamedAuth so the listener's
+                                  //   getActiveId() === uid check passes on first fire
+      setupNamedAuth(uid);
       await firebase.auth().signOut();
       closeAddAccountModal();
     } catch (err) {
       const code = err.code || "";
       if (code !== "auth/popup-closed-by-user") {
-        toast($("addModalResult"), "bad", t("addAccountAuthError"));
+        reportError("auth.google", err);
+        toast($("addModalResult"), "bad", t("addAccountAuthError"), { err, context: "auth.google" });
       }
     } finally { setLoading($("btnGoogleSignIn"), false); }
   });
@@ -809,24 +926,26 @@
           setLoading($("btnStgSave"), false);
           return;
         }
-        // Create on DEFAULT, transfer to named instance
+        // Create on DEFAULT, transfer to named instance, then mark active
         const result = await firebase.auth().createUserWithEmailAndPassword(email, password);
         const uid = result.user.uid;
         ensureFirebaseApp(uid);
-        setupNamedAuth(uid);
         await firebase.app(uid).auth().setPersistence(persistence);
         await firebase.app(uid).auth().updateCurrentUser(result.user);
+        setActiveId(uid);          // ← before setupNamedAuth (listener guard fix)
+        setupNamedAuth(uid);
         await firebase.auth().signOut();
         toast($("addModalResult"), "ok", t("loginAccountCreated"));
         setTimeout(closeAddAccountModal, 1400);
       } else {
-        // Sign in on DEFAULT, transfer to named instance
+        // Sign in on DEFAULT, transfer to named instance, then mark active
         const result = await firebase.auth().signInWithEmailAndPassword(email, password);
         const uid = result.user.uid;
         ensureFirebaseApp(uid);
-        setupNamedAuth(uid);
         await firebase.app(uid).auth().setPersistence(persistence);
         await firebase.app(uid).auth().updateCurrentUser(result.user);
+        setActiveId(uid);          // ← before setupNamedAuth (listener guard fix)
+        setupNamedAuth(uid);
         await firebase.auth().signOut();
         closeAddAccountModal();
       }
@@ -837,7 +956,8 @@
         : code === "auth/email-already-in-use"
           ? t("loginEmailInUse")
           : (err.message || t("networkError"));
-      toast($("addModalResult"), "bad", msg);
+      reportError(_lmMode === "create" ? "auth.create" : "auth.signin", err);
+      toast($("addModalResult"), "bad", msg, { err, context: _lmMode === "create" ? "auth.create" : "auth.signin" });
     }
     setLoading($("btnStgSave"), false);
   });
@@ -1586,6 +1706,9 @@
     $("btnViewGrid").classList.add("active"); $("btnViewTable").classList.remove("active");
     renderInventory();
   });
+  // Defensive: if a previous build left "rack" in localStorage (Storage feature is gated off
+  // in this build), fall back to "table" so users don't get a blank view.
+  if (state.viewMode === "rack") { state.viewMode = "table"; localStorage.setItem("tigertag.view", "table"); }
   if (state.viewMode === "grid") { $("btnViewGrid").classList.add("active"); $("btnViewTable").classList.remove("active"); }
 
   $("searchInv").addEventListener("input", e => { state.search = e.target.value.trim(); renderInventory(); });
@@ -2643,6 +2766,30 @@
   $("debugPanelClose").addEventListener("click", closeDebug);
   $("debugOverlay").addEventListener("click", closeDebug);
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDebug(); });
+
+  /* ── diagnostic / report-problem modal ── */
+  $("btnReportProblem")?.addEventListener("click", openDiagnosticModal);
+  $("btnReportProblemLogin")?.addEventListener("click", openDiagnosticModal);
+  $("diagModalClose")?.addEventListener("click", closeDiagnosticModal);
+  $("diagModalOverlay")?.addEventListener("click", e => { if (e.target === $("diagModalOverlay")) closeDiagnosticModal(); });
+  $("btnDiagCopy")?.addEventListener("click", async () => {
+    const txt = $("diagBody").value;
+    try {
+      await navigator.clipboard.writeText(txt);
+      const btn = $("btnDiagCopy"); const orig = btn.textContent;
+      btn.textContent = t("errReportCopied"); btn.disabled = true;
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1400);
+    } catch {
+      $("diagBody").focus(); $("diagBody").select();
+    }
+  });
+  $("btnDiagClear")?.addEventListener("click", () => {
+    _errorLog.length = 0;
+    $("diagBody").value = buildDiagnosticReport();
+    renderDiagBadge();
+  });
+  // Pre-load app info so the first open is instant
+  loadAppInfo();
 
   // debug tab switching
   document.querySelectorAll(".dbg-tab").forEach(btn => {

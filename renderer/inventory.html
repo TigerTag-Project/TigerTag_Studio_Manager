@@ -185,6 +185,7 @@
       <div class="stg-section-label" data-i18n="settingsDebug">Debug</div>
       <button id="btnDebug" class="ghost sm" style="margin-top:10px;font-size:12px;color:var(--muted)" data-i18n="debugOpenBtn">⌥ Open debug panel</button>
       <button id="btnTD1S" class="ghost sm" style="margin-top:6px;font-size:12px;color:var(--muted)"><span class="td1s-dev-icon"></span>⌥ Open TD1S panel</button>
+      <button id="btnReportProblem" class="ghost sm" style="margin-top:6px;font-size:12px;color:var(--muted)" data-i18n="errReportBtn">⚑ Report a problem</button>
     </div>
 
   </div>
@@ -698,6 +699,25 @@
     <div class="lm-mode-toggle">
       <span id="lmToggleText" data-i18n="loginNoAccount">Don't have an account?</span>
       <button class="lm-mode-btn" id="btnToggleAuthMode" data-i18n="loginCreateAccount">Create account</button>
+    </div>
+
+    <!-- Report a problem (always visible — useful when login itself fails) -->
+    <button class="lm-report-link" id="btnReportProblemLogin" type="button" data-i18n="errReportBtn">Report a problem</button>
+  </div>
+</div>
+
+<!-- Diagnostic / error report modal -->
+<div class="modal-overlay" id="diagModalOverlay">
+  <div class="modal-card diag-card">
+    <div class="diag-header">
+      <span class="diag-title" data-i18n="errReportTitle">Diagnostic report</span>
+      <button class="modal-close diag-close" id="diagModalClose">✕</button>
+    </div>
+    <div class="diag-sub" data-i18n="errReportSub">Copy this report and send it to support so we can help.</div>
+    <textarea id="diagBody" class="diag-body" readonly spellcheck="false"></textarea>
+    <div class="diag-actions">
+      <button class="ghost sm" id="btnDiagClear" data-i18n="errReportClear">Clear log</button>
+      <button class="primary" id="btnDiagCopy" data-i18n="errReportCopy">Copy report</button>
     </div>
   </div>
 </div>
