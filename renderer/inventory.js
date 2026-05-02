@@ -533,6 +533,9 @@
     $("sbName").textContent = displayName || email || "—";
     $("sbUser").classList.remove("sb-user--empty");
     applyAvatarStyle(activeAccount());
+    // Render the top-header chip (own user variant — avatar + display name
+    // + random welcome greeting) so the chip appears immediately on connect.
+    renderFriendBanner();
     $("signInPlaceholder").classList.add("hidden");
     $("card-inv").classList.add("hidden");
     $("card-welcome").classList.add("hidden");
@@ -556,6 +559,8 @@
     av.style.background = ""; av.style.boxShadow = "";
     $("sbUser").classList.add("sb-user--empty");
     $("sbStats").classList.add("hidden");
+    // Hide the top-header user/friend chip when not signed in.
+    $("friendViewBanner")?.classList.add("hidden");
     $("signInPlaceholder").classList.remove("hidden");
     $("card-inv").classList.add("hidden");
     $("card-welcome").classList.add("hidden");
@@ -898,9 +903,19 @@
     e.stopPropagation();
     if ($("sbUser").classList.contains("sb-user--empty")) {
       openAddAccountModal();
-    } else {
-      $("acctDropdown").classList.contains("open") ? closeAccountDropdown() : openAccountDropdown();
+      return;
     }
+    // When the user is currently viewing a friend's inventory, the avatar
+    // acts as a one-click "return to my own inventory" shortcut. The swap
+    // badge overlay (.sb-avatar-swap) is the visual hint — the whole tile
+    // is clickable and toggles back to ownership in a single tap.
+    if (state.friendView) {
+      // Make sure no dropdown is left half-open after the swap.
+      if ($("acctDropdown").classList.contains("open")) closeAccountDropdown();
+      switchBackToOwnView();
+      return;
+    }
+    $("acctDropdown").classList.contains("open") ? closeAccountDropdown() : openAccountDropdown();
   });
   $("btnAddFirstAccount").addEventListener("click", openAddAccountModal);
   // btnManageProfiles is now rendered dynamically in renderAccountDropdown — listener attached there
@@ -1099,15 +1114,55 @@
     }
   });
 
-  // Google sign-in via popup — sign in on DEFAULT app, then transfer session
-  // to a named instance (uid) so multiple accounts can coexist independently.
+  // Google sign-in.
+  //
+  // In Electron we use the loopback OAuth flow (RFC 8252 + PKCE) — the
+  // system browser handles the actual auth, which means Touch ID / passkey
+  // / hardware keys work NATIVELY (Safari has full WebAuthn integration
+  // with the macOS keychain; the Chromium popup spawned by
+  // signInWithPopup does not).
+  //
+  // Outside Electron (future web build hosted on tigertag-cdn) we fall
+  // back to signInWithPopup — that one works fine in real browsers.
+  //
+  // Either path produces the same end state: a signed-in firebase.User
+  // we can hand to ensureFirebaseApp / setActiveId / setupNamedAuth.
   $("btnGoogleSignIn").addEventListener("click", async () => {
     setLoading($("btnGoogleSignIn"), true);
     $("addModalResult").innerHTML = "";
     try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: "select_account" });
-      const result = await firebase.auth().signInWithPopup(provider);
+      let result;
+      const loopback = window.electronAPI?.signInWithGoogleLoopback;
+      if (loopback) {
+        // Native Electron flow — opens Safari, returns once the user
+        // completes the auth. The renderer stays unblocked but waits on
+        // the IPC promise (the system browser is the real UI here).
+        const r = await loopback();
+        if (!r?.ok) {
+          // Loopback failed (Client ID not configured, Google error,
+          // user closed the tab, etc.). Fall through to popup so the
+          // user isn't stuck — the popup at least lets them pick
+          // password / SMS code as a fallback.
+          console.warn("[auth.google] loopback failed, falling back to popup:", r?.error);
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          result = await firebase.auth().signInWithPopup(provider);
+        } else {
+          // Build a Firebase credential from the tokens Google returned.
+          // We pass BOTH idToken and accessToken: if the idToken's audience
+          // doesn't match a Firebase-known OAuth client, Firebase falls
+          // back to using the accessToken against Google's userinfo
+          // endpoint (no audience constraint there).
+          const credential = firebase.auth.GoogleAuthProvider.credential(r.idToken, r.accessToken);
+          result = await firebase.auth().signInWithCredential(credential);
+        }
+      } else {
+        // Non-Electron environments (future web build) — popup works
+        // because the host browser owns the WebAuthn UI.
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        result = await firebase.auth().signInWithPopup(provider);
+      }
       const uid = result.user.uid;
       // Transfer session to named instance, mark active, register listener,
       // then call handleSignedIn EXPLICITLY so the UI updates even if the
@@ -1249,6 +1304,16 @@
       .collection("users").doc(uid)
       .collection("inventory")
       .onSnapshot({ includeMetadataChanges: true }, snapshot => {
+        // ── Defense-in-depth — ignore any owner-inventory snapshot that
+        // arrives WHILE we're previewing a friend's inventory. Without this
+        // guard, a snapshot buffered before the user clicked a friend chip
+        // can fire mid-switch and overwrite state.inventory / state.rows
+        // with the owner's data, making the previous (read-write) view
+        // bleed through into the friend's (read-only) view. The primary
+        // protection is unsubscribing in switchToFriendView, but Firestore
+        // can deliver one last in-flight callback before the unsub takes
+        // effect, hence this belt-and-braces check.
+        if (state.friendView) return;
         // Native connection detection — no ping needed
         if (snapshot.metadata.fromCache) {
           setHealthOffline();
@@ -1776,6 +1841,22 @@
     // ── Loading or truly empty → dedicated welcome card ──────────────────────
     // In friendView, keep card-inv visible so the banner stays; show spinner there
     if (state.invLoading || (state.inventory !== null && state.rows.length === 0)) {
+      // ── Rack view priority — even when the friend's inventory is empty or
+      // still loading, we MUST hand off to renderRackView() so it can clear
+      // the previously-rendered rack DOM (the owner's own racks). Without
+      // this, the previous user's racks bleed through and remain interactive.
+      // renderRackView() handles its own empty/loading states gracefully.
+      if (state.viewMode === "rack") {
+        $("card-welcome").classList.add("hidden");
+        $("card-inv").classList.remove("hidden");
+        $("invTableWrap").classList.add("hidden");
+        $("invGrid").classList.add("hidden");
+        $("invEmpty").classList.add("hidden");
+        $("mainResult").innerHTML = "";
+        $("invRackView").classList.remove("hidden");
+        renderRackView();
+        return;
+      }
       if (state.friendView) {
         $("card-welcome").classList.add("hidden");
         $("card-inv").classList.remove("hidden");
@@ -4023,6 +4104,11 @@
       .collection("users").doc(uid).collection("racks")
       .onSnapshot(snap => {
         if (uid !== state.activeAccountId) return;
+        // Same defense-in-depth as the inventory listener: an in-flight
+        // snapshot can land after we've entered friend-view; ignoring it
+        // keeps the friend's (one-shot) racks visible without the owner's
+        // racks bleeding back in.
+        if (state.friendView) return;
         const racks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         racks.sort((a, b) => {
           const oa = a.order ?? 999, ob = b.order ?? 999;
@@ -4071,12 +4157,16 @@
     return Date.now() - scaleTsToMs(s?.last_seen) < SCALE_ONLINE_THRESHOLD_MS;
   }
 
-  // Update the header status icon (green if ≥1 scale online, grey otherwise).
+  // Update the header status icon — three visual tiers:
+  //   • scale-none      → no scale paired at all      (red, bigger, pulsing — invites discovery)
+  //   • scale-connected → ≥1 paired AND online        (green, glow)
+  //   • (default)       → paired but all offline      (muted grey)
   function renderScaleHealth() {
     const el = $("scaleHealth");
     if (!el) return;
     const total  = state.scales.length;
     const online = state.scales.filter(isScaleOnline).length;
+    el.classList.toggle("scale-none", total === 0);
     el.classList.toggle("scale-connected", online > 0);
     if (total === 0)        el.dataset.tooltip = t("scaleHealthNone")    || "No scale connected";
     else if (online === 0)  el.dataset.tooltip = t("scaleHealthOffline", { n: total }) || `${total} scale(s) — all offline`;
@@ -5007,7 +5097,7 @@
               <div class="rv-stat-num">${unrankedCount}</div>
               <div class="rv-stat-lbl">${esc(t("rackStatsUnranked"))}</div>
             </div>
-            <span class="rv-stat-chev icon icon-chevron-r icon-20" aria-hidden="true"></span>
+            <span class="rv-stat-chev icon icon-chevrons-r icon-20" aria-hidden="true"></span>
           </div>
         </div>
       </div>`;
@@ -5918,27 +6008,59 @@
   $("friendInvOverlay").addEventListener("click", closeFriendInventory);
 
   /* ── Friend view: friend inventory in main interface ────────────────────── */
+  // Renders the top header chip (left of the KPI stats). Two modes:
+  //
+  //   • Friend view  → avatar + name + "READ-ONLY" badge (or error)
+  //   • Own view     → avatar + name + random welcome greeting
+  //
+  // Hidden when no account is connected. Both modes share the same
+  // visual frame (avatar | stacked name+sub), so the user gets the same
+  // reading rhythm whether they're on their own inventory or peeking at
+  // a friend's. Originally Friend-only, hence the historical name.
   function renderFriendBanner() {
     const banner = $("friendViewBanner");
+    // Toggle the sidebar avatar's "swap-back" affordance — visible only
+    // while we're currently viewing a friend's inventory. The avatar's
+    // click handler reads the same state to decide whether to act as a
+    // dropdown trigger or as a one-click "return home" button.
+    $("sbUser")?.classList.toggle("sb-user--viewing-friend", !!state.friendView);
     if (!banner) return;
-    if (!state.friendView) { banner.classList.add("hidden"); return; }
-    const { displayName, avatarColor, error } = state.friendView;
-    const initials = (displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+    banner.classList.remove("fvb--own", "fvb--error");
+    // ─── Friend view ───────────────────────────────────────────────
+    if (state.friendView) {
+      const { displayName, avatarColor, error } = state.friendView;
+      const initials = (displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+      const fg = readableTextOn(avatarColor || "var(--accent)");
+      banner.innerHTML = `
+        <span class="fvb-avatar" style="background:${avatarColor || "var(--accent)"};color:${fg}">${esc(initials)}</span>
+        <div class="fvb-inner">
+          <span class="fvb-name">${esc(displayName || "—")}</span>
+          ${error
+            ? `<span class="fvb-badge fvb-badge--error" title="${esc(error)}">⚠ ${t("friendInvErrorBadge")}</span>`
+            : `<span class="fvb-badge">${t("friendViewReadOnly")}</span>`}
+        </div>`;
+      banner.classList.toggle("fvb--error", !!error);
+      banner.classList.remove("hidden");
+      return;
+    }
+    // ─── Own view (signed in, not previewing a friend) ─────────────
+    const acc = activeAccount();
+    if (!acc) { banner.classList.add("hidden"); return; }
+    const own = state.displayName || acc.displayName || acc.email || "—";
+    const initials = own.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+    const grad = getAccGradient(acc);
+    const fg = readableTextOn(getAccShadow(acc));
+    // `t("welcomeBack")` resolves to one of the locale's random greetings
+    // (the i18n helper picks a fresh one per call from the array form).
+    const greeting = t("welcomeBack") || "👋 Welcome back,";
     banner.innerHTML = `
+      <span class="fvb-avatar" style="background:${grad};color:${fg}">${esc(initials)}</span>
       <div class="fvb-inner">
-        <span class="fvb-avatar" style="background:${avatarColor || "var(--accent)"};color:${readableTextOn(avatarColor || "var(--accent)")}">${esc(initials)}</span>
-        <span class="fvb-name">${esc(displayName || "—")}</span>
-        ${error
-          ? `<span class="fvb-badge fvb-badge--error" title="${esc(error)}">⚠ ${t("friendInvErrorBadge")}</span>`
-          : `<span class="fvb-badge">${t("friendViewReadOnly")}</span>`}
-      </div>
-      <button class="fvb-back" id="btnFriendViewBack">
-        <span class="icon icon-chevron-l icon-11"></span>
-        ${t("friendViewBack")}
-      </button>`;
-    banner.classList.toggle("fvb--error", !!error);
+        <span class="fvb-name">${esc(own)}</span>
+        <span class="fvb-welcome">${esc(greeting)}</span>
+      </div>`;
+    banner.classList.add("fvb--own");
     banner.classList.remove("hidden");
-    $("btnFriendViewBack")?.addEventListener("click", switchBackToOwnView);
   }
 
   // ── Friend-view auth helper ───────────────────────────────────────────
@@ -5979,12 +6101,16 @@
   async function switchToFriendView(friendUid, friendName, avatarColor) {
     closeProfilesModal(); closeFriends();
     const ownerUid = state.activeAccountId;  // capture so async errors land on the right account
+    // ── Tear down ALL live subscriptions on the OWNER's data BEFORE mutating
+    // state. If we don't, a buffered onSnapshot can fire mid-switch and write
+    // the owner's inventory back into state.* / re-render the owner's racks,
+    // leaving the previous user's content visible while we wait for the
+    // friend's read to complete. (The onSnapshot callbacks also have a
+    // `state.friendView` guard as defence-in-depth — see subscribeInventory.)
+    unsubscribeInventory();
+    unsubscribeRacks();
     state.friendView = { uid: friendUid, displayName: friendName, avatarColor, error: null };
     state.inventory = null; state.rows = [];
-    // Stop the live subscription on the OWNER's racks while in friend view —
-    // we replace state.racks with the friend's (one-shot) so the Storage tab
-    // shows their layout, read-only.
-    unsubscribeRacks();
     state.racks = [];
     state.invLoading = true;
     renderFriendBanner();
@@ -6046,10 +6172,17 @@
     state.inventory = null; state.rows = [];
     state.racks = [];                                   // wipe the friend's racks
     renderFriendBanner();
+    // Clear the visible artefacts of the friend's view IMMEDIATELY (stats,
+    // table/grid/rack rendering, detail panel). Without this, the friend's
+    // numbers would linger in the header KPI cards and their racks would
+    // remain rendered until the first own-snapshot arrives a few hundred
+    // milliseconds later — exactly the "previous user's data still visible"
+    // glitch we want to avoid.
     const uid = state.activeAccountId;
+    if (uid) state.invLoading = true;
+    renderStats();
+    renderInventory();
     if (uid) {
-      state.invLoading = true;
-      renderInventory();
       subscribeInventory(uid);
       subscribeRacks(uid);                              // re-attach own racks live-sync
     }

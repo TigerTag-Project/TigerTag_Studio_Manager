@@ -106,8 +106,45 @@
     font-size: 20px; font-weight: 700; color: #fff; letter-spacing: -1px;
     box-shadow: 0 0 0 3px rgba(255,122,24,.25), 0 4px 20px rgba(255,122,24,.2);
     transition: box-shadow .3s; flex-shrink: 0; cursor: pointer;
+    position: relative;          /* anchor for the swap-back badge overlay */
   }
   .sb-avatar:hover { box-shadow: 0 0 0 4px rgba(255,122,24,.45), 0 4px 28px rgba(255,122,24,.3); }
+
+  /* Swap-back badge — a small ⇄ chip pinned to the bottom-right of the
+     avatar. Hidden by default, revealed only while we're previewing a
+     friend's inventory (.sb-user--viewing-friend on the parent). The
+     avatar itself remains the click target; this badge is purely a
+     visual hint to the user that clicking will swap the view back. */
+  .sb-avatar-swap {
+    position: absolute;
+    right: -3px; bottom: -3px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: none;               /* shown only in friend-view mode */
+    align-items: center; justify-content: center;
+    background: #1a1a1a;
+    color: #fff;
+    box-shadow: 0 0 0 2px var(--surface-1, #0e0e10), 0 2px 8px rgba(0,0,0,.4);
+    pointer-events: none;        /* clicks fall through to the avatar */
+    transform: scale(.6); opacity: 0;
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1), opacity .2s;
+  }
+  .sb-user--viewing-friend .sb-avatar-swap {
+    display: flex;
+    transform: scale(1); opacity: 1;
+  }
+  .sb-avatar-swap .icon {
+    width: 13px; height: 13px;
+    background: #fff;            /* mask-image colour */
+  }
+  /* Collapsed sidebar (avatar shrinks to 40px) → shrink the badge too. */
+  .sidebar.collapsed .sb-avatar-swap {
+    width: 18px; height: 18px;
+    right: -2px; bottom: -2px;
+  }
+  .sidebar.collapsed .sb-avatar-swap .icon {
+    width: 11px; height: 11px;
+  }
   .sb-name {
     font-size: 14px; font-weight: 600; color: #fff; text-align: left;
     margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2734,39 +2771,67 @@
   }
 
   /* ── friend view banner ── */
+  /* User chip in the top header row — to the LEFT of the KPI stats.
+     Two variants share the same frame:
+       • Own user (.fvb--own) → avatar + name + random welcome greeting
+       • Friend view          → avatar + name + READ-ONLY badge (or error)
+     Layout: avatar on the left, then a vertical stack (name on top, sub-line
+     below). Height aligns to the stat tiles so the toolbar reads as one row. */
+  /* No surrounding pill — the chip is now just an avatar + stacked text,
+     blending into the header row. The READ-ONLY badge / welcome greeting
+     give it enough visual identity without an extra frame. */
   .fvb {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 10px 14px;
-    background: var(--surface-2); border: 1.5px solid var(--border);
-    border-radius: 12px; margin-bottom: 14px;
+    display: flex; align-items: center;
+    gap: 10px; padding: 0;
+    background: transparent; border: 0;
+    border-radius: 0;
+    flex-shrink: 0;
+    margin-bottom: 0;
   }
   .fvb.hidden { display: none; }
-  .fvb-inner { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .fvb-inner {
+    display: flex; flex-direction: column;
+    gap: 1px;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  /* Avatar size matched to the height of the KPI stat tiles next to it
+     so the chip + stats row reads as one visually-balanced strip. */
   .fvb-avatar {
-    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    width: 50px; height: 50px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; color: #fff;
+    font-size: 18px; font-weight: 700; color: #fff;
+    letter-spacing: -.7px;
   }
-  .fvb-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .fvb-name {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 160px;
+    line-height: 1.2;
+  }
   .fvb-badge {
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: .05em; color: var(--muted);
-    background: var(--border); border-radius: 4px; padding: 2px 6px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted);
+    background: var(--border); border-radius: 3px; padding: 1px 5px;
     flex-shrink: 0;
+    line-height: 1.4;
   }
-  .fvb-back {
-    display: flex; align-items: center; gap: 5px; flex-shrink: 0;
-    background: none; border: 1.5px solid var(--border); border-radius: 8px;
-    color: var(--text); font-size: 12px; font-weight: 500; padding: 5px 10px;
-    cursor: pointer; transition: border-color .15s, background .15s, color .15s;
+  /* Welcome greeting under the name in own-user mode. Subtle muted text,
+     same vertical rhythm as the READ-ONLY badge but without the chip
+     background — it's an emoji-prefixed greeting, not a status flag. */
+  .fvb-welcome {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 160px;
+    line-height: 1.2;
   }
-  .fvb-back:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
 
   /* read-only weight bar (no slider) */
   .wb-track--ro { pointer-events: none; }
 
-  /* Friend view — error banner badge */
-  .fvb--error { border-color: var(--danger); background: var(--danger-soft); }
+  /* Friend view — error variant. The wrapping pill is gone now, so the
+     red `.fvb-badge--error` chip in the inner stack carries the whole
+     error signal on its own. */
   .fvb-badge--error {
     background: var(--danger) !important; color: #fff !important;
   }
@@ -3168,12 +3233,14 @@
   .icon-play      { -webkit-mask-image: url('../assets/svg/icons/icon_play.svg');         mask-image: url('../assets/svg/icons/icon_play.svg'); }
   .icon-chevron-l { -webkit-mask-image: url('../assets/svg/icons/icon_chevron_left.svg'); mask-image: url('../assets/svg/icons/icon_chevron_left.svg'); }
   .icon-chevron-r { -webkit-mask-image: url('../assets/svg/icons/icon_chevron_right.svg'); mask-image: url('../assets/svg/icons/icon_chevron_right.svg'); }
+  .icon-chevrons-r { -webkit-mask-image: url('../assets/svg/icons/icon_chevrons_right.svg'); mask-image: url('../assets/svg/icons/icon_chevrons_right.svg'); }
   .icon-plus      { -webkit-mask-image: url('../assets/svg/icons/icon_plus.svg');         mask-image: url('../assets/svg/icons/icon_plus.svg'); }
   .icon-link      { -webkit-mask-image: url('../assets/svg/icons/icon_link.svg');         mask-image: url('../assets/svg/icons/icon_link.svg'); }
   .icon-user      { -webkit-mask-image: url('../assets/svg/icons/icon_user.svg');         mask-image: url('../assets/svg/icons/icon_user.svg'); }
   .icon-download  { -webkit-mask-image: url('../assets/svg/icons/icon_download.svg');     mask-image: url('../assets/svg/icons/icon_download.svg'); }
   .icon-refresh   { -webkit-mask-image: url('../assets/svg/icons/icon_refresh.svg');      mask-image: url('../assets/svg/icons/icon_refresh.svg'); }
   .icon-settings  { -webkit-mask-image: url('../assets/svg/icons/icon_settings.svg');     mask-image: url('../assets/svg/icons/icon_settings.svg'); }
+  .icon-swap      { -webkit-mask-image: url('../assets/svg/icons/icon_swap.svg');         mask-image: url('../assets/svg/icons/icon_swap.svg'); }
   .icon-wrench    { -webkit-mask-image: url('../assets/svg/icons/icon_wrench.svg');       mask-image: url('../assets/svg/icons/icon_wrench.svg'); }
   .icon-cloud     { -webkit-mask-image: url('../assets/svg/icons/icon_cloud.svg');        mask-image: url('../assets/svg/icons/icon_cloud.svg'); }
   .icon-signout   { -webkit-mask-image: url('../assets/svg/icons/icon_signout.svg');      mask-image: url('../assets/svg/icons/icon_signout.svg'); }
@@ -4391,7 +4458,11 @@
     filter: drop-shadow(0 0 5px var(--success));
   }
 
-  /* ── Scale health icon (header) — green when ≥ 1 scale online ── */
+  /* ── Scale health icon (header)
+        • default          : muted grey (paired but all offline)
+        • .scale-connected : green glow (≥1 online)
+        • .scale-none      : red, fixed size, no animation — visual cue
+                             that no TigerScale is paired yet. */
   .scale-health { cursor: pointer; }
   .scale-health-icon {
     display: inline-block;
@@ -4403,6 +4474,10 @@
   .scale-health.scale-connected .scale-health-icon {
     color: var(--success); opacity: 1;
     filter: drop-shadow(0 0 5px var(--success));
+  }
+  .scale-health.scale-none .scale-health-icon {
+    color: #ef4444;
+    opacity: 1;
   }
 
   /* ── Scales panel (slide-in from right) ── */

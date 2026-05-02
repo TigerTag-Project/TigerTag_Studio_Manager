@@ -39,6 +39,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Resolves with { ok: true } or { ok: false, error: "…" }.
   checkForUpdates: () => ipcRenderer.invoke('update:check-now'),
 
+  // ── Google sign-in via loopback OAuth (RFC 8252 + PKCE) ────────────────
+  // Opens the system browser (Safari on macOS, default on Win/Linux) so the
+  // user can authenticate with Touch ID / passkey / hardware key NATIVELY.
+  // The Chromium popup spawned by firebase.auth().signInWithPopup() can't
+  // talk to the macOS authd daemon, which is why "Use your passkey" was
+  // inert. Resolves with `{ ok, idToken, accessToken }` or `{ ok:false, error }`.
+  signInWithGoogleLoopback: () => ipcRenderer.invoke('auth:google-loopback'),
+
   // ── App info (version / platform — used by the diagnostic report) ──────
   getAppInfo: () => ipcRenderer.invoke('app:info'),
 

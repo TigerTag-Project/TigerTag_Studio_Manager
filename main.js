@@ -505,6 +505,190 @@ ipcMain.on('update:set-auto', (_evt, enabled) => {
   console.log(`[updater] auto-update preference set to ${!!enabled}`);
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Google sign-in via loopback OAuth (RFC 8252) + PKCE (RFC 7636)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Why we don't use firebase.auth().signInWithPopup() in Electron
+// ─────────────────────────────────────────────────────────────
+// signInWithPopup spawns a Chromium BrowserWindow inside Electron. When
+// Google's auth flow hits a passkey step (now the default for many users),
+// Chromium's WebAuthn implementation tries to talk to the macOS authd
+// daemon to invoke Touch ID. In a stock Electron BrowserWindow that path
+// is broken — the user sees the "Use your passkey" UI but the button is
+// inert, leaving Google sign-in stuck.
+//
+// The loopback OAuth pattern fixes this by NOT opening a popup. Instead:
+//   1. main spawns a tiny http.Server on 127.0.0.1:<random-port>
+//   2. main builds a Google OAuth URL with code_challenge=S256(verifier)
+//      and redirect_uri = http://127.0.0.1:<port>/callback
+//   3. main calls shell.openExternal(url) → Safari (or default browser)
+//      opens. Touch ID / passkeys work there NATIVELY because Safari
+//      has full WebAuthn integration with the OS keychain.
+//   4. After auth, Google redirects to localhost:<port>/callback?code=…
+//   5. The loopback server captures the code, POSTs it to Google's token
+//      endpoint with the PKCE verifier (no client_secret needed for
+//      Desktop OAuth clients), receives id_token + access_token.
+//   6. Renderer turns those into a firebase.auth.GoogleAuthProvider
+//      credential and signs in via signInWithCredential — same end state
+//      as signInWithPopup would have produced.
+//
+// Configuration — Desktop OAuth Client ID (REQUIRED)
+// ──────────────────────────────────────────────────
+// You MUST create a "Desktop app" OAuth Client in Google Cloud Console
+// for the tigertag-connect project. Steps:
+//   1. https://console.cloud.google.com/apis/credentials?project=tigertag-connect
+//   2. + CREATE CREDENTIALS → OAuth client ID
+//   3. Application type: "Desktop app"
+//   4. Name: "Tiger Studio Manager"
+//   5. Save and copy the Client ID (no secret needed thanks to PKCE).
+//   6. Paste it below as GOOGLE_DESKTOP_CLIENT_ID, or set the
+//      TIGERTAG_GOOGLE_DESKTOP_CLIENT_ID env var at launch.
+//
+// Note on Firebase audience: an id_token minted for the Desktop client
+// has aud = Desktop_Client_ID, which Firebase Auth may reject. We pass
+// BOTH id_token and access_token to GoogleAuthProvider.credential(...);
+// when the id_token audience check fails, Firebase falls back to using
+// the access_token against Google's userinfo endpoint, which has no
+// audience constraint. This dual-token call is what makes the flow
+// portable across project setups.
+const GOOGLE_DESKTOP_CLIENT_ID =
+  process.env.TIGERTAG_GOOGLE_DESKTOP_CLIENT_ID ||
+  // Desktop OAuth client created in Google Cloud Console for the
+  // tigertag-connect project on 2026-05-03 ("Tiger Studio Manager"). This
+  // value is PUBLIC by design — Desktop OAuth clients use PKCE instead of
+  // a client_secret, so even though this string ends up bundled in the
+  // signed app binary, an attacker who extracts it cannot impersonate the
+  // app: each sign-in flow generates a fresh code_verifier that only this
+  // process knows.
+  '298062874545-c3d61latpmhp6qn9l1q87hvhmng8aadi.apps.googleusercontent.com';
+
+ipcMain.handle('auth:google-loopback', async () => {
+  if (!GOOGLE_DESKTOP_CLIENT_ID) {
+    return {
+      ok: false,
+      error: 'GOOGLE_DESKTOP_CLIENT_ID is not configured. See main.js header.',
+    };
+  }
+
+  // PKCE: verifier is a high-entropy random string, challenge is its
+  // SHA-256 (base64url-encoded). Server requires us to present the
+  // verifier at code-exchange time, proving we're the same app that
+  // initiated the flow.
+  const codeVerifier  = crypto.randomBytes(32).toString('base64url');
+  const codeChallenge = crypto.createHash('sha256')
+    .update(codeVerifier).digest('base64url');
+  // Random state for CSRF protection — Google echoes it back on the
+  // redirect, we verify the round-trip before trusting the code.
+  const state = crypto.randomBytes(16).toString('base64url');
+
+  // Spawn the loopback HTTP server on an ephemeral port. We bind to
+  // 127.0.0.1 explicitly (not 0.0.0.0) so the listener is unreachable
+  // from the local network — only the user's own browser can hit it.
+  const { server, port } = await new Promise((resolve, reject) => {
+    const s = http.createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => resolve({ server: s, port: s.address().port }));
+  });
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+
+  try {
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id',             GOOGLE_DESKTOP_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri',          redirectUri);
+    authUrl.searchParams.set('response_type',         'code');
+    authUrl.searchParams.set('scope',                 'openid email profile');
+    authUrl.searchParams.set('code_challenge',        codeChallenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('state',                 state);
+    // `prompt=select_account` mirrors the existing popup behaviour so users
+    // with multiple Google accounts see the chooser every time.
+    authUrl.searchParams.set('prompt',                'select_account');
+
+    // Wait for the OAuth redirect to land on /callback. 5-minute timeout
+    // — beyond that we assume the user abandoned the flow.
+    const codePromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('OAuth timeout: no callback received in 5 minutes'));
+      }, 5 * 60 * 1000);
+
+      server.on('request', (req, res) => {
+        const reqUrl = new URL(req.url, `http://127.0.0.1:${port}`);
+        if (reqUrl.pathname !== '/callback') {
+          res.writeHead(404); res.end(); return;
+        }
+        clearTimeout(timeout);
+
+        const code          = reqUrl.searchParams.get('code');
+        const returnedState = reqUrl.searchParams.get('state');
+        const oauthError    = reqUrl.searchParams.get('error');
+
+        // Always answer the browser — never leave the tab spinning. We
+        // serve a tiny HTML page that auto-closes after 1.5s so the user
+        // immediately knows they can return to the desktop app.
+        const renderPage = (title, body, color) => {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`<!doctype html><html><head><meta charset="utf-8"><title>Tiger Studio Manager — ${title}</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#0f1117;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px"><div style="font-size:48px;color:${color}">${title === 'Signed in' ? '✓' : '×'}</div><h1 style="font-weight:600;margin:0;font-size:22px">${title}</h1><p style="margin:0;color:rgba(255,255,255,.6);font-size:14px">${body}</p><script>setTimeout(()=>window.close(),1500)</script></body></html>`);
+        };
+
+        if (oauthError) {
+          renderPage('Sign-in cancelled', 'You can close this tab and try again.', '#ef4444');
+          reject(new Error(`OAuth error: ${oauthError}`));
+          return;
+        }
+        if (returnedState !== state) {
+          renderPage('Security check failed', 'State mismatch — please try again.', '#ef4444');
+          reject(new Error('OAuth state mismatch — possible CSRF attempt'));
+          return;
+        }
+        if (!code) {
+          renderPage('No code received', 'Something went wrong on Google\'s side.', '#ef4444');
+          reject(new Error('OAuth: no authorization code returned'));
+          return;
+        }
+
+        renderPage('Signed in', 'You can close this tab and return to the app.', '#10b981');
+        resolve(code);
+      });
+    });
+
+    // Hand off to the system browser — Touch ID / passkey works there.
+    await shell.openExternal(authUrl.toString());
+
+    const code = await codePromise;
+
+    // Exchange the code for tokens. Desktop clients use PKCE instead of
+    // a client_secret, so we don't need to ship anything truly secret in
+    // the binary — the verifier is regenerated per flow and never leaves
+    // this process.
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:    new URLSearchParams({
+        client_id:     GOOGLE_DESKTOP_CLIENT_ID,
+        code,
+        code_verifier: codeVerifier,
+        grant_type:    'authorization_code',
+        redirect_uri:  redirectUri,
+      }).toString(),
+    });
+    if (!tokenResp.ok) {
+      const txt = await tokenResp.text();
+      throw new Error(`Google token exchange failed (${tokenResp.status}): ${txt}`);
+    }
+    const tokens = await tokenResp.json();
+    return {
+      ok: true,
+      idToken:     tokens.id_token     || null,
+      accessToken: tokens.access_token || null,
+    };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  } finally {
+    server.close();
+  }
+});
+
 // IPC: renderer triggers a manual update check (regardless of the
 // auto-update preference — explicit user action). Resolves with the
 // outcome so the UI can show "Checking…" / "Up to date" / etc.

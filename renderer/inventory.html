@@ -27,6 +27,13 @@
         <div class="sb-avatar-wrap">
           <div class="sb-avatar" id="sbAvatar">
             <span class="icon icon-plus icon-22 sb-avatar-plus"></span>
+            <!-- Swap-back badge — visible only when viewing a friend's
+                 inventory. The whole avatar acts as a "return to my
+                 inventory" button in that mode; this badge is the visual
+                 hint that clicking will swap the view. -->
+            <span class="sb-avatar-swap" aria-hidden="true">
+              <span class="icon icon-swap icon-13"></span>
+            </span>
           </div>
           <div class="acct-dropdown" id="acctDropdown">
             <div id="acctDropdownList"></div>
@@ -89,6 +96,11 @@
   <div class="main-col">
 
     <header class="top">
+      <!-- Friend-view chip (avatar + display name + READ-ONLY badge).
+           Sits to the LEFT of the KPI stats so the user always sees whose
+           inventory they are previewing. Clicking the main user avatar in
+           the sidebar swaps back to ownership — no back button needed here. -->
+      <div id="friendViewBanner" class="fvb hidden"></div>
       <!-- Stats moved here from the sidebar (v1.4.4): the 4 cards
            (Spools / Stock / TigerTag / TigerTag+) take the place of the
            old "Tiger Studio Manager / View and manage your filament spools"
@@ -129,8 +141,6 @@
 
     <!-- inventory -->
     <section class="card hidden" id="card-inv">
-      <!-- friend-view banner — shown when viewing a friend's inventory -->
-      <div id="friendViewBanner" class="fvb hidden"></div>
       <div class="row between" style="gap:10px">
         <div class="inv-search">
           <input id="searchInv" type="text" placeholder="Search material, brand, color, UID…" data-i18n-placeholder="searchPlaceholder" />
