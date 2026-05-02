@@ -21,12 +21,20 @@
 
     <!-- user section — toujours visible, contenu change selon l'état -->
     <div class="sb-user sb-user--empty" id="sbUser">
-      <div class="sb-avatar-wrap">
-        <div class="sb-avatar" id="sbAvatar">
-          <span class="icon icon-plus icon-22 sb-avatar-plus"></span>
+      <!-- Avatar + info (welcome + name) on a single horizontal row when the
+           sidebar is expanded. Collapsed mode shrinks back to avatar-only. -->
+      <div class="sb-user-row">
+        <div class="sb-avatar-wrap">
+          <div class="sb-avatar" id="sbAvatar">
+            <span class="icon icon-plus icon-22 sb-avatar-plus"></span>
+          </div>
+          <div class="acct-dropdown" id="acctDropdown">
+            <div id="acctDropdownList"></div>
+          </div>
         </div>
-        <div class="acct-dropdown" id="acctDropdown">
-          <div id="acctDropdownList"></div>
+        <div class="sb-user-info">
+          <div class="sb-sub-welcome" id="sbWelcome" data-i18n="welcomeBack">👋 Welcome back,</div>
+          <div class="sb-name" id="sbName">—</div>
         </div>
       </div>
 
@@ -38,22 +46,20 @@
           <span data-i18n="addAccountLabel">Add account</span>
         </button>
       </div>
-
-      <!-- état : connecté -->
-      <div class="sb-sub-welcome" id="sbWelcome" data-i18n="welcomeBack">👋 Welcome back,</div>
-      <div class="sb-name" id="sbName">—</div>
       <div class="sb-actions">
         <button id="btnSbReload" class="primary"><span class="icon icon-refresh icon-13"></span><span class="label" data-i18n="btnRefresh">Refresh</span></button>
         <button id="btnOpenFriends" class="ghost sb-friends-btn"><span class="icon icon-user icon-13"></span><span class="label" data-i18n="friendsTitle">Friends</span><span id="friendsBadge" class="friends-badge hidden"></span></button>
+        <!-- Quick-access friends list (rendered by JS into this container).
+             Each chip switches the inventory view to that friend on click.
+             Hidden when state.friends is empty. -->
+        <div id="sbFriendsList" class="sb-friends-list hidden"></div>
         <button id="btnOpenRacks" class="ghost"><span class="icon icon-package icon-13"></span><span class="label" data-i18n="racksTitle">Storage</span></button>
-        <button id="btnOpenSettings"><span class="icon icon-download icon-13"></span><span class="label" data-i18n="settingsOpenBtn">Export</span></button>
+        <button id="btnOpenSettings"><span class="icon icon-settings icon-13"></span><span class="label" data-i18n="settingsOpenBtn">Settings</span></button>
       </div>
     </div>
 
-    <!-- scrollable middle -->
-    <div class="sb-mid">
-      <div class="sb-stats-wrap hidden" id="sbStats"></div>
-    </div>
+    <!-- scrollable middle (stats moved to the top header in v1.4.4) -->
+    <div class="sb-mid"></div>
 
     <!-- community footer (always visible) -->
     <div class="sb-community">
@@ -83,15 +89,16 @@
   <div class="main-col">
 
     <header class="top">
-      <div>
-        <h1><span class="dot"></span>Tiger Studio Manager</h1>
-        <div class="subtitle" data-i18n="appSubtitle">View and manage your filament spools</div>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center">
+      <!-- Stats moved here from the sidebar (v1.4.4): the 4 cards
+           (Spools / Stock / TigerTag / TigerTag+) take the place of the
+           old "Tiger Studio Manager / View and manage your filament spools"
+           title block, giving immediate at-a-glance KPIs. -->
+      <div class="sb-stats-wrap top-stats hidden" id="sbStats"></div>
+      <div class="top-status-icons">
         <div class="health" id="rfidStatus" style="display:none"><span class="pulse"></span><span id="rfidLabel">RFID: —</span></div>
         <div class="health td1s-health" id="td1sHealth" data-tooltip="TD1S: not detected"><span class="td1s-health-icon"></span></div>
         <div class="health scale-health" id="scaleHealth" data-tooltip="No scale connected"><span class="scale-health-icon">⚖</span></div>
-<div class="health" id="health" data-tooltip="Backend: idle"><span class="icon icon-cloud icon-20"></span></div>
+        <div class="health" id="health" data-tooltip="Backend: idle"><span class="icon icon-cloud icon-20"></span></div>
       </div>
     </header>
 
@@ -187,42 +194,107 @@
   <button id="btnInstallUpdate" class="primary sm hidden">Restart &amp; update</button>
 </div>
 
-<!-- settings panel -->
+<!-- settings panel — restructured into clear sectioned cards (v1.4.4) -->
 <div class="panel-overlay" id="settingsOverlay"></div>
-<div class="detail-panel" id="settingsPanel">
+<div class="detail-panel stg-panel" id="settingsPanel">
   <div class="panel-header">
-    <span class="panel-title" data-i18n="settingsTitle">Settings</span>
+    <span class="panel-title">
+      <span class="icon icon-settings icon-18"></span>
+      <span data-i18n="settingsTitle">Settings</span>
+    </span>
     <button class="panel-close" id="settingsClose">✕</button>
   </div>
-  <div class="panel-body" style="padding:18px 20px 24px;display:flex;flex-direction:column;gap:18px;overflow-y:auto">
+  <div class="panel-body stg-body">
 
-    <!-- Data & Export -->
-    <div>
-      <div class="stg-section-label" data-i18n="settingsData">Data &amp; Export</div>
-      <button class="stg-export-btn" id="btnStgExport" data-i18n="settingsExport" style="margin-top:10px">↓ Download JSON</button>
-    </div>
+    <!-- ── Updates ─────────────────────────────────────────────── -->
+    <section class="stg-card">
+      <header class="stg-card-head">
+        <span class="icon icon-refresh icon-14"></span>
+        <span class="stg-card-title" data-i18n="stgUpdatesTitle">Updates</span>
+      </header>
+      <div class="stg-card-body">
+        <label class="stg-row stg-row--toggle">
+          <span class="stg-row-text">
+            <span class="stg-row-title" data-i18n="aboutAutoUpdate">Auto-update</span>
+            <span class="stg-row-sub" data-i18n="aboutAutoUpdateSub">Check for new versions on startup</span>
+          </span>
+          <span class="eac-toggle">
+            <input type="checkbox" id="stgAutoUpdateToggle" checked />
+            <span class="eac-toggle-track"><span class="eac-toggle-thumb"></span></span>
+          </span>
+        </label>
+        <div class="stg-row-actions">
+          <button class="ghost sm" id="btnCheckUpdate">
+            <span class="icon icon-refresh icon-13"></span>
+            <span data-i18n="aboutCheckUpdate">Check for updates</span>
+          </button>
+        </div>
+        <div class="stg-status" id="stgUpdateStatus" hidden></div>
+      </div>
+    </section>
 
-    <!-- Debug -->
-    <div>
-      <div class="stg-section-label" data-i18n="settingsDebug">Debug</div>
-      <button id="btnDebug" class="ghost sm" style="margin-top:10px;font-size:12px;color:var(--muted)" data-i18n="debugOpenBtn">⌥ Open debug panel</button>
-      <button id="btnTD1S" class="ghost sm" style="margin-top:6px;font-size:12px;color:var(--muted)"><span class="td1s-dev-icon"></span>⌥ Open TD1S panel</button>
-      <button id="btnReportProblem" class="ghost sm" style="margin-top:6px;font-size:12px;color:var(--muted)" data-i18n="errReportBtn">⚑ Report a problem</button>
-    </div>
+    <!-- ── Data (collapsible, closed by default) ───────────────── -->
+    <section class="stg-card stg-card--collapsible" data-collapsed="true">
+      <button class="stg-card-head stg-card-head--btn" type="button" aria-expanded="false">
+        <span class="icon icon-package icon-14"></span>
+        <span class="stg-card-title" data-i18n="stgDataTitle">Data</span>
+        <span class="stg-card-chev icon icon-chevron-r icon-14" aria-hidden="true"></span>
+      </button>
+      <div class="stg-card-body stg-card-body--collapsible">
+        <p class="stg-row-help" data-i18n="stgDataHelp">Export your inventory locally as JSON, or copy the public API URL.</p>
+        <div class="stg-row-actions stg-row-actions--col">
+          <button class="ghost sm" id="btnStgExport">
+            <span class="icon icon-download icon-13"></span>
+            <span data-i18n="settingsExport">Download JSON</span>
+          </button>
+          <button class="ghost sm" id="btnCopyApiUrl" title="Copy export URL">
+            <span class="icon icon-link icon-13"></span>
+            <span data-i18n="stgCopyApiUrl">Copy API URL</span>
+          </button>
+        </div>
+        <div class="stg-status" id="stgApiUrlWarn" hidden></div>
+      </div>
+    </section>
 
-    <!-- About -->
-    <div>
-      <div class="stg-section-label" data-i18n="aboutTitle">About</div>
-      <div class="stg-about" id="stgAbout">
+    <!-- ── Tools (collapsible, closed by default) ──────────────── -->
+    <section class="stg-card stg-card--collapsible" data-collapsed="true">
+      <button class="stg-card-head stg-card-head--btn" type="button" aria-expanded="false">
+        <span class="icon icon-wrench icon-14"></span>
+        <span class="stg-card-title" data-i18n="stgToolsTitle">Tools</span>
+        <span class="stg-card-chev icon icon-chevron-r icon-14" aria-hidden="true"></span>
+      </button>
+      <div class="stg-card-body stg-card-body--collapsible">
+        <p class="stg-row-help" data-i18n="stgToolsHelp">Diagnostics and troubleshooting utilities.</p>
+        <div class="stg-row-actions stg-row-actions--col">
+          <button class="ghost sm" id="btnDebug" data-i18n="debugOpenBtn">⌥ Open debug panel</button>
+          <button class="ghost sm" id="btnTD1S"><span class="td1s-dev-icon"></span>⌥ Open TD1S panel</button>
+          <button class="ghost sm" id="btnReportProblem" data-i18n="errReportBtn">⚑ Report a problem</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── About (flat, no card-in-card) ───────────────────────── -->
+    <section class="stg-card" id="stgAbout">
+      <header class="stg-card-head">
+        <span class="icon icon-info icon-14"></span>
+        <span class="stg-card-title" data-i18n="aboutTitle">About</span>
+      </header>
+      <div class="stg-card-body">
         <div class="stg-about-name">Tiger Studio Manager</div>
         <div class="stg-about-version" id="stgAboutVersion">v—</div>
         <div class="stg-about-tech" id="stgAboutTech">—</div>
-        <button class="stg-about-copy ghost sm" id="btnCopyAbout" title="Copy">
-          <span class="icon icon-copy icon-13"></span>
-          <span data-i18n="aboutCopy">Copy</span>
-        </button>
+        <div class="stg-row-actions">
+          <button class="ghost sm" id="btnCopyAbout" title="Copy">
+            <span class="icon icon-copy icon-13"></span>
+            <span data-i18n="aboutCopy">Copy</span>
+          </button>
+          <a class="ghost sm stg-link-btn" href="https://github.com/TigerTag-Project/TigerTag_Studio_Manager" target="_blank" rel="noopener noreferrer">
+            <span class="icon icon-github icon-13"></span>
+            <span>GitHub</span>
+          </a>
+        </div>
       </div>
-    </div>
+    </section>
 
   </div>
 </div>

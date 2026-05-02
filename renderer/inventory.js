@@ -53,8 +53,13 @@
   }
   function applyAvatarStyle(acc) {
     const grad = getAccGradient(acc); const sh = getAccShadow(acc);
-    $("sbAvatar").style.background = grad;
-    $("sbAvatar").style.boxShadow = `0 0 0 3px ${sh}40,0 4px 20px ${sh}33`;
+    const el = $("sbAvatar");
+    el.style.background = grad;
+    el.style.boxShadow = `0 0 0 3px ${sh}40,0 4px 20px ${sh}33`;
+    // Use the dominant colour to decide whether initials should be black or
+    // white. Without this, picking a near-white custom colour leaves the
+    // initials invisible (white-on-white).
+    el.style.color = readableTextOn(sh);
   }
 
   const STORAGE_ACCOUNTS = "tigertag.accounts";
@@ -584,6 +589,9 @@
     if (!$("acctDropdown").contains(e.target) && e.target !== $("sbAvatar")) closeAccountDropdown();
   }
   function renderAccountDropdown() {
+    // Mirror the friend list to the sidebar quick-access chips on every
+    // dropdown re-render — same data, just a second presentation.
+    renderSidebarFriends();
     const accounts = getAccounts();
     const activeId = state.activeAccountId;
     const list = $("acctDropdownList");
@@ -591,7 +599,7 @@
     // ── Connected accounts ──
     let html = accounts.map(acc => `
       <button class="acct-drop-item${acc.id===activeId?' active':''}" data-drop-id="${esc(acc.id)}">
-        <span class="acct-drop-avatar" style="background:${getAccGradient(acc)}">${esc(getInitials(acc))}</span>
+        <span class="acct-drop-avatar" style="background:${getAccGradient(acc)};color:${readableTextOn(getAccShadow(acc))}">${esc(getInitials(acc))}</span>
         <span class="acct-drop-name">${esc(acc.displayName || acc.email)}</span>
         ${acc.id===activeId ? '<span class="acct-drop-check">✓</span>' : ''}
       </button>`).join("");
@@ -610,9 +618,10 @@
       html += state.friends.map(f => {
         const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
         const color = friendColor(f);
+        const fg = readableTextOn(color);
         const isActive = state.friendView?.uid === f.uid;
         return `<button class="acct-drop-item${isActive ? ' acct-drop-friend-active' : ''}" data-drop-friend-uid="${esc(f.uid)}" data-drop-friend-name="${esc(f.displayName || f.uid)}" data-drop-friend-color="${esc(color)}">
-          <span class="acct-drop-avatar" style="background:${color}">${initials}</span>
+          <span class="acct-drop-avatar" style="background:${color};color:${fg}">${initials}</span>
           <span class="acct-drop-name">${esc(f.displayName || f.uid)}</span>
           ${isActive ? '<span class="acct-drop-check">✓</span>' : '<span class="acct-drop-eye"><span class="icon icon-eye-on icon-11"></span></span>'}
         </button>`;
@@ -682,6 +691,20 @@
   $("settingsClose").addEventListener("click", closeSettings);
   $("settingsOverlay").addEventListener("click", closeSettings);
 
+  // Settings → collapsible cards (Data / Tools).  Click the header to
+  // expand / collapse the body. State lives in `data-collapsed` on the
+  // card, mirrored on `aria-expanded` of the header button. Pure CSS
+  // animation via max-height transition on .stg-card-body--collapsible.
+  document.querySelectorAll("#settingsPanel .stg-card--collapsible").forEach(card => {
+    const head = card.querySelector(".stg-card-head--btn");
+    if (!head) return;
+    head.addEventListener("click", () => {
+      const collapsed = card.dataset.collapsed === "true";
+      card.dataset.collapsed = collapsed ? "false" : "true";
+      head.setAttribute("aria-expanded", collapsed ? "true" : "false");
+    });
+  });
+
   async function openFriends() {
     // Auto-generate public key on first open if missing
     if (!state.publicKey) await regeneratePublicKey();
@@ -717,6 +740,96 @@
     const blob = new Blob([JSON.stringify(state.inventory,null,2)], {type:"application/json"});
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
     a.href = url; a.download = `tigertag-${Date.now()}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // Settings → Data → "Copy API URL"
+  // Builds and copies a self-contained URL that scripts (HA, cron, Spoolman
+  // bridge, etc.) can curl to fetch this user's inventory remotely.
+  //
+  // Endpoint shape: cdn.tigertag.io/exportInventory?ApiKey=<key6>&email=<email>
+  // The Key6 is a 6-char HTTP API key (different from `state.privateKey` which
+  // is for friend-system Firestore rules — DON'T confuse them).
+  //
+  // Flow:
+  //   1. Try to read the existing Key6 from `users/{uid}/apiKeys/apiKey1`
+  //      (stored in plaintext as field `keyId`; rules allow owner-read).
+  //   2. If none exists, call the Cloud Function `createAccessKey6`
+  //      (POST + idToken) which generates one and stores it.
+  //   3. Build the URL with `ApiKey` + `email` (the Cloud Function rejects
+  //      requests with mismatching email = anti-tampering).
+  //   4. Copy to clipboard, display a short warning that the URL is sensitive.
+  async function getOrCreateApiKey6() {
+    const user = fbAuth().currentUser;
+    if (!user) throw new Error("not signed in");
+    // Try existing
+    try {
+      const snap = await fbDb().collection("users").doc(user.uid)
+        .collection("apiKeys").doc("apiKey1").get();
+      if (snap.exists) {
+        const d = snap.data() || {};
+        if (d.keyId && d.active !== false) return d.keyId;
+      }
+    } catch (e) {
+      console.warn("[apiKey] read failed:", e?.message);
+    }
+    // Create via Cloud Function (will rotate, but we just confirmed there's
+    // nothing to rotate)
+    const idToken = await user.getIdToken();
+    const r = await fetch(`${API_BASE}/createAccessKey6`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ data: { action: "create", label: "tiger-studio" } }),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok || !json?.result?.key) {
+      throw new Error(json?.error?.message || `createAccessKey6 HTTP ${r.status}`);
+    }
+    return json.result.key;
+  }
+
+  $("btnCopyApiUrl")?.addEventListener("click", async () => {
+    const warn = $("stgApiUrlWarn");
+    const btn  = $("btnCopyApiUrl");
+    const lbl  = btn?.querySelector("[data-i18n='stgCopyApiUrl']");
+    const origLabel = lbl?.textContent;
+    function setStatus(msg, kind) {
+      if (!warn) return;
+      warn.textContent = msg;
+      warn.dataset.kind = kind || "info";
+      warn.hidden = false;
+    }
+    function flashLabel(text) {
+      if (!lbl || !origLabel) return;
+      lbl.textContent = text;
+      setTimeout(() => { lbl.textContent = origLabel; }, 1500);
+    }
+
+    const user = fbAuth().currentUser;
+    if (!user) {
+      setStatus(t("stgCopyApiUrlNoKey") || "Sign in first.", "err");
+      return;
+    }
+    const email = (user.email || "").trim().toLowerCase();
+    if (!email) {
+      setStatus(t("stgCopyApiUrlNoKey") || "Email not set on this account.", "err");
+      return;
+    }
+    if (btn) btn.disabled = true;
+    setStatus(t("stgCopyApiUrlGenerating") || "Generating URL…", "info");
+    try {
+      const key = await getOrCreateApiKey6();
+      const url = `${API_BASE}/exportInventory?ApiKey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`;
+      await navigator.clipboard.writeText(url);
+      setStatus(t("stgCopyApiUrlOk") || "Copied — keep this URL private; anyone with it can read your inventory.", "warn");
+      flashLabel(t("settingsCopied") || "Copied!");
+    } catch (e) {
+      setStatus((t("stgCopyApiUrlErr") || "Copy failed") + ": " + (e?.message || e), "err");
+    } finally {
+      if (btn) setTimeout(() => { btn.disabled = false; }, 800);
+    }
   });
 
   document.addEventListener("keydown", e => { if (e.key === "Escape") { closeSettings(); closeFriends(); } });
@@ -760,6 +873,7 @@
     $("eacName").style.display  = _editingAccount.displayName ? "" : "none";
     $("eacEmail").textContent   = _editingAccount.email || "";
     $("eacAvatar").style.background = getAccGradient(_editingAccount);
+    $("eacAvatar").style.color = readableTextOn(getAccShadow(_editingAccount));
     $("eacDisplayNameInput").value = _editingAccount.displayName || "";
     $("eacNameResult").textContent = "";
     $("eacAdminBadge").classList.toggle("hidden", !state.isAdmin);
@@ -826,6 +940,7 @@
       const idx = accounts.findIndex(a => a.id === _editingAccount.id);
       if (idx >= 0) { accounts[idx].color = color; delete accounts[idx].customColor; saveAccounts(accounts); _editingAccount = accounts[idx]; }
       $("eacAvatar").style.background = getAccGradient(_editingAccount);
+      $("eacAvatar").style.color = readableTextOn(getAccShadow(_editingAccount));
       if (_editingAccount.id === state.activeAccountId) applyAvatarStyle(_editingAccount);
       renderAccountDropdown();
       saveColorToFirestore(_editingAccount);
@@ -843,6 +958,7 @@
     $("eacSwatchCustom").classList.add("active");
     $("eacSwatchCustom").style.background = getAccGradient(_editingAccount);
     $("eacAvatar").style.background = getAccGradient(_editingAccount);
+    $("eacAvatar").style.color = readableTextOn(getAccShadow(_editingAccount));
     if (_editingAccount.id === state.activeAccountId) applyAvatarStyle(_editingAccount);
     renderAccountDropdown();
     clearTimeout(_colorDebounce);
@@ -1152,6 +1268,13 @@
         // Fire-and-forget — the resulting Firestore writes will trigger a fresh
         // snapshot which will then see twin_tag_uid filled on both sides.
         autoLinkTwinsByTimestamp(state.rows);
+        // Auto-unstorage runs FIRST so depleted spools leave their slot
+        // before auto-storage tries to re-place anyone there. Otherwise we'd
+        // create a loop: unstore → snapshot → auto-store re-places same 0g
+        // spool. Both paths are fire-and-forget; their resulting writes
+        // trigger a fresh snapshot that re-renders.
+        maybeAutoUnstoreDepletedSpools();
+        maybeAutoStoreUnrankedSpools();
         saveInventory(raw);
         preCacheImages(state.rows).then(() => {
           sortRows(); renderStats(); renderInventory();
@@ -1306,7 +1429,7 @@
         const name = esc(acc.displayName || acc.email.split("@")[0]);
         return `
         <button class="prf-account-card" data-prf-id="${esc(acc.id)}">
-          <span class="prf-account-avatar" style="background:${getAccGradient(acc)}">${esc(getInitials(acc))}</span>
+          <span class="prf-account-avatar" style="background:${getAccGradient(acc)};color:${readableTextOn(getAccShadow(acc))}">${esc(getInitials(acc))}</span>
           <span class="prf-account-info">
             <span class="prf-account-name">${name}</span>
             <span class="prf-account-email">${esc(acc.email)}</span>
@@ -1325,12 +1448,13 @@
       html += `<div class="prf-list">${state.friends.map(f => {
           const name = esc(f.displayName || f.uid);
           const color = friendColor(f);
+          const fg = readableTextOn(color);
           const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
           const isActive = state.friendView?.uid === f.uid;
           return `
           <button class="prf-account-card prf-friend-card${isActive ? " prf-friend-active" : ""}"
                   data-fv-uid="${esc(f.uid)}" data-fv-name="${esc(f.displayName || f.uid)}" data-fv-color="${esc(color)}">
-            <span class="prf-account-avatar" style="background:${color}">${initials}</span>
+            <span class="prf-account-avatar" style="background:${color};color:${fg}">${initials}</span>
             <span class="prf-account-info">
               <span class="prf-account-name">${name}</span>
               <span class="prf-account-email prf-friend-sub">${t("friendViewInv")}</span>
@@ -1769,8 +1893,9 @@
     $("card-inv").classList.remove("hidden");
     $("mainResult").innerHTML = "";  // clear any spinner left by friendView loading
 
-    // Rack view bypasses the rows-empty short-circuit (a rack can be useful even with 0 spools)
-    if (state.viewMode === "rack" && !state.friendView) {
+    // Rack view bypasses the rows-empty short-circuit (a rack can be useful even with 0 spools).
+    // In friend view this renders read-only — no edit / drag / drop / kebab.
+    if (state.viewMode === "rack") {
       $("invTableWrap").classList.add("hidden");
       $("invGrid").classList.add("hidden");
       $("invEmpty").classList.add("hidden");
@@ -2036,6 +2161,52 @@
         await markSpoolDeleted(r.spoolId);
         closeDetail();
       } catch (e) { reportError("spool.markDeleted", e); }
+    });
+    // Locate-in-storage: clicking the placed-state storage-loc row jumps
+    // to the Storage view with the search prefilled to the spool's RFID
+    // UID, so all other slots are dimmed and the user sees this one in
+    // its rack at a glance.
+    $("btnLocateSpool")?.addEventListener("click", () => {
+      const uid = $("btnLocateSpool")?.dataset.spoolUid || "";
+      // Close the detail panel + reset selection so a re-click opens it
+      closeDetail();
+      // Apply the search to the global state + UI
+      const searchInput = $("searchInv");
+      if (searchInput) searchInput.value = uid;
+      state.search = uid;
+      // Switch view (forces a fresh rack render that calls applyRackSearchDim)
+      setViewMode("rack");
+    });
+    // Auto-assign: place the spool in the first available unlocked slot.
+    // Triggered from the storage-loc empty-state row when no rack assignment.
+    $("btnStorageAutoAssign")?.addEventListener("click", async () => {
+      const btn = $("btnStorageAutoAssign");
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      try {
+        const result = await autoAssignSingleSpool(r.spoolId);
+        if (!result) {
+          // Out of slots — surface a small inline error in the row
+          const row = btn.closest(".storage-loc-row");
+          if (row) {
+            const lbl = row.querySelector(".storage-loc-rack");
+            if (lbl) {
+              const orig = lbl.textContent;
+              lbl.textContent = t("storageAutoAssignFull") || "All racks are full.";
+              lbl.classList.add("storage-loc-rack--err");
+              setTimeout(() => {
+                lbl.textContent = orig;
+                lbl.classList.remove("storage-loc-rack--err");
+              }, 2500);
+            }
+          }
+        }
+        // Snapshot listener will re-render the panel with the new location.
+      } catch (e) {
+        reportError("spool.autoAssign", e);
+      } finally {
+        setTimeout(() => { if (btn) btn.disabled = false; }, 800);
+      }
     });
     // collapsible "Details" section — toggle + persist preference
     const btnToggleDetails = $("btnToggleDetails");
@@ -2849,6 +3020,52 @@
         </div>
       </div>`;
 
+    // ── Storage location row (rack name + coordinate, or auto-assign button)
+    // Shown for any active spool. Two states:
+    //   • Placed in a rack    → display the rack name + coordinate (A1, B5…)
+    //   • Not placed yet      → display an "Auto-assign" button that drops
+    //                           the spool into the first available unlocked
+    //                           slot, scanning racks in display order.
+    // Hidden in friend-view (read-only) and when there are no racks at all.
+    const _rackForSpool = (r.rackId && r.rackLevel != null && r.rackPos != null)
+      ? state.racks.find(x => x.id === r.rackId) : null;
+    const _hasRacks = state.racks.length > 0;
+    let storageHtml = "";
+    if (_rackForSpool) {
+      const coord = String.fromCharCode(65 + r.rackLevel) + (r.rackPos + 1);
+      const lockedHere = isSlotLocked(_rackForSpool.id, r.rackLevel, r.rackPos);
+      // Clickable row → closes the detail panel, switches to Storage view,
+      // and prefills the search bar with the spool's RFID UID so the user
+      // visually locates it (matching slot stays bright, others dim).
+      storageHtml = `
+        <div class="panel-section panel-storage-loc">
+          <div class="panel-label">${t("sectionStorageLoc") || "Storage location"}</div>
+          <button class="storage-loc-row storage-loc-row--clickable" id="btnLocateSpool"
+                  data-spool-uid="${esc(r.uid || "")}"
+                  data-spool-id="${esc(r.spoolId)}"
+                  title="${esc(t("storageLocateTip") || "Show in Storage view")}">
+            <span class="icon icon-package icon-14"></span>
+            <span class="storage-loc-rack">${esc(_rackForSpool.name)}</span>
+            <span class="storage-loc-coord">${coord}</span>
+            ${lockedHere ? `<span class="storage-loc-locked icon icon-lock icon-13" title="${esc(t("rackLockedTip"))}"></span>` : ""}
+            <span class="storage-loc-locate icon icon-chevron-r icon-13" aria-hidden="true"></span>
+          </button>
+        </div>`;
+    } else if (_hasRacks && !state.friendView && !r.deleted) {
+      storageHtml = `
+        <div class="panel-section panel-storage-loc">
+          <div class="panel-label">${t("sectionStorageLoc") || "Storage location"}</div>
+          <div class="storage-loc-row storage-loc-row--empty">
+            <span class="icon icon-package icon-14"></span>
+            <span class="storage-loc-rack storage-loc-rack--empty">${esc(t("storageNotPlaced") || "Not placed in a rack")}</span>
+            <button class="ghost sm storage-loc-autobtn" id="btnStorageAutoAssign" data-spool-id="${esc(r.spoolId)}" title="${esc(t("storageAutoAssignTip") || "Place in the first available slot")}">
+              <span class="icon icon-sparkle icon-13"></span>
+              <span data-i18n="storageAutoAssign">${esc(t("storageAutoAssign") || "Auto-assign")}</span>
+            </button>
+          </div>
+        </div>`;
+    }
+
     // container card — flat layout (no border box)
     const container = r.containerId ? containerFind(r.containerId) : null;
     const containerHtml = container ? `
@@ -2920,6 +3137,7 @@
         </div>
       </div>
       ${weightHtml}
+      ${storageHtml}
       ${containerHtml}
       ${tempHtml}
       ${videoHtml}
@@ -3162,6 +3380,75 @@
       }
     } catch {}
   });
+
+  // ── Settings → About → Auto-update toggle ───────────────────────────
+  // Persists in localStorage AND syncs to the main process (which gates
+  // checkForUpdatesAndNotify on this preference). Default: ON.
+  const _autoUpdateKey = "tigertag.autoUpdate.enabled";
+  function readAutoUpdatePref() {
+    return localStorage.getItem(_autoUpdateKey) !== "false";    // default true
+  }
+  function writeAutoUpdatePref(enabled) {
+    localStorage.setItem(_autoUpdateKey, enabled ? "true" : "false");
+    try { window.electronAPI?.setAutoUpdate?.(enabled); } catch (_) {}
+  }
+  // Initial state on first render: reflect the stored preference + push it
+  // to main (so the file-on-disk preference matches the renderer's view).
+  const _autoUpdateToggle = $("stgAutoUpdateToggle");
+  if (_autoUpdateToggle) {
+    const enabled = readAutoUpdatePref();
+    _autoUpdateToggle.checked = enabled;
+    try { window.electronAPI?.setAutoUpdate?.(enabled); } catch (_) {}
+    _autoUpdateToggle.addEventListener("change", () => {
+      writeAutoUpdatePref(_autoUpdateToggle.checked);
+    });
+  }
+
+  // ── Settings → About → "Check for updates now" button ───────────────
+  // Forces a check regardless of the auto-update preference. Status is
+  // surfaced via update-status events handled below + an inline message.
+  function showUpdateStatus(msg, kind) {
+    const el = $("stgUpdateStatus");
+    if (!el) return;
+    el.textContent = msg;
+    el.dataset.kind = kind || "info";   // "info" | "ok" | "warn" | "err"
+    el.hidden = false;
+    clearTimeout(showUpdateStatus._t);
+    if (kind === "ok" || kind === "info") {
+      showUpdateStatus._t = setTimeout(() => { el.hidden = true; }, 6000);
+    }
+  }
+  $("btnCheckUpdate")?.addEventListener("click", async () => {
+    const btn = $("btnCheckUpdate");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    showUpdateStatus(t("aboutCheckUpdateChecking") || "Checking for updates…", "info");
+    try {
+      const r = await window.electronAPI?.checkForUpdates?.();
+      if (!r?.ok) {
+        showUpdateStatus((t("aboutCheckUpdateErr") || "Could not check") + ": " + (r?.error || "?"), "err");
+      }
+      // Success cases (up-to-date / available / ready) are surfaced by the
+      // 'update-status' event listener below — no extra UI here.
+    } catch (e) {
+      showUpdateStatus((t("aboutCheckUpdateErr") || "Could not check") + ": " + (e?.message || e), "err");
+    } finally {
+      setTimeout(() => { btn.disabled = false; }, 2000);
+    }
+  });
+
+  // Forward the lifecycle events from main into the inline status line.
+  // Existing 'update-ready' overlay (shown elsewhere) keeps its handling.
+  if (window.electronAPI?.onUpdateStatus) {
+    window.electronAPI.onUpdateStatus((info) => {
+      const status = info?.status;
+      if (status === "checking")    showUpdateStatus(t("aboutCheckUpdateChecking") || "Checking for updates…", "info");
+      else if (status === "up-to-date") showUpdateStatus(t("aboutCheckUpdateUpToDate") || "You're on the latest version.", "ok");
+      else if (status === "available")  showUpdateStatus((t("aboutCheckUpdateAvailable") || "New version available") + (info.version ? ` (v${info.version})` : "") + " — downloading…", "info");
+      else if (status === "ready")      showUpdateStatus((t("aboutCheckUpdateReady") || "Update ready — restart to install") + (info.version ? ` (v${info.version})` : ""), "ok");
+      else if (status === "error")      showUpdateStatus((t("aboutCheckUpdateErr") || "Could not check") + ": " + (info.error || "?"), "err");
+    });
+  }
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeDebug(); });
 
   // debug tab switching
@@ -3470,6 +3757,87 @@
 
   /* ── Friends UI ───────────────────────────────────────────────────────── */
 
+  // Quick-access friends list rendered directly under the "Friends" button
+  // in the main sidebar. Each chip is clickable → switches the inventory
+  // view to that friend (read-only). Hidden when there are no friends.
+  // Highlights the currently-active friend with an "active" border.
+  function renderSidebarFriends() {
+    const el = $("sbFriendsList");
+    if (!el) return;
+    if (!state.friends || !state.friends.length) {
+      el.classList.add("hidden");
+      el.innerHTML = "";
+      return;
+    }
+    el.classList.remove("hidden");
+    el.innerHTML = state.friends.map(f => {
+      const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+      const color = friendColor(f);
+      const fg = readableTextOn(color);
+      const isActive = state.friendView?.uid === f.uid;
+      // `data-tooltip` powers the custom CSS bubble that shows the friend's
+      // displayName when the sidebar is collapsed (avatar-only mode), since
+      // the inline name span is then hidden. Native `title=` is also kept
+      // as a fallback for accessibility / when the chip is keyboard-focused.
+      return `<button class="sb-friend-chip${isActive ? " is-active" : ""}"
+                      data-friend-uid="${esc(f.uid)}"
+                      data-friend-name="${esc(f.displayName || f.uid)}"
+                      data-friend-color="${esc(color)}"
+                      data-tooltip="${esc(f.displayName || f.uid)}"
+                      title="${esc(f.displayName || f.uid)}">
+        <span class="sb-friend-avatar" style="background:${color};color:${fg}">${esc(initials)}</span>
+        <span class="sb-friend-name">${esc(f.displayName || f.uid)}</span>
+        ${isActive ? '<span class="sb-friend-active-dot" aria-hidden="true"></span>' : ""}
+      </button>`;
+    }).join("");
+    el.querySelectorAll(".sb-friend-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const uid = btn.dataset.friendUid;
+        const name = btn.dataset.friendName;
+        const color = btn.dataset.friendColor;
+        if (state.friendView?.uid === uid) {
+          // Already viewing this friend → click again to go back to own view
+          switchBackToOwnView();
+        } else {
+          switchToFriendView(uid, name, color);
+        }
+      });
+      // Custom tooltip on hover, only shown when the sidebar is collapsed
+      // (avatar-only mode). Uses a body-appended singleton bubble so the
+      // tooltip escapes the sidebar's `overflow: hidden`.
+      btn.addEventListener("mouseenter", () => showSbFriendTip(btn));
+      btn.addEventListener("mouseleave", hideSbFriendTip);
+      btn.addEventListener("focus",      () => showSbFriendTip(btn));
+      btn.addEventListener("blur",       hideSbFriendTip);
+    });
+  }
+
+  function ensureSbFriendTipEl() {
+    let tip = document.getElementById("sbFriendTip");
+    if (tip) return tip;
+    tip = document.createElement("div");
+    tip.id = "sbFriendTip";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+    return tip;
+  }
+  function showSbFriendTip(chip) {
+    if (!document.querySelector(".sidebar.collapsed")) return;
+    const text = chip.dataset.tooltip || chip.dataset.friendName || "";
+    if (!text) return;
+    const tip = ensureSbFriendTipEl();
+    tip.textContent = text;
+    const rect = chip.getBoundingClientRect();
+    // Position 10px to the right of the chip, vertically centered on it
+    tip.style.left = (rect.right + 10) + "px";
+    tip.style.top  = (rect.top + rect.height / 2 - 14) + "px";
+    tip.classList.add("is-open");
+  }
+  function hideSbFriendTip() {
+    const tip = document.getElementById("sbFriendTip");
+    if (tip) tip.classList.remove("is-open");
+  }
+
   function renderFriendsList() {
     const list = $("stgFriendsList");
     const count = $("stgFriendsCount");
@@ -3499,9 +3867,10 @@
     list.innerHTML = filtered.map(f => {
       const initials = (f.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
       const color = friendColor(f);
+      const fg = readableTextOn(color);
       const date = f.addedAt ? timeAgo(f.addedAt.seconds ? f.addedAt.seconds * 1000 : f.addedAt) : "";
       return `<div class="fp-friend" data-uid="${esc(f.uid)}" data-name="${esc(f.displayName || f.uid)}" data-color="${esc(color)}">
-        <div class="fp-friend-avatar" style="background:${color}">${initials}</div>
+        <div class="fp-friend-avatar" style="background:${color};color:${fg}">${initials}</div>
         <div class="fp-friend-main">
           <div class="fp-friend-name">${esc(f.displayName || f.uid)}</div>
           <div class="fp-friend-date">${date ? t("friendAddedOn", { date }) : ""}</div>
@@ -3552,6 +3921,36 @@
   // Resolve the display color for a friend object (uses stored color, falls back to hash).
   function friendColor(f) {
     return f.color || friendColorFallback(f.uid);
+  }
+
+  // Compute a readable text color (black or white) for any CSS background
+  // colour string. Uses a 1×1 canvas to coerce the input through the browser's
+  // colour parser, then applies WCAG relative luminance. Returns "#1a1a1a"
+  // for light backgrounds (white initials would be invisible) and "#fff" for
+  // dark ones. Cached because the canvas hop is ~0.1 ms but we call it on
+  // every render of the friends list.
+  const _readableCache = new Map();
+  function readableTextOn(bg) {
+    if (!bg) return "#fff";
+    const cached = _readableCache.get(bg);
+    if (cached) return cached;
+    let result = "#fff";
+    try {
+      const c = document.createElement("canvas");
+      c.width = 1; c.height = 1;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#000";          // reset, in case `bg` is rejected
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      // sRGB relative luminance (WCAG). Threshold ~0.6 puts pure orange
+      // (#ff7a18, lum ≈ 0.42) on white initials, and #ffb056 (lum ≈ 0.74)
+      // and pure white on dark initials — the cutoff most users expect.
+      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      result = lum > 0.6 ? "#1a1a1a" : "#fff";
+    } catch { /* fall back to white */ }
+    _readableCache.set(bg, result);
+    return result;
   }
 
   // Load friends list from Firestore, then sync displayName + avatar color from userProfiles
@@ -3982,6 +4381,13 @@
     const cur = row.weightAvailable != null ? row.weightAvailable : 0;
     const pct = Math.max(0, Math.min(100, Math.round((cur / cap) * 100)));
     const bg  = colorBg(row);  // CSS background expression (may be a gradient)
+    // Depleted (≤ 0g): show a thin colored strip at the bottom + an "EMPTY"
+    // indicator so the slot looks distinct from a free slot. Without this,
+    // a 0% fill produces nothing visible and the slot looks unoccupied.
+    if (pct <= 0) {
+      return `<div class="rp-fill rp-fill--depleted" style="background:${bg}"></div>
+              <div class="rp-fill-empty-tag" aria-hidden="true">0g</div>`;
+    }
     return `<div class="rp-fill" style="height:${pct}%;background:${bg}"></div>`;
   }
 
@@ -4080,7 +4486,11 @@
   async function autoFillEmptySlots(rackId) {
     const user = fbAuth().currentUser;
     if (!user) return 0;
-    const pool = getUnrackedSpools().slice();
+    // Exclude depleted spools from the pool — there's no point storing an
+    // empty roll, and it would loop with auto-unstorage if both are ON.
+    const pool = getUnrackedSpools().filter(r =>
+      r.weightAvailable == null || Number(r.weightAvailable) > 0
+    );
     if (!pool.length || !state.racks.length) return 0;
     const targets = rackId
       ? state.racks.filter(r => r.id === rackId)
@@ -4110,6 +4520,95 @@
     return placed;
   }
 
+  /* Auto-storage feature — when the toggle in the "Spools not stored" side
+     panel is ON, every fresh inventory snapshot triggers this routine to
+     drop newly-detected unranked spools into the first free slot.
+     Throttled to one run per snapshot batch (no recursion when our own
+     writes propagate). */
+  let _autoStoreInFlight = false;
+  async function maybeAutoStoreUnrankedSpools() {
+    if (_autoStoreInFlight) return;
+    if (state.friendView) return;                 // never write on a friend's account
+    if (localStorage.getItem("tigertag.autoStorage.enabled") !== "true") return;
+    if (!state.racks.length) return;              // nothing to fill into
+    _autoStoreInFlight = true;
+    try {
+      const placed = await autoFillEmptySlots();
+      if (placed > 0) console.log(`[autoStorage] placed ${placed} spool(s) automatically`);
+    } catch (e) {
+      console.warn("[autoStorage] failed:", e?.message);
+    } finally {
+      // Hold the lock briefly so the resulting snapshot doesn't re-trigger
+      // a no-op pass before our writes have settled.
+      setTimeout(() => { _autoStoreInFlight = false; }, 1500);
+    }
+  }
+
+  /* Auto-unstorage feature — when ON, any spool currently placed in a
+     rack whose `weight_available` reached 0 is automatically removed from
+     the rack (rack_id / level / position cleared). The spool is NOT
+     deleted: it simply returns to the "Spools not stored" pile, ready to
+     be replaced by a fresh roll or kept for re-use of the empty cardboard.
+     One Firestore batch per snapshot, throttled identically to auto-store. */
+  let _autoUnstoreInFlight = false;
+  async function maybeAutoUnstoreDepletedSpools() {
+    if (_autoUnstoreInFlight) return;
+    if (state.friendView) return;
+    if (localStorage.getItem("tigertag.autoUnstorage.enabled") !== "true") return;
+    const targets = state.rows.filter(r =>
+      !r.deleted &&
+      r.rackId != null &&                                  // currently placed
+      r.weightAvailable != null &&
+      Number(r.weightAvailable) <= 0                       // depleted
+    );
+    if (!targets.length) return;
+    _autoUnstoreInFlight = true;
+    try {
+      const user = fbAuth().currentUser;
+      if (!user) return;
+      const invRef = fbDb().collection("users").doc(user.uid).collection("inventory");
+      const batch  = fbDb().batch();
+      targets.forEach(t => {
+        batch.update(invRef.doc(t.spoolId), {
+          rack_id: null, level: null, position: null,
+        });
+      });
+      await batch.commit();
+      console.log(`[autoUnstorage] freed ${targets.length} depleted spool(s)`);
+    } catch (e) {
+      console.warn("[autoUnstorage] failed:", e?.message);
+    } finally {
+      setTimeout(() => { _autoUnstoreInFlight = false; }, 1500);
+    }
+  }
+
+  /* Place ONE specific spool in the first available unlocked slot — used
+     by the "Auto-assign" button in the spool detail panel when a spool
+     isn't yet stored anywhere. Returns the {rackId, level, position}
+     that was claimed, or null if all slots are taken. */
+  async function autoAssignSingleSpool(spoolId) {
+    const user = fbAuth().currentUser;
+    if (!user) return null;
+    const spool = state.rows.find(r => r.spoolId === spoolId);
+    if (!spool || spool.deleted) return null;
+    if (spool.rackId != null) return null;     // already placed
+    for (const rack of state.racks) {
+      for (let lv = (rack.level || 0) - 1; lv >= 0; lv--) {
+        for (let pos = 0; pos < (rack.position || 0); pos++) {
+          if (isSlotLocked(rack.id, lv, pos)) continue;
+          if (findSpoolInSlot(rack.id, lv, pos)) continue;
+          await fbDb().collection("users").doc(user.uid)
+            .collection("inventory").doc(spoolId)
+            .update({ rack_id: rack.id, level: lv, position: pos });
+          // Tag for the bounce-in animation on next render
+          _justPlacedSpools.add(spoolId);
+          return { rackId: rack.id, level: lv, position: pos, rackName: rack.name };
+        }
+      }
+    }
+    return null;
+  }
+
   // Greys out filled rack slots whose spool doesn't match the main search bar
   // (#searchInv) AND/OR the brand/material quick-filters.
   function applyRackSearchDim() {
@@ -4118,17 +4617,26 @@
     const material = state.materialFilter || "";
     const noFilter = !q && !brand && !material;
     document.querySelectorAll("#invRackView .rp-slot--filled").forEach(el => {
-      if (noFilter) { el.classList.remove("rp-dim"); return; }
+      if (noFilter) {
+        el.classList.remove("rp-dim");
+        el.classList.remove("rp-slot--match");
+        return;
+      }
       const sid = el.dataset.spoolId;
       const r = state.rows.find(x => x.spoolId === sid);
-      if (!r) { el.classList.add("rp-dim"); return; }
+      if (!r) { el.classList.add("rp-dim"); el.classList.remove("rp-slot--match"); return; }
       const matchSearch = !q || [r.uid, r.colorName, r.material, r.brand, r.series, r.sku, r.barcode]
         .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
       const matchBrand = !brand || String(r.brand) === brand;
       const matchMaterial = !material || String(r.material) === material;
       const type = state.typeFilter || "";
       const matchType = !type || String(r.productType) === type;
-      el.classList.toggle("rp-dim", !(matchSearch && matchBrand && matchMaterial && matchType));
+      const matches = matchSearch && matchBrand && matchMaterial && matchType;
+      el.classList.toggle("rp-dim", !matches);
+      // Positive match indicator on the slot CONTAINER (border + glow) —
+      // makes depleted spools (whose .rp-fill is invisible at 0%) still
+      // clearly findable when the user is searching.
+      el.classList.toggle("rp-slot--match", matches);
     });
   }
 
@@ -4154,13 +4662,15 @@
   // Build a single unranked-spool row (for the right sidebar).
   // Layout: line 1 = brand (primary identity), line 2 = material · colorName
   // so the user can scan brands first then drill into the variant.
+  // In read-only mode (friend view) the row is non-draggable.
   function unrackedRowHTML(row) {
+    const readOnly = !!state.friendView;
     const tip = `${esc(row.brand || "")} · ${esc(row.material || "")}\n${esc(row.colorName || row.uid || "")}`;
     const titleLine = row.brand || row.material || row.uid || "—";
     const subLine   = [row.material, row.colorName].filter(Boolean).join(" · ");
     const wAvail    = row.weightAvailable != null ? row.weightAvailable : "—";
     const wCap      = row.capacity || 1000;
-    return `<div class="rp-side-row" draggable="true" data-spool-id="${esc(row.spoolId)}" title="${tip}">
+    return `<div class="rp-side-row" draggable="${readOnly ? "false" : "true"}" data-spool-id="${esc(row.spoolId)}" title="${tip}">
       <div class="rp-side-puck">${slotFillInnerHTML(row)}</div>
       <div class="rp-side-meta">
         <div class="rp-side-name">${esc(titleLine)}</div>
@@ -4423,6 +4933,11 @@
   function renderRackView() {
     const list = $("invRackView");
     if (!list) return;
+    // ── Read-only flag — true when viewing a friend's storage. Disables
+    // create / edit / delete / drag / drop / lock-toggle. Kept as one variable
+    // (vs scattering checks) so future call sites stay consistent.
+    const readOnly = !!state.friendView;
+    list.classList.toggle("is-read-only", readOnly);
     wireRackTooltipDelegation();
     // If a side-row drag just ended, defer rebuild until the slide-back finishes
     const remaining = _unrackedSettleUntil - Date.now();
@@ -4446,6 +4961,12 @@
     filledSlotsAll = state.rows.filter(x => !x.deleted && x.rackId).length;
     const emptySlotsAll = Math.max(0, totalSlotsAll - filledSlotsAll);
     const fillPctAll = totalSlotsAll > 0 ? Math.round((filledSlotsAll / totalSlotsAll) * 100) : 0;
+    // Depleted spools: active inventory items where the user has used up
+    // all the filament (weightAvailable <= 0). They're still in the
+    // database but ready to be discarded / replaced.
+    const depletedSpoolsCount = state.rows.filter(x =>
+      !x.deleted && (x.weightAvailable != null) && Number(x.weightAvailable) <= 0
+    ).length;
     const racksLabel = t("rackStatsRacks", { n: racksCount });
     // The unranked panel is opened/closed by the "not stored" tile in the
     // stats bar (we still need this read here to set the tile's active state).
@@ -4453,10 +4974,10 @@
     let html = `
       <div class="rv-header">
         <div class="rv-stats" role="group" aria-label="Storage overview">
-          <button id="btnNewRackTile" class="rv-stat rv-stat-add" title="${esc(t("rackNew"))}" aria-label="${esc(t("rackNew"))}">
+          ${readOnly ? "" : `<button id="btnNewRackTile" class="rv-stat rv-stat-add" title="${esc(t("rackNew"))}" aria-label="${esc(t("rackNew"))}">
             <div class="rv-stat-num rv-stat-num--plus">+</div>
             <div class="rv-stat-lbl">${esc(t("rackNew"))}</div>
-          </button>
+          </button>`}
           ${racksCount ? `
           <div class="rv-stat" data-stat="racks" title="${esc(racksLabel)}">
             <div class="rv-stat-num">${racksCount}</div>
@@ -4476,6 +4997,10 @@
           <div class="rv-stat rv-stat--clickable" data-stat="locked" title="Highlight locked slots">
             <div class="rv-stat-num">${lockedSlotsAll}</div>
             <div class="rv-stat-lbl">${esc(t("rackStatsLocked"))}</div>
+          </div>
+          <div class="rv-stat rv-stat--clickable" data-stat="depleted" title="${esc(t("rackStatsDepletedTip") || "Spools with no filament left")}">
+            <div class="rv-stat-num">${depletedSpoolsCount}</div>
+            <div class="rv-stat-lbl">${esc(t("rackStatsDepleted"))}</div>
           </div>` : ``}
           <div id="btnToggleUnranked" class="rv-stat rv-stat--clickable rv-stat--orange${panelOpenInit ? " rv-stat--active" : ""}" data-stat="unranked" title="${esc(t("rackUnrackedTitle"))}" role="button" tabindex="0" aria-pressed="${panelOpenInit ? "true" : "false"}">
             <div class="rv-stat-body">
@@ -4495,14 +5020,16 @@
                   || `<div class="rp-unranked-empty">${t("rackAllPlaced")}</div>`;
 
     // Empty-state card replaces the rack list when there's no rack yet.
+    // In read-only (friend view) we hide the "+ Create rack" CTA — the user
+    // can't create racks for someone else's account.
     const emptyHTML = !state.racks.length
       ? `<div class="rp-empty">
           <img class="rp-empty-img" src="../assets/img/Panda_Feed_Rack.png" alt="" />
-          <div class="rp-empty-sub">${t("racksEmptySub")}</div>
-          <button class="rp-cta rp-empty-cta" id="btnNewRackEmpty">
+          <div class="rp-empty-sub">${t(readOnly ? "racksEmptyFriendSub" : "racksEmptySub")}</div>
+          ${readOnly ? "" : `<button class="rp-cta rp-empty-cta" id="btnNewRackEmpty">
             <span class="icon icon-plus icon-14"></span>
             <span data-i18n="rackNew">${t("rackNew")}</span>
-          </button>
+          </button>`}
         </div>`
       : "";
 
@@ -4532,7 +5059,7 @@
             const bounceCls = justPlaced ? " rp-slot--just-placed" : "";
             // No native title — the rich custom tooltip (#rackHoverTip) handles
             // the on-hover info bubble. draggable=false on locked filled slots.
-            cells.push(`<div class="rp-slot rp-slot--filled${lockCls}${bounceCls}" draggable="${locked ? "false" : "true"}"
+            cells.push(`<div class="rp-slot rp-slot--filled${lockCls}${bounceCls}" draggable="${(readOnly || locked) ? "false" : "true"}"
                               data-rack="${esc(r.id)}" data-level="${lv}" data-pos="${pos}"
                               data-spool-id="${esc(occ.spoolId)}"
                               data-coord="${coord}">${slotFillInnerHTML(occ)}</div>`);
@@ -4549,7 +5076,7 @@
       const allLocked  = lockedCnt > 0 && lockedCnt === totalSlots;
       return `<div class="rp-rack" data-rack-id="${esc(r.id)}">
         <div class="rp-rack-head">
-          <span class="rp-rack-grip" title="Drag to reorder" draggable="true" data-rack-drag-id="${esc(r.id)}">⋮⋮</span>
+          ${readOnly ? "" : `<span class="rp-rack-grip" title="Drag to reorder" draggable="true" data-rack-drag-id="${esc(r.id)}">⋮⋮</span>`}
           <div class="rp-rack-info">
             <div class="rp-rack-name">
               <span class="rp-rack-name-text">${esc(r.name)}</span>
@@ -4557,7 +5084,7 @@
               <span class="rp-rack-count-num">${filled}/${totalSlots}</span>
             </div>
           </div>
-          <div class="rp-rack-actions">
+          ${readOnly ? "" : `<div class="rp-rack-actions">
             <button class="rp-rack-btn rp-rack-kebab" data-action="kebab" title="${esc(t("rackActionMore"))}" aria-label="${esc(t("rackActionMore"))}" aria-haspopup="menu" aria-expanded="false"><span class="icon icon-kebab icon-18"></span></button>
             <div class="rp-menu" data-menu-for="${esc(r.id)}" hidden>
               <button class="rp-menu-item" data-action="edit"><span class="icon icon-edit icon-14"></span><span>${esc(t("rackActionEdit"))}</span></button>
@@ -4567,7 +5094,7 @@
               <div class="rp-menu-sep"></div>
               <button class="rp-menu-item rp-menu-item--danger rp-menu-item--hold" data-action="delete"><span class="hold-progress"></span><span class="icon icon-trash icon-14"></span><span class="rp-menu-label">${esc(t("rackActionDelete"))}</span></button>
             </div>
-          </div>
+          </div>`}
         </div>
         <div class="rp-frame">
           <div class="rp-grid">${rows.join("")}</div>
@@ -4586,6 +5113,36 @@
           <span class="rp-side-title">${t("rackUnrackedTitle")}</span>
           <button class="rp-side-close" id="rpUnrackedClose" title="Hide panel" aria-label="Close">✕</button>
         </div>
+        ${readOnly ? "" : `
+        <!-- Auto Storage / Auto Unstorage toggles. They live together in
+             a single "Automation" card so the user sees the two opposing
+             policies side-by-side.
+             - Auto Storage    → place new unranked spools in the first free slot
+             - Auto Unstorage  → free the rack slot when a spool reaches 0g
+                                  (data is kept; the spool just returns to the
+                                   "Spools not stored" pile, never deleted) -->
+        <div class="rp-side-auto-card">
+          <label class="rp-side-toggle">
+            <span class="rp-side-toggle-text">
+              <span class="rp-side-toggle-title" data-i18n="autoStorageTitle">Auto storage</span>
+              <span class="rp-side-toggle-sub" data-i18n="autoStorageSub">Place new spools automatically</span>
+            </span>
+            <span class="eac-toggle">
+              <input type="checkbox" id="rpAutoStorageToggle" />
+              <span class="eac-toggle-track"><span class="eac-toggle-thumb"></span></span>
+            </span>
+          </label>
+          <label class="rp-side-toggle">
+            <span class="rp-side-toggle-text">
+              <span class="rp-side-toggle-title" data-i18n="autoUnstorageTitle">Auto unstorage</span>
+              <span class="rp-side-toggle-sub" data-i18n="autoUnstorageSub">Free the rack slot when a spool reaches 0g</span>
+            </span>
+            <span class="eac-toggle">
+              <input type="checkbox" id="rpAutoUnstorageToggle" />
+              <span class="eac-toggle-track"><span class="eac-toggle-thumb"></span></span>
+            </span>
+          </label>
+        </div>`}
         <div class="rp-side-search">
           <input id="rpUnrackedSearch" type="text" placeholder="${t("searchShort")}" />
           <span class="icon icon-search icon-13"></span>
@@ -4650,14 +5207,19 @@
       _justFilledSlots.clear();
     }
 
-    // ── Stat-bar filter chips: clicking "empty" or "locked" highlights all
-    // matching slots with a glow ring. Click the same chip again to clear.
+    // ── Stat-bar filter chips: clicking "empty" / "locked" / "depleted"
+    // highlights all matching slots with a glow ring. Click the same chip
+    // again to clear. The "unranked" tile has its own click handler (below)
+    // — it toggles the side panel, so we explicitly skip it here.
     list.querySelectorAll(".rv-stat--clickable").forEach(tile => {
+      if (tile.id === "btnToggleUnranked") return;
       tile.addEventListener("click", () => {
-        const kind = tile.dataset.stat;   // "empty" | "locked"
+        const kind = tile.dataset.stat;   // "empty" | "locked" | "depleted"
         const wasActive = tile.classList.contains("rv-stat--active");
-        // Reset all chips + clear all glow rings
-        list.querySelectorAll(".rv-stat--active").forEach(t => t.classList.remove("rv-stat--active"));
+        // Reset all chips + clear all glow rings (but don't touch the
+        // "unranked" tile's active state — its semantics differ).
+        list.querySelectorAll(".rv-stat--active:not(#btnToggleUnranked)")
+          .forEach(t => t.classList.remove("rv-stat--active"));
         list.querySelectorAll(".rp-slot--highlight").forEach(s => s.classList.remove("rp-slot--highlight"));
         if (wasActive) return;
         tile.classList.add("rv-stat--active");
@@ -4666,6 +5228,16 @@
             .forEach(s => s.classList.add("rp-slot--highlight"));
         } else if (kind === "locked") {
           list.querySelectorAll(".rp-slot--locked").forEach(s => s.classList.add("rp-slot--highlight"));
+        } else if (kind === "depleted") {
+          // Highlight every filled slot whose underlying spool is depleted
+          // (weightAvailable <= 0). Lookup is by spoolId on the slot DOM.
+          list.querySelectorAll(".rp-slot--filled").forEach(s => {
+            const sid = s.dataset.spoolId;
+            const row = sid ? state.rows.find(r => r.spoolId === sid) : null;
+            if (row && row.weightAvailable != null && Number(row.weightAvailable) <= 0) {
+              s.classList.add("rp-slot--highlight");
+            }
+          });
         }
       });
     });
@@ -4880,22 +5452,51 @@
     });
     $("rpUnrackedClose")?.addEventListener("click", () => setUnrackedOpen(false));
 
-    // ── Right-click on a slot → toggle its lock state
-    list.querySelectorAll(".rp-slot").forEach(slot => {
-      slot.addEventListener("contextmenu", async e => {
-        e.preventDefault();
-        const rackId = slot.dataset.rack;
-        const lv     = parseInt(slot.dataset.level, 10);
-        const pos    = parseInt(slot.dataset.pos, 10);
-        if (!rackId || isNaN(lv) || isNaN(pos)) return;
-        try { await toggleSlotLock(rackId, lv, pos); }
-        catch (err) { reportError("rack.toggleLock", err); }
+    // Auto-storage toggle inside the side panel — persisted in localStorage.
+    // When flipped ON, fire the auto-fill routine immediately to clear the
+    // current pile, then let `maybeAutoStoreUnrankedSpools()` handle future
+    // snapshots automatically.
+    const _autoStoreToggle = $("rpAutoStorageToggle");
+    if (_autoStoreToggle) {
+      _autoStoreToggle.checked = localStorage.getItem("tigertag.autoStorage.enabled") === "true";
+      _autoStoreToggle.addEventListener("change", () => {
+        const enabled = _autoStoreToggle.checked;
+        localStorage.setItem("tigertag.autoStorage.enabled", enabled ? "true" : "false");
+        if (enabled) maybeAutoStoreUnrankedSpools();
       });
-    });
+    }
+    // Auto-unstorage toggle — same pattern, triggers a one-shot pass on flip
+    // so any spool currently at 0g leaves its rack immediately.
+    const _autoUnstoreToggle = $("rpAutoUnstorageToggle");
+    if (_autoUnstoreToggle) {
+      _autoUnstoreToggle.checked = localStorage.getItem("tigertag.autoUnstorage.enabled") === "true";
+      _autoUnstoreToggle.addEventListener("change", () => {
+        const enabled = _autoUnstoreToggle.checked;
+        localStorage.setItem("tigertag.autoUnstorage.enabled", enabled ? "true" : "false");
+        if (enabled) maybeAutoUnstoreDepletedSpools();
+      });
+    }
 
-    // ── Drag-and-drop wiring
-    wireDragSources();
-    wireDropTargets();
+    // ── Right-click on a slot → toggle its lock state (skipped in read-only)
+    if (!readOnly) {
+      list.querySelectorAll(".rp-slot").forEach(slot => {
+        slot.addEventListener("contextmenu", async e => {
+          e.preventDefault();
+          const rackId = slot.dataset.rack;
+          const lv     = parseInt(slot.dataset.level, 10);
+          const pos    = parseInt(slot.dataset.pos, 10);
+          if (!rackId || isNaN(lv) || isNaN(pos)) return;
+          try { await toggleSlotLock(rackId, lv, pos); }
+          catch (err) { reportError("rack.toggleLock", err); }
+        });
+      });
+    }
+
+    // ── Drag-and-drop wiring (skipped entirely in read-only)
+    if (!readOnly) {
+      wireDragSources();
+      wireDropTargets();
+    }
   }
 
   function wireDragSources() {
@@ -5325,7 +5926,7 @@
     const initials = (displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
     banner.innerHTML = `
       <div class="fvb-inner">
-        <span class="fvb-avatar" style="background:${avatarColor || "var(--accent)"}">${esc(initials)}</span>
+        <span class="fvb-avatar" style="background:${avatarColor || "var(--accent)"};color:${readableTextOn(avatarColor || "var(--accent)")}">${esc(initials)}</span>
         <span class="fvb-name">${esc(displayName || "—")}</span>
         ${error
           ? `<span class="fvb-badge fvb-badge--error" title="${esc(error)}">⚠ ${t("friendInvErrorBadge")}</span>`
@@ -5340,17 +5941,61 @@
     $("btnFriendViewBack")?.addEventListener("click", switchBackToOwnView);
   }
 
+  // ── Friend-view auth helper ───────────────────────────────────────────
+  // Strategy: ALWAYS pre-warm the Firebase Auth ID token when entering a
+  // friend view, but skip the network call if the last refresh was < 30 min
+  // ago (cheap throttle to avoid hitting the auth backend on every click).
+  // If a read still fails with permission-denied → force-refresh and retry
+  // once as a safety net.
+  let _lastTokenRefresh = 0;
+  const TOKEN_THROTTLE_MS = 30 * 60 * 1000;   // 30 min
+  async function prewarmAuthToken(ownerUid, { force = false } = {}) {
+    const user = fbAuth(ownerUid).currentUser;
+    if (!user) return;
+    if (!force && Date.now() - _lastTokenRefresh < TOKEN_THROTTLE_MS) return;
+    try {
+      await user.getIdToken(true);
+      _lastTokenRefresh = Date.now();
+    } catch (e) {
+      console.warn("[Auth] token refresh failed:", e?.code, e?.message);
+    }
+  }
+  // Read a Firestore collection on a friend's account. The caller is expected
+  // to have called prewarmAuthToken() once before opening the friend view.
+  // If a read still fails with permission-denied, we force a hard refresh
+  // and retry once as a belt-and-braces safety net.
+  async function readFriendCollectionWithRetry(ownerUid, friendUid, collection) {
+    const ref = fbDb(ownerUid).collection("users").doc(friendUid).collection(collection);
+    try {
+      return await ref.get();
+    } catch (e) {
+      if (e?.code !== "permission-denied") throw e;
+      console.log(`[FriendView] permission-denied on ${collection}, force-refreshing token and retrying…`);
+      await prewarmAuthToken(ownerUid, { force: true });
+      return await ref.get();
+    }
+  }
+
   async function switchToFriendView(friendUid, friendName, avatarColor) {
     closeProfilesModal(); closeFriends();
     const ownerUid = state.activeAccountId;  // capture so async errors land on the right account
     state.friendView = { uid: friendUid, displayName: friendName, avatarColor, error: null };
     state.inventory = null; state.rows = [];
+    // Stop the live subscription on the OWNER's racks while in friend view —
+    // we replace state.racks with the friend's (one-shot) so the Storage tab
+    // shows their layout, read-only.
+    unsubscribeRacks();
+    state.racks = [];
     state.invLoading = true;
     renderFriendBanner();
     renderStats(); renderInventory();
+    // Pre-warm the auth token ONCE on entering a friend view (throttled to
+    // 30 min between actual refreshes). Avoids the "permission-denied → retry
+    // succeeds" flash when the local ID token is close to expiry.
+    await prewarmAuthToken(ownerUid);
     try {
       console.log(`[FriendView] reading users/${friendUid}/inventory as ${ownerUid}`);
-      const snap = await fbDb(ownerUid).collection("users").doc(friendUid).collection("inventory").get();
+      const snap = await readFriendCollectionWithRetry(ownerUid, friendUid, "inventory");
       console.log(`[FriendView] received ${snap.docs.length} docs`);
       const raw = {};
       snap.forEach(doc => { raw[doc.id] = doc.data(); });
@@ -5359,6 +6004,26 @@
       await preCacheImages(state.rows);
       // Guard: user might have switched away during the await
       if (state.friendView?.uid !== friendUid) return;
+      // Read the friend's racks (one-shot — no live subscription needed,
+      // read-only view).  If permissions deny, we silently fall back to an
+      // empty rack list — the Storage tab will just show "no racks yet".
+      try {
+        const racksSnap = await readFriendCollectionWithRetry(ownerUid, friendUid, "racks");
+        if (state.friendView?.uid !== friendUid) return;
+        const racks = racksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        racks.sort((a, b) => {
+          const oa = a.order ?? 999, ob = b.order ?? 999;
+          if (oa !== ob) return oa - ob;
+          const ta = a.createdAt?.seconds || 0;
+          const tb = b.createdAt?.seconds || 0;
+          return ta - tb;
+        });
+        state.racks = racks;
+        console.log(`[FriendView] received ${racks.length} rack(s)`);
+      } catch (re) {
+        console.warn("[FriendView] racks read failed:", re.code, re.message);
+        state.racks = [];
+      }
       state.invLoading = false;
       sortRows(); renderStats(); renderInventory();
     } catch (e) {
@@ -5379,9 +6044,15 @@
     if (!state.friendView) return;
     state.friendView = null;
     state.inventory = null; state.rows = [];
+    state.racks = [];                                   // wipe the friend's racks
     renderFriendBanner();
     const uid = state.activeAccountId;
-    if (uid) { state.invLoading = true; renderInventory(); subscribeInventory(uid); }
+    if (uid) {
+      state.invLoading = true;
+      renderInventory();
+      subscribeInventory(uid);
+      subscribeRacks(uid);                              // re-attach own racks live-sync
+    }
   }
 
   // Show public key and toggle in settings panel
@@ -5409,6 +6080,7 @@
     const color = friendColorFallback(uid);
     $("frqAvatar").textContent = initials;
     $("frqAvatar").style.background = color;
+    $("frqAvatar").style.color = readableTextOn(color);
     $("frqName").textContent = data.displayName || uid;
     $("friendRequestOverlay").classList.add("open");
   }
@@ -5484,6 +6156,7 @@
         const color = profileColor(p) || friendColorFallback(targetUid);
         $("adfPreviewAvatar").textContent = initials;
         $("adfPreviewAvatar").style.background = color;
+        $("adfPreviewAvatar").style.color = readableTextOn(color);
         $("adfPreviewName").textContent = p.displayName || val;
         $("adfPreview").classList.remove("hidden");
         $("adfResult").textContent = "";
@@ -5744,9 +6417,10 @@
     list.innerHTML = state.blacklist.map(b => {
       const initials = (b.displayName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
       const color = friendColorFallback(b.uid);
+      const fg = readableTextOn(color);
       const date = b.blockedAt ? timeAgo(b.blockedAt.seconds ? b.blockedAt.seconds * 1000 : b.blockedAt) : "";
       return `<div class="fp-friend fp-blocked" data-uid="${esc(b.uid)}">
-        <div class="fp-friend-avatar" style="background:${color}">${initials}</div>
+        <div class="fp-friend-avatar" style="background:${color};color:${fg}">${initials}</div>
         <div class="fp-friend-main">
           <div class="fp-friend-name">${esc(b.displayName || b.uid)}</div>
           <div class="fp-friend-date">${date ? t("blockedOn", { date }) : ""}</div>
@@ -5862,7 +6536,17 @@
     // at promise-resolution time and can point to the wrong account.
     const db = fbDb(uid);
     try {
-      const snap = await db.collection("users").doc(uid).get();
+      // Force-server read on first sync to avoid showing the "Set display
+      // name" prompt based on a stale empty cache (the user could have set
+      // the name on another device but the local cache hasn't synced yet).
+      // Falls back to cache automatically if offline.
+      let snap;
+      try {
+        snap = await db.collection("users").doc(uid).get({ source: "server" });
+      } catch (_) {
+        // Offline / blocked → fall back to default (cache OR server)
+        snap = await db.collection("users").doc(uid).get();
+      }
       if (!snap.exists) return;
       // Guard: by the time the Firestore round-trip completes, the active account
       // may have changed. Only apply UI side-effects for the current active account.
@@ -5908,8 +6592,32 @@
           db.collection("users").doc(uid).set({ displayName: localName }, { merge: true }).catch(() => {});
         }
       } else {
-        // Truly no name anywhere — prompt the user (only for the active account)
-        openDisplayNameSetup();
+        // Defensive double-check before prompting: re-read from server one
+        // last time after a short grace (1s) in case the doc is currently
+        // being created/updated by another device. Only prompt if the
+        // server STILL says the name is empty.
+        setTimeout(async () => {
+          if (uid !== state.activeAccountId) return;
+          // If anything has set the name in the meantime, bail out
+          if (state.displayName) return;
+          try {
+            const fresh = await db.collection("users").doc(uid).get({ source: "server" });
+            if (fresh.exists && fresh.data().displayName) {
+              const name = fresh.data().displayName;
+              const accs = getAccounts();
+              const a = accs.find(x => x.id === uid);
+              if (a) { a.displayName = name; saveAccounts(accs); }
+              state.displayName = name;
+              $("sbName").textContent = name;
+              $("sbAvatar").textContent = getInitials({ displayName: name, email: a?.email || "" });
+              return;
+            }
+          } catch (_) {}
+          // Truly nothing — prompt the user
+          if (uid === state.activeAccountId && !state.displayName) {
+            openDisplayNameSetup();
+          }
+        }, 1000);
       }
 
       if (acc && data.color_r !== undefined && data.color_g !== undefined && data.color_b !== undefined) {

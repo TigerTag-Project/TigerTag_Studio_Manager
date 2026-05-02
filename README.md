@@ -41,6 +41,22 @@
 
 ## Changelog
 
+### v1.4.4 — 2026-05-02
+
+- **Auto-update toggle.** New "Updates" section in **Settings** lets the user enable or disable automatic update downloads, and exposes a **Check for updates now** button. The preference persists to `<userData>/auto-update.json`. When enabled, the existing `electron-updater` flow runs on launch and prompts for restart when an update is ready; when disabled, the app stays on the installed version until the user manually checks. (`main.js`, `preload.js`, `renderer/inventory.js`)
+- **Settings panel rebuilt.** The old card-in-card layout was replaced by a single flat panel with hairline-separated sections — **Updates / Data / Tools / About** — and inline collapsibles for Data and Tools. The "Export" button became "Settings" (gear icon) and the API URL is now exposed as a read-only field with a one-click **Copy** button.
+- **macOS app name fix.** `app.setName('Tiger Studio Manager')` is set before `whenReady` so the About menu, Cmd+Q, and the dock all read the proper product name instead of `tigertag-inventory`. (`main.js`)
+- **Top header KPI stats.** The 4 stat tiles (Spools / Stock / TigerTag / TigerTag+) moved from the sidebar to the top of the main pane, replacing the old title block. They now greet the user with at-a-glance numbers immediately on load.
+- **Status icons always pinned to the right.** TD1S / Scale / Cloud (and the optional RFID pill) now always sit at the far-right of the top header via `margin-left: auto`, regardless of whether the stats wrap is visible. They no longer drift to the left when stats are hidden during initial load.
+- **Storage — `EMPTY` stat for depleted spools.** A new tile counts spools whose remaining weight is 0 g. The two existing labels were renamed to remove a confusion users were running into: slot **"Empty"** → **"Free"** (a free spot in a rack), and spool **"Depleted"** → **"Empty"** (a spool with no filament left). German/French/Spanish/Italian/Polish/Portuguese/Chinese updated in the same edit.
+- **Spool detail — Storage location row.** A new section in the spool side panel shows `Rack name · A3` for spools that are placed, and a single **Auto-assign** button for spools that are not. Clicking the location row closes the side panel, switches to the Storage view, and pre-fills the search field with the spool's UID so the slot is found instantly. The auto-assign button places the spool into the next available slot in one click.
+- **Auto Storage + Auto Unstorage** toggles in the "Spools not stored" sidecard. When auto storage is on, every newly-detected spool that has no rack assignment is placed automatically; when auto unstorage is on, any spool whose weight drops to 0 g is removed from its slot automatically. Both run snapshot-driven with an `_inFlight` flag so they can't loop.
+- **Depleted spools now visible in racks.** Spools at 0 g previously showed `height: 0%` and looked invisible. They now display a 6 px coloured strip plus a "0 g" tag inside their slot, so the user can still see the spool occupies that position. Search hits also get a positive orange ring + animated glow on the matching slot, instead of relying solely on dimming the non-matches.
+- **Sidebar — friends quick-access list.** Friends now appear under the **Friends** button in the sidebar as flat rows (avatar + display name), and as avatar-only circles when the sidebar is collapsed. Click switches the inventory view to that friend's read-only inventory; click again to go back to your own view. The list shows a body-appended floating tooltip on hover in collapsed mode (escapes the sidebar's `overflow: hidden`).
+- **Sidebar — user header redesign.** The user avatar moved from a centered column to a horizontal row: avatar on the left, "Welcome back" + display name stacked to its right. Reads cleaner and matches the friend chip layout below.
+- **Readable initials on light avatar colours.** Initials previously rendered white-on-white when a user picked a near-white custom colour. A new `readableTextOn(bg)` helper computes WCAG relative luminance via a 1×1 canvas and switches the text to `#1a1a1a` on light backgrounds. Applied across all 10 avatar render sites (sidebar, dropdowns, friend chips, profile modal, friends panel, blocklist, friend-request preview, friend-view banner, edit-account modal). Cached per colour for negligible cost.
+- **Display name prompt — race condition fix.** On first login, the prompt sometimes fired even when Firestore already had a display name, because `syncUserDoc` was reading from cache. Now uses `{ source: "server" }` plus a 1-second grace period that re-fetches from Firestore before prompting, so users with an existing pseudo are no longer asked again.
+
 ### v1.4.3 — 2026-05-02
 
 - **Storage view — major UX overhaul.** The rack management screen has been restructured around a dense, scannable toolbar and tighter spatial logic so users with a dozen+ racks can navigate at a glance.
@@ -171,8 +187,8 @@ Built installers are placed in the `dist/` folder (ignored by git).
 Pushing a version tag automatically triggers a parallel build on **macOS, Windows, and Linux** and publishes a GitHub Release with the installers attached.
 
 ```bash
-git tag v1.4.2
-git push origin v1.4.2
+git tag v1.4.4
+git push origin v1.4.4
 ```
 
 | Platform | Output | Signed? |

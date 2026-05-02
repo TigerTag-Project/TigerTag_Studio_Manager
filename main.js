@@ -6,6 +6,15 @@ const http = require('http');
 const crypto = require('crypto');
 const db = require('./services/tigertagDbService');
 
+// ── App display name (macOS menu bar, About dialog, Dock, etc.)
+// package.json `name` is "tigertag-inventory" (npm-friendly slug). Force the
+// human-readable product name so macOS shows "Tiger Studio Manager" in:
+//   - app menu (Apple menu → "About Tiger Studio Manager", "Quit Tiger Studio Manager")
+//   - Dock tooltip
+//   - Window menu items
+// Must be called BEFORE app.whenReady() / before any window is created.
+app.setName('Tiger Studio Manager');
+
 // ── Single-instance lock ────────────────────────────────────────────────────
 // Prevent multiple Electron processes from sharing the same userData directory
 // (which would deadlock IndexedDB / LevelDB — Firebase Auth, image cache, etc.).
@@ -429,22 +438,84 @@ function initTD1S() {
   td1sConnect();
 }
 
+// ── Auto-updater preference ─────────────────────────────────────────────
+// Persisted in <userData>/auto-update.json so it survives across launches
+// and is read at startup BEFORE the renderer has had a chance to send its
+// localStorage value. Renderer can override at runtime via 'update:set-auto'.
+const _autoUpdatePrefsPath = () => path.join(app.getPath('userData'), 'auto-update.json');
+function readAutoUpdatePref() {
+  try {
+    const raw = fs.readFileSync(_autoUpdatePrefsPath(), 'utf8');
+    const obj = JSON.parse(raw);
+    return obj.enabled !== false;     // default ON if file missing or malformed
+  } catch (_) {
+    return true;
+  }
+}
+function writeAutoUpdatePref(enabled) {
+  try {
+    fs.writeFileSync(_autoUpdatePrefsPath(),
+      JSON.stringify({ enabled: !!enabled }, null, 2));
+  } catch (e) {
+    console.warn('[updater] failed to write pref:', e.message);
+  }
+}
+
 // ── Auto-updater
+// Lifecycle events are wired ONCE here; the actual check is gated by the
+// stored preference and can be re-triggered manually via 'update:check-now'.
+let _updaterEventsWired = false;
+function wireUpdaterEvents() {
+  if (_updaterEventsWired) return;
+  _updaterEventsWired = true;
+  autoUpdater.on('checking-for-update', () => {
+    mainWindow?.webContents.send('update-status', { status: 'checking' });
+  });
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update-status', { status: 'available', version: info?.version });
+  });
+  autoUpdater.on('update-not-available', () => {
+    mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('update-status', { status: 'ready', version: info?.version });
+  });
+  autoUpdater.on('error', (err) => {
+    mainWindow?.webContents.send('update-status', { status: 'error', error: err?.message || String(err) });
+  });
+}
+
 function initUpdater() {
+  wireUpdaterEvents();
+  if (!readAutoUpdatePref()) {
+    console.log('[updater] auto-update disabled by user preference — skipping startup check');
+    return;
+  }
   autoUpdater.checkForUpdatesAndNotify();
-
-  autoUpdater.on('update-available', () => {
-    mainWindow?.webContents.send('update-status', { status: 'available' });
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update-status', { status: 'ready' });
-  });
 }
 
 // IPC: renderer asks to install downloaded update
 ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall();
+});
+
+// IPC: renderer flips the auto-update preference (persisted to disk)
+ipcMain.on('update:set-auto', (_evt, enabled) => {
+  writeAutoUpdatePref(enabled);
+  console.log(`[updater] auto-update preference set to ${!!enabled}`);
+});
+
+// IPC: renderer triggers a manual update check (regardless of the
+// auto-update preference — explicit user action). Resolves with the
+// outcome so the UI can show "Checking…" / "Up to date" / etc.
+ipcMain.handle('update:check-now', async () => {
+  wireUpdaterEvents();
+  try {
+    await autoUpdater.checkForUpdates();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
 });
 
 // ── Image cache IPC handler ───────────────────────────────────────────────────

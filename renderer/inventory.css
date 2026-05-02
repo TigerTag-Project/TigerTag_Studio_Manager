@@ -87,7 +87,17 @@
   /* user section */
   .sb-user {
     padding: 20px 14px 16px; border-bottom: 1px solid rgba(255,255,255,.06);
-    flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+    flex-shrink: 0; display: flex; flex-direction: column; align-items: stretch;
+  }
+  /* Avatar + (welcome + name) laid out horizontally when expanded. */
+  .sb-user-row {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+  }
+  .sb-user-info {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 2px;
   }
   .sb-avatar {
     width: 54px; height: 54px; border-radius: 50%;
@@ -99,12 +109,13 @@
   }
   .sb-avatar:hover { box-shadow: 0 0 0 4px rgba(255,122,24,.45), 0 4px 28px rgba(255,122,24,.3); }
   .sb-name {
-    font-size: 14px; font-weight: 600; color: #fff; text-align: center;
-    margin-top: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+    font-size: 14px; font-weight: 600; color: #fff; text-align: left;
+    margin-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
   }
   .sb-sub {
-    font-size: 10px; color: rgba(255,255,255,.32); text-align: center;
-    font-family: var(--mono); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+    font-size: 10px; color: rgba(255,255,255,.32); text-align: left;
+    font-family: var(--mono); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
   .sb-actions { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; width: 100%; }
   .sb-actions button {
@@ -119,7 +130,7 @@
   .sb-actions button:not(.primary):hover { background: rgba(255,255,255,.12) !important; color: #fff !important; }
   .sb-friends-btn { position: relative; }
   .sb-friends-btn .friends-badge { position: absolute; top: -5px; right: -5px; margin: 0; }
-  .sb-sub-welcome { font-size: 11px; color: rgba(255,255,255,.38); text-align: center; margin-top: 4px; }
+  .sb-sub-welcome { font-size: 11px; color: rgba(255,255,255,.38); text-align: left; margin-top: 0; }
 
   /* ── avatar : état vide (aucun compte) ── */
   .sb-avatar-plus { display: none; pointer-events: none; }
@@ -130,7 +141,11 @@
   /* connecté → cacher état vide; déconnecté → cacher état connecté */
   .sb-user--empty .sb-sub-welcome,
   .sb-user--empty .sb-name,
+  .sb-user--empty .sb-user-info,
   .sb-user--empty .sb-actions { display: none !important; }
+  /* When empty, recenter the avatar in its row since the info column
+     is gone — otherwise the avatar would sit awkwardly on the left. */
+  .sb-user--empty .sb-user-row { justify-content: center; }
   .sb-noacct { display: none; flex-direction: column; align-items: center; gap: 10px; margin-top: 10px; }
   .sb-user--empty .sb-noacct { display: flex; }
   .sb-noacct-label { font-size: 11px; color: rgba(255,255,255,.3); text-align: center; }
@@ -147,8 +162,10 @@
 
   .sidebar.collapsed .sb-name,
   .sidebar.collapsed .sb-sub,
+  .sidebar.collapsed .sb-user-info,
   .sidebar.collapsed .sb-sub-welcome { display: none; }
   .sidebar.collapsed .sb-user { padding: 14px 8px; }
+  .sidebar.collapsed .sb-user-row { justify-content: center; }
   .sidebar.collapsed .sb-avatar { width: 40px; height: 40px; font-size: 15px; }
   .sidebar.collapsed .sb-actions {
     align-items: center; margin-top: 10px;
@@ -229,6 +246,186 @@
     color: rgba(255,255,255,.3); margin-top: 2px;
   }
 
+  /* ── Top header stats (v1.4.4): the same .sb-stat boxes used in the
+     sidebar, relocated to the main header in place of the title block.
+     Horizontal layout, light theme (header bg is white-ish vs sidebar
+     dark). All `.sb-*` rules above target the dark sidebar; we override
+     here to fit the header context. */
+  .top-stats {
+    flex: 1;
+    display: flex !important;        /* override grid from .sidebar:not(.collapsed) */
+    flex-direction: row !important;
+    gap: 10px;
+    padding: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    min-width: 0;
+  }
+  .top-stats::-webkit-scrollbar { height: 0; }
+  .top-stats .sb-stat {
+    flex: 1 1 0;
+    min-width: 96px;
+    padding: 8px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    gap: 1px;
+  }
+  .top-stats .sb-stat:hover {
+    background: var(--surface);
+    border-color: var(--primary);
+  }
+  .top-stats .sb-stat .value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 0;
+    line-height: 1.1;
+  }
+  .top-stats .sb-stat .label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    line-height: 1.2;
+    margin-top: 2px;
+  }
+
+
+  /* Sidebar friends quick-access list — plain menu items, no card.
+     Just an avatar circle + name on a single row. The hover only changes
+     the text + avatar opacity slightly; no background, no border. */
+  .sb-friends-list {
+    display: flex; flex-direction: column;
+    gap: 3px;
+    margin: 4px 0 6px;
+    padding: 0;
+    /* No max-height/overflow — let the list grow naturally so the
+       collapsed-mode hover tooltip can escape horizontally. The list
+       rarely exceeds ~10 items in practice. */
+  }
+  .sb-friends-list.hidden { display: none; }
+  /* `.sb-actions button:not(.primary)` (specificity 0,2,1) would otherwise
+     paint a gray pill behind every chip. Use `button.sb-friend-chip`
+     (0,2,1) AND scope it to `.sb-actions` (0,3,1) to definitely win, and
+     also neutralise the border + height + border-radius inherited from
+     `.sb-actions button` so the chip becomes a flat row. */
+  .sb-actions button.sb-friend-chip,
+  button.sb-friend-chip {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    height: auto;
+    padding: 4px 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgba(255,255,255,.65);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    justify-content: flex-start;
+    transition: color .15s;
+  }
+  .sb-actions button.sb-friend-chip:hover,
+  button.sb-friend-chip:hover {
+    background: transparent !important;
+    color: #fff !important;
+  }
+  .sb-friend-chip:hover .sb-friend-avatar {
+    box-shadow: 0 0 0 2px rgba(255,255,255,.12);
+  }
+  .sb-friend-chip.is-active { color: #fff; }
+  .sb-friend-chip.is-active .sb-friend-avatar {
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  /* Friend avatars: same size in both expanded and collapsed sidebar —
+     40px matches the user avatar in collapsed mode and the user wanted
+     the open state to mirror that. Font scales proportionally. */
+  .sb-friend-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700;
+    color: #fff;
+    letter-spacing: -.5px;
+  }
+  .sb-friend-name {
+    flex: 1; min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sb-friend-active-dot {
+    flex-shrink: 0;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 6px var(--primary);
+  }
+  /* Hide chip names + dot when sidebar is collapsed (avatars only).
+     The `.sb-actions button { width: 36px; height: 36px; padding: 0 }`
+     rule above hits any <button> inside .sb-actions — including our
+     friend chips. Override with higher specificity so the chips stay
+     properly sized as round avatar pills. */
+  .sidebar.collapsed .sb-friend-name,
+  .sidebar.collapsed .sb-friend-active-dot { display: none; }
+  .sidebar.collapsed .sb-actions button.sb-friend-chip {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    border: 0;
+    position: relative;          /* anchor for the hover tooltip */
+  }
+  /* (Friend avatars are 40×40 in both expanded and collapsed mode now —
+     no per-state override needed.) */
+  .sidebar.collapsed .sb-friends-list {
+    align-items: center;
+    padding: 4px 0;
+  }
+  /* Hover bubble for collapsed-sidebar friend chips. Appended to <body> by
+     JS so it escapes every ancestor's `overflow: hidden` (.sidebar itself
+     has overflow:hidden to clip its gradient, which would otherwise eat
+     the tooltip). Same dark style as the rack-slot hover tooltip. */
+  #sbFriendTip {
+    position: fixed;
+    z-index: 1000;
+    background: #1c2030;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.1);
+    padding: 5px 10px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-4px);
+    transition: opacity .14s, transform .18s cubic-bezier(.4, 0, .2, 1);
+  }
+  #sbFriendTip.is-open {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  #sbFriendTip::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-right: 6px solid #1c2030;
+  }
 
   /* mid flex wrapper (login + stats) */
   .sb-mid { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -270,24 +467,224 @@
   }
   .sidebar.collapsed .sb-version { font-size: 9px; }
 
-  /* Settings → About block */
-  .stg-about {
-    margin-top: 10px;
-    padding: 10px 12px;
+  /* ── Settings panel — flat sectioned layout (v1.4.4 redesign)
+     macOS System Settings style: no card borders, no inner backgrounds,
+     just sections separated by a subtle horizontal rule. Each section
+     has an icon + uppercase label header, then content. Clean & airy. */
+
+  .stg-panel .panel-title {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .stg-panel .panel-title .icon { background: var(--primary); }
+  /* Override the global .panel-body { padding: 0 0 24px } — needs higher
+     specificity (the rule lives later in the file). */
+  .stg-panel .panel-body.stg-body {
+    padding: 18px 20px 24px;
+    display: flex; flex-direction: column;
+    gap: 0;                    /* sections separate via border, not gap */
+    overflow-y: auto;
+  }
+
+  /* Section (replaces the old .stg-card) — flat, no border, divided by
+     a top border on every section after the first. */
+  .stg-card {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  .stg-card:first-child {
+    border-top: none;
+    padding-top: 4px;
+  }
+  .stg-card:last-child {
+    padding-bottom: 4px;
+  }
+  .stg-card-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stg-card-head .icon { background: var(--primary); flex-shrink: 0; }
+  .stg-card-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .stg-card-body {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* Row patterns inside cards */
+  .stg-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .stg-row--toggle {
+    cursor: pointer;
+    user-select: none;
+  }
+  .stg-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .stg-row-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .stg-row-sub   { font-size: 11px; color: var(--muted); line-height: 1.35; }
+  .stg-row-help {
+    margin: 0;
+    font-size: 12px; color: var(--muted); line-height: 1.45;
+  }
+
+  /* Action button rows (single line by default, column when --col modifier) */
+  .stg-row-actions {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .stg-row-actions--col {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stg-row-actions--col > * {
+    justify-content: flex-start;
+  }
+  .stg-row-actions .ghost,
+  .stg-row-actions .stg-link-btn {
+    font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .stg-row-actions .ghost:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* About content — flat lines directly inside the card body, no inner box */
+  #stgAbout .stg-about-name    { font-size: 13px; font-weight: 600; color: var(--text); }
+  #stgAbout .stg-about-version { font-size: 13px; color: var(--primary); font-family: var(--mono); font-weight: 700; }
+  #stgAbout .stg-about-tech    { font-size: 11px; color: var(--muted); user-select: text; font-family: var(--mono); margin-bottom: 4px; }
+
+  /* Status line (Checking… / Up to date / Available / Ready / Error) */
+  .stg-status {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    word-break: break-word;
+  }
+  .stg-status[data-kind="ok"]   { color: var(--success, #16a34a); border-color: rgba(22,163,74,.3); }
+  .stg-status[data-kind="warn"] { color: rgb(217, 119, 6); border-color: rgba(217,119,6,.3); }
+  .stg-status[data-kind="err"]  { color: var(--danger); border-color: rgba(220,38,38,.3); }
+
+  /* Spool detail panel → Storage location row.
+     Compact one-liner: package icon · rack name · orange coord badge.
+     Lets the user know exactly where to physically grab / put the spool. */
+  .panel-storage-loc .storage-loc-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    display: flex; flex-direction: column; gap: 4px;
-    position: relative;
+    border-radius: 8px;
+    font-size: 13px;
   }
-  .stg-about-name { font-size: 13px; font-weight: 600; color: var(--text); }
-  .stg-about-version { font-size: 12px; color: var(--primary); font-family: var(--mono); }
-  .stg-about-tech { font-size: 11px; color: var(--muted); user-select: text; }
-  .stg-about-copy {
-    position: absolute; top: 8px; right: 8px;
-    font-size: 11px;
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 4px 8px;
+  .panel-storage-loc .storage-loc-row .icon { background: var(--muted); flex-shrink: 0; }
+  .panel-storage-loc .storage-loc-rack {
+    flex: 1; min-width: 0;
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .panel-storage-loc .storage-loc-coord {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 12px; font-weight: 700;
+    color: var(--primary);
+    background: var(--primary-soft, rgba(249,115,22,.10));
+    border: 1px solid rgba(249,115,22,.4);
+    padding: 2px 8px;
+    border-radius: 5px;
+    letter-spacing: .04em;
+  }
+  .panel-storage-loc .storage-loc-locked {
+    background: rgb(217, 119, 6);
+    flex-shrink: 0;
+  }
+  /* Clickable variant — entire row is a button that takes the user to
+     Storage view with the spool pre-filtered. Hover lights up the border
+     in primary, and the right-side chevron hints at the navigation. */
+  .panel-storage-loc .storage-loc-row--clickable {
+    width: 100%;
+    margin: 0;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    -webkit-appearance: none;
+            appearance: none;
+    transition: border-color .15s, background .15s;
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover {
+    background: var(--surface);
+    border-color: var(--primary);
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover .icon { background: var(--primary); }
+  .panel-storage-loc .storage-loc-row--clickable:hover .storage-loc-rack { color: var(--primary); }
+  .panel-storage-loc .storage-loc-locate {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background .15s, transform .15s;
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover .storage-loc-locate {
+    background: var(--primary);
+    transform: translateX(2px);
+  }
+
+  /* ── Collapsible section (Data / Tools) ──────────────────────
+     Header is a real <button> for accessibility, no chrome around it.
+     Hover only changes the title + chevron color, no background fill. */
+  .stg-card-head--btn {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    margin: 0 0 10px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    -webkit-appearance: none;
+            appearance: none;
+  }
+  .stg-card--collapsible[data-collapsed="true"] .stg-card-head--btn { margin-bottom: 0; }
+  .stg-card-head--btn .stg-card-title {
+    flex: 1;
+    transition: color .15s;
+  }
+  .stg-card-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: transform .2s cubic-bezier(.4, 0, .2, 1), background .15s;
+  }
+  .stg-card-head--btn:hover .stg-card-title,
+  .stg-card-head--btn:hover .stg-card-chev { background: var(--primary); color: var(--primary); }
+  .stg-card-head--btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Collapsed: body fully hidden via max-height + padding 0 */
+  .stg-card--collapsible[data-collapsed="true"] .stg-card-body--collapsible {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* Expanded: chevron rotates 90° down, body slides open */
+  .stg-card--collapsible[data-collapsed="false"] .stg-card-chev {
+    transform: rotate(90deg);
+    background: var(--primary);
+  }
+  .stg-card-body--collapsible {
+    max-height: 480px;
+    overflow: hidden;
+    transition:
+      max-height .25s cubic-bezier(.4, 0, .2, 1),
+      margin-top .25s cubic-bezier(.4, 0, .2, 1),
+      opacity   .15s linear;
   }
   .sb-community-label {
     font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
@@ -327,20 +724,10 @@
   .sb-qr-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.72); }
   .sb-qr-hint { font-size: 10px; color: rgba(255,255,255,.3); text-align: center; }
 
-  /* settings panel */
-  .stg-section-label {
-    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--muted); padding-bottom: 8px;
-    border-bottom: 1px solid var(--border); margin-bottom: 4px;
-  }
-  .stg-row { display: flex; gap: 8px; margin-top: 10px; }
-  .stg-switch-btn {
-    flex-shrink: 0; padding: 0 14px; height: 32px;
-    background: var(--danger-soft); border: 1px solid rgba(216,59,59,.25);
-    color: var(--danger); border-radius: 8px; font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: background .15s, border-color .15s;
-  }
-  .stg-switch-btn:hover { background: #f5c6c6; border-color: rgba(216,59,59,.45); }
+  /* ── Settings panel — `.stg-copy-btn` is still used by the raw-JSON copy
+     button in the spool detail panel. Other legacy `.stg-*` classes were
+     dropped in v1.4.4 along with the old flat settings layout (see the
+     new `.stg-card` system above). */
   .stg-copy-btn {
     width: 32px; height: 30px; padding: 0; border-radius: 7px; flex-shrink: 0;
     background: var(--surface-2); border: 1px solid var(--border);
@@ -351,14 +738,6 @@
   .stg-copy-btn.copied { background: var(--success-soft); border-color: rgba(26,175,108,.3); color: var(--success); }
   @keyframes copyPop { 0%{transform:scale(1)} 40%{transform:scale(1.3)} 100%{transform:scale(1)} }
   .stg-copy-btn.pop { animation: copyPop .25s cubic-bezier(.4,0,.2,1); }
-  .stg-export-btn {
-    width: 100%; height: 32px; border-radius: 8px; margin-top: 8px;
-    background: var(--surface-2); border: 1px solid var(--border);
-    color: var(--text); font-size: 12px; font-weight: 600;
-    cursor: pointer; transition: background .15s, color .15s;
-  }
-  .stg-export-btn:hover { background: var(--border); }
-  .stg-link-input { font-size: 10px !important; font-family: var(--mono) !important; cursor: text; }
 
   /* ═══════════════════════════════════════════════════════════════════
      Friends panel — full UI/UX redesign
@@ -1237,6 +1616,26 @@
     background-position: center;
     transition: height .35s cubic-bezier(.4,0,.2,1);
   }
+  /* Depleted-spool visual cue: a thin colored strip at the bottom (so the
+     spool's color is still hinted at) + a faded "0g" tag centered on the
+     slot. Without this, a 0g spool's .rp-fill has height:0 → looks
+     identical to an empty slot. */
+  .rp-fill--depleted {
+    height: 6px !important;
+    opacity: .35;
+    bottom: 0;
+  }
+  .rp-fill-empty-tag {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 9px; font-weight: 700;
+    color: rgba(0,0,0,.45);
+    letter-spacing: .04em;
+    pointer-events: none;
+    text-shadow: 0 0 2px rgba(255,255,255,.7);
+  }
 
   /* Filled slot — uses the .rp-fill child to render color + fill level */
   .rp-slot--filled {
@@ -1252,6 +1651,16 @@
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 4px 10px rgba(0,0,0,.12);
   }
   .rp-slot--filled:active { cursor: grabbing; }
+  /* Read-only mode (friend view) — slots are clickable but not draggable;
+     side-rows + slots use the default pointer cursor instead of grab. */
+  #invRackView.is-read-only .rp-slot--filled,
+  #invRackView.is-read-only .rp-side-row {
+    cursor: pointer;
+  }
+  #invRackView.is-read-only .rp-slot--filled:active,
+  #invRackView.is-read-only .rp-side-row:active {
+    cursor: pointer;
+  }
   /* ── Active drop target — the slot the cursor is hovering over RIGHT NOW.
      Must clearly stand out from the ambient "drop-zone" pulse so the user
      knows where the spool will land if they release the mouse. */
@@ -1317,6 +1726,30 @@
     transition: opacity .15s, filter .15s;
   }
   .rp-slot--filled.rp-dim:hover { opacity: .4; }   /* hint that it's still there */
+
+  /* Search-match indicator on the slot CONTAINER — makes the slot stand
+     out via a border+glow on the box itself, NOT via the inner color fill.
+     This is critical for depleted spools (.rp-fill height ~ 0): the slot's
+     box still glows in orange so the user sees it when they search. */
+  .rp-slot--filled.rp-slot--match {
+    border-color: var(--primary) !important;
+    box-shadow:
+      0 0 0 2px rgba(249,115,22,.55),
+      0 0 8px rgba(249,115,22,.55),
+      inset 0 0 0 1px rgba(255,255,255,.28);
+    z-index: 2;
+    animation: rp-slot-match-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes rp-slot-match-pulse {
+    0%, 100% { box-shadow:
+      0 0 0 2px rgba(249,115,22,.55),
+      0 0 8px rgba(249,115,22,.55),
+      inset 0 0 0 1px rgba(255,255,255,.28); }
+    50%      { box-shadow:
+      0 0 0 3px rgba(249,115,22,.85),
+      0 0 14px rgba(249,115,22,.85),
+      inset 0 0 0 1px rgba(255,255,255,.28); }
+  }
 
   /* Locked slot — solid amber tint + small lock badge top-right.
      Right-click toggles the lock (handled in JS). */
@@ -1433,6 +1866,31 @@
     flex-shrink: 0;     /* badge sits before the title — push close button to the right via the title's flex */
   }
   .rp-side-title { flex: 1; min-width: 0; }
+  /* Auto storage / Auto unstorage toggles inside the "Spools not stored"
+     panel. The two opposing policies live together in a single bordered
+     card with a thin divider between them, so the user reads them as a
+     paired automation choice. */
+  .rp-side-auto-card {
+    display: flex; flex-direction: column;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .rp-side-auto-card .rp-side-toggle + .rp-side-toggle {
+    border-top: 1px solid var(--border);
+  }
+  .rp-side-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .rp-side-toggle-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .rp-side-toggle-title { font-size: 12px; font-weight: 600; color: var(--text); }
+  .rp-side-toggle-sub   { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
   .rp-side-search { position: relative; flex-shrink: 0; }
   .rp-side-search .icon {
     position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
@@ -2635,6 +3093,15 @@
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
   }
+  /* TD1S / Scale / Cloud (and the optional RFID pill) — always pinned to
+     the right edge of the header. `margin-left: auto` makes this work even
+     when the stats wrap (`#sbStats`) is `.hidden` (display:none) and is
+     therefore not contributing flex space, which would otherwise leave
+     `justify-content: space-between` aligning the icons to the left. */
+  .top-status-icons {
+    display: flex; align-items: center; gap: 12px;
+    margin-left: auto;
+  }
   header.top h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
   header.top h1 .dot { width: 12px; height: 12px; border-radius: 4px; background: linear-gradient(135deg, var(--primary), #ffb056); display: inline-block; }
   header.top .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -2706,6 +3173,8 @@
   .icon-user      { -webkit-mask-image: url('../assets/svg/icons/icon_user.svg');         mask-image: url('../assets/svg/icons/icon_user.svg'); }
   .icon-download  { -webkit-mask-image: url('../assets/svg/icons/icon_download.svg');     mask-image: url('../assets/svg/icons/icon_download.svg'); }
   .icon-refresh   { -webkit-mask-image: url('../assets/svg/icons/icon_refresh.svg');      mask-image: url('../assets/svg/icons/icon_refresh.svg'); }
+  .icon-settings  { -webkit-mask-image: url('../assets/svg/icons/icon_settings.svg');     mask-image: url('../assets/svg/icons/icon_settings.svg'); }
+  .icon-wrench    { -webkit-mask-image: url('../assets/svg/icons/icon_wrench.svg');       mask-image: url('../assets/svg/icons/icon_wrench.svg'); }
   .icon-cloud     { -webkit-mask-image: url('../assets/svg/icons/icon_cloud.svg');        mask-image: url('../assets/svg/icons/icon_cloud.svg'); }
   .icon-signout   { -webkit-mask-image: url('../assets/svg/icons/icon_signout.svg');      mask-image: url('../assets/svg/icons/icon_signout.svg'); }
   .icon-info      { -webkit-mask-image: url('../assets/svg/icons/icon_info.svg');         mask-image: url('../assets/svg/icons/icon_info.svg'); }

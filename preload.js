@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Ask main process to install the downloaded update and restart
   installUpdate: () => ipcRenderer.send('install-update'),
 
+  // ── Auto-update preference (ON by default) ─────────────────────────────
+  // Renderer toggles auto-update at runtime. Main process honours it on
+  // startup and on subsequent manual checks.
+  setAutoUpdate: (enabled) => ipcRenderer.send('update:set-auto', !!enabled),
+
+  // Manually trigger an update check (used by "Check for updates" button).
+  // Resolves with { ok: true } or { ok: false, error: "…" }.
+  checkForUpdates: () => ipcRenderer.invoke('update:check-now'),
+
   // ── App info (version / platform — used by the diagnostic report) ──────
   getAppInfo: () => ipcRenderer.invoke('app:info'),
 
