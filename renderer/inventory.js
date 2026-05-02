@@ -1297,6 +1297,157 @@
     try { await firebase.auth().signOut(); } catch (_) {} // clean up DEFAULT too
   }
 
+  /* ── UID format migration — decimal big-endian → hex uppercase ─────────
+     The legacy mobile app (still in production at the time this code was
+     written) creates `inventory/{spoolId}` doc ids in DECIMAL big-endian
+     form, e.g. "8307741719072896". The canonical format going forward is
+     HEX uppercase, no separators, e.g. "1D895E7C004A80". Both forms decode
+     to the same integer.
+
+     SHARED RESPONSIBILITY — every TigerTag client that has write access and
+     sees a decimal-format inventory doc converts it to hex on the fly:
+       - Tiger Studio Manager (here)
+       - The new mobile app version (once deployed) — same algorithm, ported
+       - TigerScale firmware writes hex from day one; for old decimal docs it
+         encounters, it does a fallback lookup via `uidMigrationMap` (see
+         tigerscale-doc-schema.md §"Mixed-format tolerance").
+
+     The lookup table `users/{uid}/uidMigrationMap/{decimal_uid}` →
+     `{ hex_uid, migrated_at }` lets external clients holding old decimal
+     ids resolve them to the new hex doc ids without scanning the inventory.
+
+     Properties of this implementation:
+       1. Idempotent. If the hex doc already exists (re-run, partial
+          migration, or another client beat us to it), we just clean up
+          the decimal stub and write the map entry.
+       2. Atomic per spool. One Firestore batch handles: SET hex doc,
+          UPDATE every other doc whose `twin_tag_uid` pointed at this
+          decimal id, SET map entry, DELETE decimal doc. All-or-nothing.
+       3. Safe vs concurrent mobile-app writes. If the mobile app PATCHes
+          the just-deleted decimal doc, Firestore creates a stub with
+          partial data; the next snapshot re-queues it, we merge it back
+          into the hex doc with `{merge: true}`, no data loss.
+       4. Background, polite. Drains one spool every ~200 ms so we don't
+          burst Firestore quota during a big initial sweep.
+       5. Owner-only. Never runs while previewing a friend's inventory
+          (state.friendView short-circuit).
+  */
+  const _uidMigrationQueue = [];        // [decimalId, ...] — pending
+  let   _uidMigrationDraining = false;
+  const _uidMigrationStats = { migrated: 0, skipped: 0, failed: 0 };
+  // Pure decimal string check. We exclude leading zeros (other than the
+  // standalone "0") because a real BigInt's toString() never has them —
+  // a leading zero would mean someone wrote a malformed id we shouldn't
+  // touch.
+  function isDecimalSpoolId(id) {
+    return typeof id === "string" && /^\d+$/.test(id) && (id === "0" || id[0] !== "0");
+  }
+  function decimalSpoolIdToHex(decimal) {
+    try { return BigInt(decimal).toString(16).toUpperCase(); }
+    catch { return null; }
+  }
+
+  function maybeMigrateDecimalSpoolIds(ownerUid) {
+    if (state.friendView) return;
+    if (!ownerUid || !state.inventory) return;
+    for (const docId of Object.keys(state.inventory)) {
+      if (!isDecimalSpoolId(docId)) continue;
+      if (_uidMigrationQueue.includes(docId)) continue;
+      _uidMigrationQueue.push(docId);
+    }
+    drainUidMigrationQueue(ownerUid);
+  }
+
+  async function drainUidMigrationQueue(ownerUid) {
+    if (_uidMigrationDraining) return;
+    _uidMigrationDraining = true;
+    try {
+      while (_uidMigrationQueue.length > 0) {
+        // Bail out cleanly if the user switched account / signed out
+        // mid-sweep — never write to a different user's data.
+        if (state.activeAccountId !== ownerUid) break;
+        if (state.friendView) break;
+        const decimalId = _uidMigrationQueue.shift();
+        try {
+          await migrateOneSpoolDecimalToHex(ownerUid, decimalId);
+        } catch (e) {
+          console.warn("[uidMigration] failed", decimalId, e?.message || e);
+          _uidMigrationStats.failed++;
+        }
+        // Politeness — small gap between writes so we don't dominate the
+        // user's Firestore quota during initial backfill.
+        await new Promise(r => setTimeout(r, 200));
+      }
+    } finally {
+      _uidMigrationDraining = false;
+    }
+  }
+
+  async function migrateOneSpoolDecimalToHex(ownerUid, decimalId) {
+    const hexId = decimalSpoolIdToHex(decimalId);
+    if (!hexId) {
+      console.warn("[uidMigration] cannot convert", decimalId);
+      _uidMigrationStats.failed++;
+      return;
+    }
+    const db          = fbDb(ownerUid);
+    const invRef      = db.collection("users").doc(ownerUid).collection("inventory");
+    const mapRef      = db.collection("users").doc(ownerUid).collection("uidMigrationMap");
+    const decimalRef  = invRef.doc(decimalId);
+    const hexRef      = invRef.doc(hexId);
+
+    // Re-read the decimal doc — it may have been migrated by another
+    // client (mobile app on another device, etc.) since we queued it.
+    const decimalSnap = await decimalRef.get();
+    if (!decimalSnap.exists) {
+      // Already deleted — just make sure the map entry is there in case
+      // the previous migrator didn't write it, then move on.
+      await mapRef.doc(decimalId).set({
+        hex_uid:     hexId,
+        migrated_at: firebase.firestore.FieldValue.serverTimestamp(),
+        migrated_by: "studio-manager",
+      }, { merge: true }).catch(() => {});
+      _uidMigrationStats.skipped++;
+      return;
+    }
+
+    const data = decimalSnap.data();
+    // If twin_tag_uid is decimal, convert it too. The other side's doc
+    // will get its own twin_tag_uid retargeted via the reverseTwins query
+    // below, so the pair stays consistent.
+    const newData = { ...data, uid: hexId };
+    if (data.twin_tag_uid && isDecimalSpoolId(String(data.twin_tag_uid))) {
+      newData.twin_tag_uid = decimalSpoolIdToHex(String(data.twin_tag_uid));
+    }
+
+    // Find every OTHER inventory doc whose twin_tag_uid pointed at this
+    // decimal id — typically one (the twin partner) but theoretically zero
+    // or more.
+    const reverseTwins = await invRef.where("twin_tag_uid", "==", decimalId).get();
+
+    const batch = db.batch();
+    // merge:true so a partial decimal stub re-written by the mobile app
+    // doesn't wipe fields we already migrated to hex. The hex doc keeps
+    // the union of fields.
+    batch.set(hexRef, newData, { merge: true });
+    batch.set(mapRef.doc(decimalId), {
+      hex_uid:     hexId,
+      migrated_at: firebase.firestore.FieldValue.serverTimestamp(),
+      migrated_by: "studio-manager",
+    }, { merge: true });
+    reverseTwins.forEach(twin => {
+      // Skip the doc we're about to delete (would race with the delete)
+      if (twin.id === decimalId) return;
+      batch.update(twin.ref, { twin_tag_uid: hexId });
+    });
+    batch.delete(decimalRef);
+
+    await batch.commit();
+    _uidMigrationStats.migrated++;
+    console.log(`[uidMigration] ${decimalId} → ${hexId}` +
+      (reverseTwins.size > 0 ? ` (twins retargeted: ${reverseTwins.size})` : ""));
+  }
+
   /* ── Firestore inventory subscription ── */
   function subscribeInventory(uid) {
     unsubscribeInventory();
@@ -1340,6 +1491,11 @@
         // trigger a fresh snapshot that re-renders.
         maybeAutoUnstoreDepletedSpools();
         maybeAutoStoreUnrankedSpools();
+        // Lazy migration of decimal-format spool ids → hex uppercase.
+        // Picks up any decimal doc the mobile app may have just created
+        // and migrates it in the background. Idempotent + safe vs
+        // concurrent mobile-app writes (see the function header).
+        maybeMigrateDecimalSpoolIds(uid);
         saveInventory(raw);
         preCacheImages(state.rows).then(() => {
           sortRows(); renderStats(); renderInventory();
