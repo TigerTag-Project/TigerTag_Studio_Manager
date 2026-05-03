@@ -34,7 +34,8 @@
     "publish": {
       "provider": "github",
       "owner": "TigerTag-Project",
-      "repo": "TigerTag_Studio_Manager"
+      "repo": "TigerTag_Studio_Manager",
+      "releaseType": "release"
     },
     "files": [
       "main.js",

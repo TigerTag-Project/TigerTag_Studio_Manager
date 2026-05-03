@@ -8,6 +8,15 @@ on:
 permissions:
   contents: write
 
+# Opt every JS-based action in this workflow into Node.js 24. softprops/
+# action-gh-release@v2 still ships Node 20 binaries today and GitHub
+# Actions has scheduled the Node-20 deprecation for June 2026 / removal
+# in September 2026. Setting this flag now silences the deprecation
+# warning and aligns the action's runtime with our `actions/setup-node`
+# version (24).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     strategy:
