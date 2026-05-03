@@ -54,7 +54,8 @@
         }
       ],
       "icon": "assets/img/icon.ico",
-      "artifactName": "Tiger-Studio-Manager-Setup-${version}.${ext}"
+      "artifactName": "Tiger-Studio-Manager-Setup-${version}.${ext}",
+      "publisherName": []
     },
     "mac": {
       "target": [
@@ -99,8 +100,7 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "publisherName": []
+      "allowToChangeInstallationDirectory": true
     }
   }
 }
