@@ -98,32 +98,51 @@ The TigerTag POD is a desktop hardware unit with **two ACR122U USB NFC readers**
 
 Today, only **one** reader is supported (single-card detail-panel-open flow). The POD use case requires a richer model: identify which slot fired, treat both slots as a coordinated workstation, and add **surgical page-level write** capability (never erase-and-rewrite — see *Cross-cutting: surgical page-level writes* below).
 
-#### 🔧 Sub-feature A — Multi-reader detection
-- **Where**: [`main.js` L153-200](main.js) — `initNFC()` already binds `nfc.on('reader', …)` per reader, but the IPC payload doesn't carry a stable reader id, so the renderer overwrites slot 1 with slot 2 on every `reader-status` message. Fix: include `reader.name` (or a hashed `slotId`) in every IPC payload, and the renderer keeps a `Map<slotId, status>` instead of one global state.
-- **UI**: dual-status pill in the header (`POD slot 1 ✓ · POD slot 2 ✓`) replacing the single `#rfidStatus`.
-- **Persistence**: assign each reader a stable role (`primary` / `secondary`) on first plug-in, persist in `localStorage` keyed by the reader name so the same physical reader keeps the same slot across launches.
-- **Effort**: S
-- **Risk**: low (read-only changes to existing IPC).
+#### 🔧 Sub-feature A — Multi-reader detection  ·  **Effort: S**  ·  **Risk: low**
+The IPC payload from `main.js` doesn't carry a stable reader id, so when 2 readers are connected the renderer overwrites slot 1 with slot 2 on every `reader-status` message. Fix: include `reader.name` (or a hashed `slotId`) in every IPC payload, and the renderer keeps a `Map<slotId, status>` instead of one global state.
 
-#### 🔧 Sub-feature B — Spool scan workflow → inventory
-- **Trigger**: chip detected on either slot. If a matching `state.rows` entry exists → open detail panel (current behaviour, kept).
-- **New**: if the UID is unknown (not yet in Firestore inventory), open a **new "Add spool from scan" sheet** prefilled with the parsed TigerTag fields (TAG_ID, PRODUCT_ID, MATERIAL_ID, ASPECT, TYPE, DIAMETER, color RGB, …). One-click "Add to inventory" writes to `users/{uid}/inventory/{spoolId}`.
-- **Spec**: full byte-layout in [`docs/rfid-vendors/tigertag.md`](docs/rfid-vendors/tigertag.md) — read offsets, field types, lookup table references.
-- **Twin auto-detect**: if a chip is detected on slot 2 within ≤ 5 s of a chip on slot 1, AND both share the same `id_brand` + `id_material` + `id_type` + RGB, propose a "These are twins → link?" inline confirmation. Same atomic batch as the existing manual `linkTwinPair` (renderer/inventory.js L2410-2558) — write `twin_tag_uid` cross-references on both docs.
-- **Effort**: M
-- **Risk**: low (writes are batched + reversible).
+♻️ **Reuses (mostly already done)**:
+- `main.js` L154-200 (`initNFC()`) — `nfc.on('reader', …)` already fires per reader, just need to add `reader.name` to the IPC payload (~5 lines).
+- `preload.js` L20-24 — `onReaderStatus` / `onRfid` callbacks already in place; payload just gets one extra field.
+- `inventory.js` L12214-12266 — Renderer-side handler already wired; needs to switch from "single global status" to "Map keyed by slot id" (~30 lines).
 
-#### 🔧 Sub-feature C — Write fresh TigerTag chip
-- **Goal**: blank NTAG → fully-formatted TigerTag chip with brand/material/color/RGB metadata, ready to be put on a new spool.
-- **`nfc-pcsc` API**: supports `reader.write(blockNumber, buffer)` and `reader.transmit(cmd, responseLen)` — raw APDU available. Need to add a new `ipcMain.handle('nfc:write', …)` channel in main.js that takes `(slotId, payloadBytes)`.
-- **UI**: a new "Create chip" wizard in the spool detail panel (visible only when the POD is detected and a blank chip is on slot 2). Steps: pick brand/material/type/diameter → pick color (TD1S sensor, color picker, or copy from another chip) → confirm → write all 4-byte chunks per [tigertag.md](docs/rfid-vendors/tigertag.md). Show a per-page progress bar.
-- **Validation**: read-back-and-compare after write. Refuse to mark the chip as ready if any byte differs.
-- **Signature** *(non-issue by design)*:
-  - **TigerTag (basic)** chips are unsigned — write freely.
-  - **TigerTag+ (premium)** chips carry a factory ECDSA signature computed only over **pages 4 & 5** of the chip — the `TAG_ID` (`OFF_TAG_ID`) + `PRODUCT_ID` (`OFF_PRODUCT_ID`) immutable identity. Every other field (`MATERIAL_ID` onwards, color, TD, aspect, etc.) is on later pages and is **freely rewritable without invalidating the signature**. The signature stays valid because we never touch pages 4-5.
-  - **Implementation guard**: refuse any write whose target page < 6. The write path should refuse to touch the identity region as a safety net even if a future bug computes the wrong offset.
-- **Effort**: M (was L before the signing clarification)
-- **Risk**: low-medium — surgical page-level writes (no erase pass) cut the failure surface, but chip writes are still non-reversible at the byte level. Stage on disposable NTAGs first.
+**UI**: dual-status pill in the header (`POD slot 1 ✓ · POD slot 2 ✓`) replacing the single `#rfidStatus`.
+**Persistence**: assign each reader a stable role (`primary` / `secondary`) on first plug-in, persist in `localStorage` keyed by the reader name so the same physical reader keeps the same slot across launches.
+
+#### 🔧 Sub-feature B — Spool scan workflow → inventory  ·  **Effort: M**  ·  **Risk: low**
+**Trigger**: chip detected on either slot. If a matching `state.rows` entry exists → open detail panel (current behaviour, kept).
+
+**New**: if the UID is unknown (not yet in Firestore inventory), open a **new "Add spool from scan" sheet** prefilled with the parsed TigerTag fields (TAG_ID, PRODUCT_ID, MATERIAL_ID, ASPECT, TYPE, DIAMETER, color RGB, …). One-click "Add to inventory" writes to `users/{uid}/inventory/{spoolId}`.
+
+**Twin auto-detect**: if a chip is detected on slot 2 within ≤ 5 s of a chip on slot 1, AND both share the same `id_brand` + `id_material` + `id_type` + RGB, propose a "These are twins → link?" inline confirmation.
+
+♻️ **Reuses (substantial — most of the parsing + matching logic exists)**:
+- `inventory.js` L503-576 — `normalizeRow(spoolId, data)` already maps the parser output to the renderer's row shape. Reusable verbatim.
+- `inventory.js` L2410-2558 — `findTwinCandidates()` (filter compatible spools by brand/material/type/RGB) + `linkTwinPair()` (atomic batch write of `twin_tag_uid` cross-references). The 5s-window detection is new logic, but the linking step is a 1-line call.
+- `inventory.js` L8241-8633 — `snapAddDiscoveredPrinter()` is the architectural twin of "Add spool from scan" — same one-click write-to-Firestore-and-open-detail pattern. Copy as a starting template.
+- [`docs/rfid-vendors/tigertag.md`](docs/rfid-vendors/tigertag.md) — full byte-layout spec (offsets, field types, lookup tables). Need to write the actual byte parser (no `renderer/lib/rfid/tigertag.js` exists yet — `normalizeRow` works on Firestore docs, not raw bytes).
+- The TigerTag spec sheet contains pseudo-code transcribed verbatim from the Python OpenRFID reference — most of the JS port is mechanical translation.
+
+#### 🔧 Sub-feature C — Write fresh TigerTag chip  ·  **Effort: M**  ·  **Risk: low-medium**
+**Goal**: blank NTAG → fully-formatted TigerTag chip with brand/material/color/RGB metadata, ready to be put on a new spool.
+
+**`nfc-pcsc` API**: supports `reader.write(blockNumber, buffer)` and `reader.transmit(cmd, responseLen)` — raw APDU available. Need a new `ipcMain.handle('nfc:write-pages', …)` channel in main.js that runs the read-diff-write-verify loop (see *Cross-cutting: surgical page-level writes*).
+
+**UI**: a new "Create chip" wizard in the spool detail panel (visible only when the POD is detected and a blank chip is on slot 2). Steps: pick brand/material/type/diameter → pick color (TD1S sensor, color picker, or copy from another chip) → confirm → write all 4-byte chunks per [tigertag.md](docs/rfid-vendors/tigertag.md). Show a per-page progress bar.
+
+**Signature** *(non-issue by design)*:
+- **TigerTag (basic)** chips are unsigned — write freely.
+- **TigerTag+ (premium)** chips carry a factory ECDSA signature computed only over **pages 4 & 5** of the chip — the `TAG_ID` + `PRODUCT_ID` immutable identity. Every other field (`MATERIAL_ID` onwards, color, TD, aspect, etc.) is on later pages and is **freely rewritable without invalidating the signature**. The signature stays valid because we never touch pages 4-5.
+- **Implementation guard**: refuse any write whose target page < 6. The write path should refuse to touch the identity region as a safety net even if a future bug computes the wrong offset.
+
+♻️ **Reuses (mostly new code, but spec is comprehensive)**:
+- [`docs/rfid-vendors/tigertag.md`](docs/rfid-vendors/tigertag.md) — 386-line spec with full byte layout, field types, lookup table references. The encoder is mechanical translation.
+- `inventory.js` L399-491 — existing lookup tables (`brandName`, `materialLabel`, `typeName`, `dbFind`) that resolve display labels back to IDs for chip encoding. Reuse for the wizard's pickers.
+- `data/id_brand.json` / `id_material.json` / `id_aspect.json` / `id_type.json` / `id_diameter.json` — the same lookup files used at parse time, used in reverse at encode time.
+- TD1S sensor reading code (`inventory.js` L12267-12389) — reusable for the "pick color via TD1S" wizard step.
+- Output of Sub-feature A (multi-reader detection) — without it, the wizard can't know which slot has the blank chip.
+
+**Risk**: low-medium — surgical page-level writes cut the failure surface, but chip writes are still non-reversible at the byte level. Stage on disposable NTAGs first.
 
 #### 🔧 Sub-feature D — Recycle TigerTag → plain NFC
 - **Goal**: a chip the user is done with (broken spool, weight depleted, sold) gets repurposed as a normal NFC tag — keychain, badge, business card, URL launcher.
@@ -139,20 +158,28 @@ Today, only **one** reader is supported (single-card detail-panel-open flow). Th
   2. **Compute target layout** — build the full NDEF byte layout for the chosen record type. Pages 4-5 (`TAG_ID` + `PRODUCT_ID`) stay as-is — even on recycle, the immutable identity is never touched, so a "former TigerTag" remains identifiable as such.
   3. **Diff against current chip pages** — page-by-page comparison; build the minimal write list. Pages that already hold the target bytes get skipped.
   4. **Write only the diff pages** — using the cross-cutting `nfc:write-pages` helper. No blanket "erase to 0x00" pass.
-- **Confirmation**: hold-to-confirm 1.5 s pattern (same as Delete spool) before triggering the write sequence. Show "This action cannot be undone — chip data will be replaced."
-- **Where in code**: new file `renderer/lib/rfid/tigertag-recycle.js` for the byte-level operations, `renderer/lib/rfid/ndef-builder.js` for the NDEF record generation. UI lives in a new "Recycle" tab inside the existing toolbox of the spool detail panel (visible only for empty/deleted spools when a chip is on the POD).
-- **Effort**: M (NDEF record format is well documented + widely implemented).
-- **Risk**: low — surgical writes mean the immutable identity stays intact and the user can always tell the chip was originally a TigerTag.
+**Confirmation**: hold-to-confirm 1.5 s pattern (same as Delete spool) before triggering the write sequence. Show "This action cannot be undone — chip data will be replaced."
 
-#### 🔧 Sub-feature E — Sync edits back to chip (write-when-present)
+**Where in code**: new file `renderer/lib/rfid/tigertag-recycle.js` for the byte-level operations, `renderer/lib/rfid/ndef-builder.js` for the NDEF record generation. UI lives in a new "Recycle" tab inside the existing toolbox of the spool detail panel (visible only for empty/deleted spools when a chip is on the POD).
 
+♻️ **Reuses**:
+- `inventory.js` toolbox section in the spool detail panel (visible at L4096-4283 per CODEMAP) — the new "Recycle" entry slots in next to the existing Delete tool with the same hold-to-confirm CSS.
+- The `nfc:write-pages` IPC handler from Sub-feature C (centralized read-diff-write-verify loop). E and D both call through it.
+- NDEF record format is widely documented (NFC Forum spec) — no existing code, but plenty of JS reference implementations (`ndef-lib`, `@ndef/web`) to study.
+
+**Effort**: M  ·  **Risk**: low — surgical writes mean the immutable identity stays intact and the user can always tell the chip was originally a TigerTag.
+
+#### 🔧 Sub-feature E — Sync edits back to chip (write-when-present)  ·  **Effort: S**  ·  **Risk: low**
 The user can already edit TD and color from the spool detail panel today (TD modal + Color modal → Firestore). The chip is **not** updated automatically — instead, the spool gets flagged `needUpdateAt = Date.now()`, a refresh badge appears in the table / grid / detail panel, and a banner offers a "Updated" button which the user clicks **after** re-programming the chip with a separate tool. With the POD, this last step becomes automatic.
 
-Existing infrastructure to reuse (already in `renderer/inventory.js`):
-- `CHIP_FIELDS = ["TD", "online_color_list"]` — list of fields that live on the chip
-- `_saveTdHex()` — sets `needUpdateAt = Date.now()` when a `CHIP_FIELDS` member is included in the update; writes both spools in a single batch when the spool has a twin
-- `chipPendingHint` / `btnChipDone` — banner + clear-flag UX already wired and translated in 9 locales
-- Badges: `chip-badge thumb-chip-badge` (table), `card-chip-badge` (grid), `panel-img-icon-badge` (detail panel hero), `chip-update-banner` (detail panel section)
+♻️ **Reuses (~80% of the UX exists already)**:
+- `inventory.js` L3351 — `CHIP_FIELDS = ["TD", "online_color_list"]` already lists chip-bound fields.
+- `inventory.js` L3358 — `_saveTdHex()` already sets `needUpdateAt = Date.now()` when a `CHIP_FIELDS` member is in the update. Twin-aware (writes both spools in a single batch).
+- `inventory.js` L3263-3294 — existing "Updated" button click handler already does the batch-clear of `needUpdateAt` on spool + twin. The new POD flow just triggers the same code path programmatically.
+- `inventory.js` L572 — `normalizeRow` already exposes `needUpdateAt` on the row shape.
+- `inventory.js` L2852, L2901, L3777, L4068 — existing badges + banner DOM rendering for chip-pending state. Zero CSS work needed.
+- `chipPendingHint` / `btnChipDone` i18n keys — already translated in 9 locales.
+- The `nfc:write-pages` IPC handler from Sub-feature C — same write infrastructure.
 
 What changes with the POD:
 - **Detect-on-slot logic**: when a chip lands on the POD AND `state.rows.find(r.uid==chipUid).needUpdateAt != null`, instead of opening the detail panel, open a **"Sync changes" modal** showing a diff (`color: #6e6e6e → #d83b3b`, `TD: 1.85 → 2.10`) with a single "Apply to chip" button.
@@ -162,9 +189,7 @@ What changes with the POD:
 - **Writable field set**: the spec at [`docs/rfid-vendors/tigertag.md`](docs/rfid-vendors/tigertag.md) suggests we could expand `CHIP_FIELDS` beyond `TD` + `online_color_list` to include `MATERIAL_ID`, `ASPECT1_ID`, `ASPECT2_ID`, `TYPE_ID`, `DIAMETER_ID`. Out of scope for first ship — keep the existing 2-field set, then expand. All these fields live on pages ≥ 6, safely away from the signature.
 - **Signature**: not an issue (see Sub-feature C). The TigerTag+ factory signature is computed only over pages 4-5 (`TAG_ID` + `PRODUCT_ID` — immutable identity), and Sub-feature E never touches those pages. Basic TigerTag chips are unsigned. The signature stays valid through any number of edit cycles.
 
-- **Effort**: S (the UI plumbing exists; only the diff modal + the IPC `nfc:write-fields` handler are new — provided Sub-feature C's write infrastructure is in place).
-- **Risk**: low (read-back verification + transactional clear; same code paths as the existing manual flow).
-- **Dependency**: Sub-feature C (write capability). E can ship the **diff modal + UX** independently and stub the actual write to no-op until C lands; that gives users a clearer "what changed" view today even without the chip-write path.
+**Dependency**: Sub-feature C (write capability). E can ship the **diff modal + UX** independently and stub the actual write to no-op until C lands; that gives users a clearer "what changed" view today even without the chip-write path.
 
 #### 📐 Cross-cutting: POD detection model
 - The app is **not** POD-aware today — it just sees N readers. Detection rule: if the user has ≥ 2 ACR122U readers connected at the same time, surface the "POD mode" UI; otherwise stay in single-reader mode (current behaviour, kept identical).
@@ -211,80 +236,145 @@ interface LiveDriver {
 }
 ```
 
-Three drivers cover most of the universe:
-1. **`drivers/moonraker.js`** — WebSocket on `:7125/websocket`. Snapmaker today; Creality K-series, Wondermaker, generic Klipper all reuse this verbatim.
-2. **`drivers/bambu-mqtt.js`** — MQTTS on `:8883`. Bambu LAN mode + Cloud bridge.
-3. **`drivers/flashforge-http.js`** — HTTP polling on Flashforge's `/control/*` endpoints (AD5X / 5M / 5M Pro).
+##### Rule of Three — no premature `moonraker.js`
+The current Snapmaker code talks Moonraker, but it carries Snapmaker-isms that are NOT generic Moonraker behaviour:
+- `/machine/system_info` filter on `machine_type` containing `"Snapmaker"` (in the LAN scan flow)
+- Filament bottom-sheet wired to U1's 4-extruder layout + Snapmaker material/vendor palette
+- Camera URL pattern (Snapmaker custom WebRTC stream)
+- Per-printer macros for filament load/unload (Snapmaker firmware specific)
 
-A `drivers/index.js` dispatcher routes by `printer.brand` (with a `printer.protocol` override for "generic Klipper" printers that need explicit Moonraker selection).
+Extracting a `drivers/moonraker.js` from a single implementation = textbook leaky abstraction. The implementation looks generic, then breaks when the second Klipper-class printer lands and expects a different camera path / material palette / macro set.
 
-A possible 4th driver later: `drivers/elegoo-mqtt.js` for Centauri — **research-gated** (see F5 below).
+**Discipline**:
+1. **1st impl** (Snapmaker, the existing code) → `drivers/snapmaker.js`. All current behaviour preserved verbatim.
+2. **2nd impl** (e.g. Creality K1) → `drivers/creality-k1.js`. Built in parallel, even if 80% of the code looks like a copy of `snapmaker.js`. We **resist** extracting common parts at this stage.
+3. **3rd impl** (e.g. Wondermaker or generic Klipper) → THEN we have enough comparison points to identify what's truly common, and extract a `drivers/_moonraker-base.js` that the brand drivers compose with.
+
+Cost: ~20% temporary duplication across drivers 1 & 2. Benefit: zero forced re-refactor when the 3rd brand reveals a Snapmaker-only assumption that wasn't visible from the Snapmaker code alone.
+
+##### Driver map (post-3rd-impl factoring)
+| Driver | Protocol | Brands |
+|---|---|---|
+| `drivers/snapmaker.js` | Moonraker WS (`:7125`) + Snapmaker-specifics | Snapmaker (today) |
+| `drivers/creality-k1.js` | Moonraker WS (`:7125`) + Creality-specifics | Creality K-series (new) |
+| `drivers/klipper-generic.js` | Moonraker WS (`:7125`) — assumed-vanilla path | Wondermaker, generic Klipper machines |
+| `drivers/_moonraker-base.js` | shared primitives (WS lifecycle, gcode, status subscribe) | extracted only after 3 implementations exist and the common surface is empirically clear |
+| `drivers/bambu-mqtt.js` | MQTTS on `:8883` | Bambu Lab |
+| `drivers/flashforge-http.js` | HTTP polling on `/control/*` | FlashForge (AD5X / 5M / 5M Pro) |
+
+A `drivers/index.js` dispatcher routes by `printer.brand` (with a `printer.protocol` override for "generic Klipper" printers that need explicit Moonraker selection without being one of the named brands).
+
+A possible 7th driver later: `drivers/elegoo-mqtt.js` for Centauri — **research-gated** (see F5 below).
 
 #### Per-brand status
 
 | Brand | Protocol | Discovery | Driver | Status |
 |---|---|---|---|---|
-| **Snapmaker** | Moonraker WS (`:7125`) | mDNS `_snapmaker._tcp.local.` | `moonraker` | ✅ shipping |
-| **Bambu Lab** | MQTTS (`:8883`) — LAN mode + Cloud bridge | mDNS `_bambu._tcp.local.` (broadcasts model + serial) | `bambu-mqtt` | New driver. Auth = printer access code (printed on the device, user enters once). LAN mode requires "Local print" enabled on the printer. |
-| **Creality K-series** (K1, K1 Max, K2 Plus) | Moonraker WS (`:7125`) | mDNS `_octoprint._tcp.local.` (when present) or hostname-based | `moonraker` | Reuses existing driver. Plug into the Snapmaker codepath via brand-aware connect URL. |
+| **Snapmaker** | Moonraker WS (`:7125`) | mDNS `_snapmaker._tcp.local.` | `snapmaker` | ✅ shipping (lives in `inventory.js` today, extracted to its own driver in F1) |
+| **Bambu Lab** | MQTTS (`:8883`) — LAN mode + Cloud bridge | mDNS `_bambu._tcp.local.` (broadcasts model + serial) | `bambu-mqtt` | New driver. Auth = printer access code (printed on device, user enters once). LAN mode requires "Local print" enabled on the printer. |
+| **Creality K-series** (K1, K1 Max, K2 Plus) | Moonraker WS (`:7125`) | mDNS `_octoprint._tcp.local.` (when present) or hostname-based | `creality-k1` | New driver — built **in parallel** with `snapmaker.js`, even if much of the code looks similar. We resist extracting a shared `_moonraker-base.js` until the 3rd Klipper-class brand lands (Rule of Three above). |
 | **Elegoo Centauri** | MQTTS — Chitu cloud bridge | TBD (research) | `elegoo-mqtt` (research-gated) | Lower priority — research first whether LAN mode exists or if cloud-only. |
 | **FlashForge** (AD5X, 5M, 5M Pro) | HTTP polling on `:8898` for status; WebSocket on `:8899` for live updates on newer firmware | UDP broadcast on `48899` with magic byte | `flashforge-http` | New driver. Less rich than Moonraker (no temperature stream — poll every 2s). |
-| **Generic Klipper / Wondermaker** | Moonraker WS (`:7125`) | mDNS varies; falls back to manual IP | `moonraker` | Reuses existing driver. New brand entry "Klipper machine" with a manual-IP-only flow (auto-discovery is hit-or-miss across Klipper distros). |
+| **Generic Klipper / Wondermaker** | Moonraker WS (`:7125`) | mDNS varies; falls back to manual IP | `klipper-generic` | New driver — at this point we have 3 Klipper-class implementations (Snapmaker + Creality K + Generic) and the empirical common surface is clear, so this is the right moment to extract `_moonraker-base.js`. New brand entry "Klipper machine" with a manual-IP-only flow (auto-discovery is hit-or-miss across Klipper distros). |
 | (Future) Prusa MK4 / MINI | PrusaLink HTTP (`:80`) | mDNS `_prusalink._tcp.local.` | `prusa-http` | Out of scope for first ship; add to the model JSON files later. |
 
 #### Sub-features — recommended ship order
 
-##### F1 — Driver interface extraction *(refactor)*
-- Create `renderer/lib/drivers/index.js` + `moonraker.js`. Move all `snap*` functions out of `inventory.js` into the Moonraker driver. The `renderPrinterDetail()` codepath calls `drivers[printer.brand].getStatus()` instead of `snapMergeStatus()` directly.
-- **Effort**: M  ·  **Risk**: low (zero new functionality, only reshapes existing code; live tests on Snapmaker keep regressions visible).
-- **Win**: code-map for `inventory.js` shrinks by ~1700 lines; new brands plug in cleanly afterwards. Partial down-payment on the long-parked "modularize inventory.js" item.
+##### F1 — Driver interface extraction *(refactor)*  ·  **Effort: M**  ·  **Risk: low**
+Create `renderer/lib/drivers/index.js` + `snapmaker.js`. Move all `snap*` functions out of `inventory.js` into the Snapmaker driver verbatim — no behaviour change. The `renderPrinterDetail()` codepath calls `drivers[printer.brand].getStatus()` instead of `snapMergeStatus()` directly. Result: Snapmaker logic is in its own driver, ready for the 2nd parallel implementation in F2.
 
-##### F2 — Klipper-class enablement *(quick win after F1)*
-- With F1 done, **Creality K-series, Wondermaker, and generic Klipper** light up immediately by reusing the Moonraker driver.
-- For Creality K-series: detect at `/server/info` time whether the host is a Klipper-class device and surface a "Connect via Moonraker" path (some older Creality models run a different stack — fall back to read-only card).
-- For "generic Klipper": brand picker gets a new entry labelled `Klipper machine (generic)`, single field "IP / hostname", no model picker (or a "free text" model field).
-- **Effort**: S each, M for the three combined  ·  **Risk**: low.
+♻️ **Reuses (existing, exploitable)**:
+- `inventory.js` L5557-7216 — the entire `snap*` block. WS lifecycle (`snapConnect` L5640, `snapOpenSocket` L5674, `snapScheduleReconnect` L5767, `snapDisconnect` L5781), status merge (`snapMergeStatus` L5793), gcode (`snapSendGcode` L5932), filament edit bottom-sheet (L5971-6343), Moonraker file/thumbnail helpers (L6344-6486), live block render (`renderSnapmakerLiveInner` L6520), WS request log (L6681-7130).
+- `inventory.js` L8030-8226 — Phase 0/1/2 LAN discovery (mDNS browse + subnet enumeration + port-scan).
+- `inventory.js` L8634-8777 — Add by IP widget.
+- Goes WITH a CODEMAP refresh (the giant `Snapmaker Live` section in `renderer/CODEMAP.md` becomes a 3-line "see drivers/snapmaker.js" stub).
 
-##### F3 — Bambu Lab MQTT driver *(headline feature)*
-- New driver hitting `mqtts://{ip}:8883` with username `bblp`, password = printer access code, topic `device/{serial}/report` for telemetry, `device/{serial}/request` for commands.
-- **Reuses the Snapmaker live block UI** — filament grid, temps, print-job card. Bambu's protocol carries the same shape of data, just under different field names.
-- **Camera**: Bambu uses an RTSP stream — known cross-platform pain point. First ship probably skips camera and shows the "Photo card" fallback. Phase 2 if a JS RTSP→MJPEG bridge proves stable.
-- **Discovery**: mDNS `_bambu._tcp.local.` — reuse the existing `bonjour-service` integration in `main.js`.
-- **Effort**: L  ·  **Risk**: medium (MQTT is well-understood, but Bambu has rolled out sudden firmware changes that broke 3rd-party tools historically — keep the parser defensive).
+**Win**: `inventory.js` loses ~1700 lines, code-map shrinks meaningfully. Partial down-payment on the long-parked *modularize inventory.js* item from the 🌱 Internal section.
 
-##### F4 — FlashForge HTTP driver *(medium reach)*
-- Polling design: every 2s call `/control/getStatus` and equivalent. Newer firmware exposes a WebSocket — opportunistic upgrade after first poll succeeds.
-- Discovery: UDP broadcast on port 48899 with the documented magic packet.
-- Live block: temps + active job. No mid-print filament editing (Snapmaker's bottom-sheet stays a unique capability — Flashforge's HTTP API doesn't expose the equivalent endpoints today).
-- **Effort**: M  ·  **Risk**: low-medium (protocol is documented; friction is FlashForge's mix of firmware versions in the wild).
+##### F2 — Second-impl Klipper-class brand (Creality K-series)  ·  **Effort: L**  ·  **Risk: low-medium**
+Build `drivers/creality-k1.js` **in parallel** with `snapmaker.js`. Even though Moonraker's WS protocol is the same on the wire, **resist extracting a shared base** — the goal is to **discover empirically** what's actually common vs Snapmaker-specific by having two real implementations side-by-side. Expected behaviour deltas (educated guesses, to validate by implementing):
+- Camera URL pattern (Creality K1 has its own MJPEG endpoint; Snapmaker uses WebRTC)
+- `machine_type` filter ("Creality" vs "Snapmaker")
+- Multi-extruder layout (K1 = 1 extruder, K1 Max = 1, K2 Plus = up to 4)
+- Filament macros (K1 ships with `LOAD_FILAMENT` / `UNLOAD_FILAMENT` macros, but the syntax/parameters differ from Snapmaker)
+- Print-job thumbnail location
 
-##### F5 — Elegoo Centauri MQTT driver *(research-gated)*
-- **Decide first**: does Centauri expose a LAN MQTT endpoint, or is everything through Chitu cloud?
-- If LAN MQTT exists: same scope as F3.
+♻️ **Reuses**:
+- `drivers/snapmaker.js` (output of F1) — copy as a starting point, then strip Snapmaker-specifics
+- `inventory.js` brand picker plumbing (`PRINTER_BRANDS` L5130, `PRINTER_BRAND_META` L5217, `openPrinterBrandPicker` L7321) — Creality entry already exists, need to wire the live driver
+- `data/printers/cre_printer_models.json` — model picker data already populated
+- The dual-extraction question: **only after F2 is done and battle-tested**, decide whether to refactor a `_moonraker-base.js` containing the empirically-common parts. Don't decide it before the second implementation ships.
+
+**Note**: F2's effort is **L (not M)** because building a parallel implementation responsibly (testing on a real K1, validating the deltas, wiring the brand picker) is more than mechanical reuse. The discipline of "build twice before extracting" costs effort upfront and pays back at F3+ when there's no leaky-abstraction debt to fix.
+
+##### F2b — Generic Klipper / Wondermaker driver  ·  **Effort: M**  ·  **Risk: low**
+With Snapmaker and Creality K both shipping, build `drivers/klipper-generic.js` for any Klipper printer not specifically wired (manual IP entry, no auto-discovery, no model picker — single "IP / hostname" field).
+
+After this third implementation, perform the **planned extraction**: identify the genuinely common code across all three drivers and lift it into `drivers/_moonraker-base.js`. The three brand drivers become thin specializations that compose the base.
+
+♻️ **Reuses**:
+- `drivers/snapmaker.js` + `drivers/creality-k1.js` — diff them to find the genuinely common parts
+- The result becomes the architectural decision deferred from F1 — backed by 3 concrete data points instead of 1.
+
+##### F3 — Bambu Lab MQTT driver *(headline feature)*  ·  **Effort: L**  ·  **Risk: medium**
+New driver hitting `mqtts://{ip}:8883` with username `bblp`, password = printer access code, topic `device/{serial}/report` for telemetry, `device/{serial}/request` for commands. **Reuses the Snapmaker live block UI** — filament grid, temps, print-job card. Bambu's protocol carries the same shape of data, just under different field names.
+
+♻️ **Reuses**:
+- `inventory.js` L6520-6680 (`renderSnapmakerLiveInner`) — same DOM structure, just feed it the Bambu-derived status object. Most of this can move into a shared "live-block-renderer" helper (rename `renderSnapmakerLiveInner` to something brand-agnostic during F1's refactor).
+- `main.js` `bonjour-service` integration (added in v1.4.8 for Snapmaker mDNS) — works for `_bambu._tcp.local.` with no change.
+- The mDNS UI panels from `inventory.js` L8410+ (`openSnapmakerScan` and friends) — generalize during F6.
+- npm: needs `mqtt` package (well-maintained MQTT client). Check existing `package.json` deps before adding.
+
+**Camera**: Bambu uses an RTSP stream — known cross-platform pain point. First ship probably skips camera and shows the "Photo card" fallback. Phase 2 if a JS RTSP→MJPEG bridge proves stable.
+
+**Bambu firmware risk**: Bambu has rolled out sudden firmware changes that broke 3rd-party tools historically — keep the parser defensive (every field optional, every numeric range-checked).
+
+##### F4 — FlashForge HTTP driver  ·  **Effort: M**  ·  **Risk: low-medium**
+Polling design: every 2s call `/control/getStatus` and equivalent. Newer firmware exposes a WebSocket — opportunistic upgrade after first poll succeeds.
+
+♻️ **Reuses**:
+- Same shared "live-block-renderer" helper extracted in F1
+- `inventory.js` brand picker plumbing — FlashForge entry already in `PRINTER_BRANDS`, `data/printers/ffg_printer_models.json` already populated
+- Discovery: UDP broadcast on port 48899 — needs a small `dgram` socket helper in `main.js` (no existing equivalent; fully new code, ~30 lines)
+
+**Live block scope**: temps + active job. No mid-print filament editing (Snapmaker's bottom-sheet stays a unique capability — Flashforge's HTTP API doesn't expose the equivalent endpoints today).
+
+##### F5 — Elegoo Centauri MQTT driver *(research-gated)*  ·  **Effort: S + L (gated)**  ·  **Risk: high**
+**Decide first**: does Centauri expose a LAN MQTT endpoint, or is everything through Chitu cloud?
+- If LAN MQTT exists: same scope as F3 (~ L of impl).
 - If cloud-only: **out of scope** (the app is local-first; cloud integrations require a different trust model, secrets handling, OAuth flows, …). Park as a separate feature with its own design doc.
-- **Effort**: S (research) + L (impl if LAN exists)  ·  **Risk**: high (unknown reachability).
 
-##### F6 — Brand picker + discovery flow polish
-- Per-brand discovery panels analogous to the Snapmaker scan side panel: mDNS browse, port-scan fallback, "Add by IP" widget. Generic-Klipper gets only "Add by IP" (no auto-discovery).
-- Per-brand settings form — different fields per brand: Bambu wants `ip` + `accessCode` + `serial`, Klipper just wants `ip`, FlashForge `ip` only.
-- **Effort**: M  ·  **Risk**: low.
+♻️ **Reuses** (only if LAN exists):
+- `drivers/bambu-mqtt.js` (output of F3) as a starting point — both are MQTT, payload schemas differ
+- Same `mqtt` npm dep as F3
+
+##### F6 — Brand picker + discovery flow polish  ·  **Effort: M**  ·  **Risk: low**
+Per-brand discovery panels analogous to the Snapmaker scan side panel: mDNS browse, port-scan fallback, "Add by IP" widget. Generic-Klipper gets only "Add by IP" (no auto-discovery).
+
+Per-brand settings form — different fields per brand: Bambu wants `ip` + `accessCode` + `serial`, Klipper just wants `ip`, FlashForge `ip` only.
+
+♻️ **Reuses**:
+- `inventory.js` L8410+ — `openSnapmakerScan` and the entire scan side-panel UI (mDNS phase, port-scan phase, results list, one-click add). Refactor into a generic `openPrinterScan(brand, config)` taking a per-brand config (mDNS service name, scan port, brand-confirm filter, etc.).
+- `inventory.js` L8634-8777 — `openPrinterAddByIp` collapsible widget. Already brand-agnostic in shape; just needs per-brand validation rules.
+- `inventory.js` L7521-8029 — Debug scan journal. Brand-agnostic UI; passes through.
+- `data/printers/<brand>_printer_models.json` — model JSON files already in place for the 5 named brands.
 
 #### 🧮 Total effort
-F1: M  ·  F2: M  ·  F3: L  ·  F4: M  ·  F5: ~S+L (gated)  ·  F6: M → **~XL combined**, ships incrementally:
-- **Quickest win → biggest reach**: F1 → F2 → F6 (Klipper-class brands live with mostly-existing UI)
-- **Headline brand**: F3 (Bambu)
-- **Long tail**: F4 (FlashForge) → F5 (Elegoo, gated on research)
+F1: M  ·  F2: L  ·  F2b: M (includes the deferred `_moonraker-base.js` extraction)  ·  F3: L  ·  F4: M  ·  F5: ~S+L (gated)  ·  F6: M → **~XXL combined**.
+
+The F2 → L bump (vs. the original M estimate) reflects the *Rule of Three* discipline: building a parallel `creality-k1.js` instead of refactoring Snapmaker into a forced abstraction. The cost is real (extra implementation work) but the saving is also real (no leaky-abstraction debt to fix when F2b lands).
 
 #### 🎯 Recommended sequence
-1. **F1** — extract the driver interface (no new functionality, but clears the way and shrinks `inventory.js`)
-2. **F2** — Klipper-class brands light up immediately by reusing the Moonraker driver (Creality K-series, Wondermaker, generic Klipper). Big perceived progress for low effort.
-3. **F6** — brand picker UX cleanup so the new brands are clickable with the right per-brand forms
-4. **F3** — Bambu Lab MQTT (headline feature, biggest user base after Snapmaker)
-5. **F4** — FlashForge HTTP
-6. **F5** — Elegoo Centauri (research first, build only if LAN mode is reachable)
+1. **F1** — extract `drivers/snapmaker.js` from inventory.js (no new functionality, refactor only).
+2. **F2** — second parallel implementation: `drivers/creality-k1.js`. **Resist** any extraction urge; the goal is to discover what's truly common by having two real impls side-by-side.
+3. **F6** — brand picker UX cleanup so the new brands are clickable with the right per-brand forms.
+4. **F2b** — third Klipper-class implementation (`drivers/klipper-generic.js`) + planned extraction of `drivers/_moonraker-base.js` from the empirically-common parts of all three.
+5. **F3** — Bambu Lab MQTT (headline feature, biggest user base after Snapmaker).
+6. **F4** — FlashForge HTTP.
+7. **F5** — Elegoo Centauri (research first, build only if LAN mode is reachable).
 
 #### 📐 Cross-cutting note
-After F1 + F2, the CODEMAP entry for the Snapmaker section will need a rewrite (it'll point to `renderer/lib/drivers/moonraker.js` instead of an inline range in `inventory.js`). Update CODEMAP.md as part of F1's commit.
+After F1, the CODEMAP entry for the Snapmaker section needs a rewrite (it'll point to `renderer/lib/drivers/snapmaker.js` instead of an inline range in `inventory.js`). Update CODEMAP.md as part of F1's commit. The same applies to F2 (add Creality), F2b (add Klipper-generic + base), F3 (add Bambu), F4 (add FlashForge): every driver added bumps the CODEMAP.
 
 ---
 
@@ -347,51 +437,71 @@ Per-protocol implementation:
 
 #### Sub-features by ship phase
 
-##### G1 — Print job control *(safety-critical, biggest user value)*
+##### G1 — Print job control *(safety-critical, biggest user value)*  ·  **Effort: M**  ·  **Risk: medium**
 - **Pause / Resume** — single button that swaps role based on `printer.status`. Disabled when no print active.
-- **Cancel print** — hold-to-confirm 1.5s pattern (same as Delete spool / Recycle TigerTag). Modal with "Are you sure?" + the active filename for clarity.
+- **Cancel print** — hold-to-confirm 1.5s pattern. Modal with "Are you sure?" + the active filename for clarity.
 - **Cooldown all** — sets nozzle + bed (and chamber if supported) to 0. Always available.
-- **Emergency stop** — hold-to-confirm 2.5s (longer than Cancel because it's harder to recover from). Warning copy: "Hardware will halt immediately. Mid-print stop may damage the part or extruder."
-- **Effort**: M  ·  **Risk**: medium (a misclick on Cancel kills the print — hence hold-to-confirm everywhere).
-- **UI**: replaces the current static print-job card header with a controls bar.
+- **Emergency stop** — hold-to-confirm 2.5s. Warning copy: "Hardware will halt immediately. Mid-print stop may damage the part or extruder."
 
-##### G2 — Movement *(homing + jog)*
+♻️ **Reuses**:
+- `inventory.js` L5932 — `snapSendGcode(conn, script)` already wraps Moonraker's `printer.gcode.script`. Pause/Resume/Cancel are one-line calls (`PAUSE`, `RESUME`, `CANCEL_PRINT`). Cooldown = `M104 S0` + `M140 S0`. Emergency = `M112` + `FIRMWARE_RESTART`.
+- `inventory.js` `setupHoldToConfirm()` (L194-240) — exact pattern already used by Delete spool and Recycle. Same CSS, same UX.
+- `inventory.js` L6520+ (`renderSnapmakerLiveInner`) — print-job card header is where the controls bar lands.
+
+##### G2 — Movement *(homing + jog)*  ·  **Effort: M**  ·  **Risk: low-medium**
 - **Home all / X / Y / Z** — disabled mid-print (firmware would refuse anyway, but better UX to grey out the buttons).
 - **Jog axes** — 4-direction pad for X/Y, up/down for Z. Step picker: 0.1 / 1 / 10 / 100 mm (clamped to printer's max-jog config). Optional speed override.
 - **Disable steppers** — for manually moving the bed/head.
-- **Mid-print lockout** — all jog + home disabled, with a tooltip explaining why ("Available when no print is active").
-- **Effort**: M  ·  **Risk**: low-medium (firmware enforces bounds; step-picker clamps values; mid-print lockout is the main UX safety).
-- **UI**: dedicated "Move" sub-section in the printer detail panel, collapsed by default.
+- **Mid-print lockout** — all jog + home disabled, with a tooltip explaining why.
 
-##### G3 — Temperature & filament
-- **Set nozzle / bed / chamber temp** — number inputs with clamps from per-printer config (renderer/`data/printers/<brand>_printer_models.json`). Quick-set chips: PLA (215/60), PETG (240/80), ABS (250/100) — pulled from the existing material lookup tables.
-- **Load / Unload filament** — per-extruder. Confirms target temp is reached before extruding. Default macros tied to the active filament's material when known (Snapmaker bottom-sheet already does this for the filament edit path; reuse the same logic).
+♻️ **Reuses**:
+- `snapSendGcode` again (`G28`, `G91`+`G1 X<step>`, `M84`).
+- `data/printers/<brand>_printer_models.json` model files — needs new `max_jog_speed` / `max_jog_distance` fields for input clamps (soft dependency noted in the "soft dependency" section).
+- Status-aware UI gating — `printer.status` already in the Snapmaker WS subscribe data; just add a `state.printers[id].canMove` derived boolean.
+
+##### G3 — Temperature & filament  ·  **Effort: M**  ·  **Risk: medium**
+- **Set nozzle / bed / chamber temp** — number inputs with clamps from per-printer config. Quick-set chips: PLA (215/60), PETG (240/80), ABS (250/100) — pulled from existing material lookup tables.
+- **Load / Unload filament** — per-extruder. Confirms target temp is reached before extruding. Default macros tied to the active filament's material when known.
 - **Mid-print behaviour**: temp adjustments allowed (live tuning), but load/unload disabled.
-- **Effort**: M  ·  **Risk**: medium (cold extrusion = risk of motor skip / clog if temps not handled correctly — heavy emphasis on the `await targetReached()` step).
-- **UI**: integrates with the existing per-extruder filament cards in the live block.
 
-##### G4 — Live tuning *(during print)*
+♻️ **Reuses**:
+- `inventory.js` L5971-6343 — the Snapmaker filament bottom-sheet already does the temp-and-load dance for filament edits. Extract the "wait for target reached, then run load macro" logic into a reusable helper.
+- `inventory.js` L399-491 — material lookup tables (`materialLabel`, `materialFull`) drive the quick-set chips.
+- `data/id_material.json` — already populated with material names and reference temperatures; quick-set values pull from here.
+- `snapSendGcode` for `M104` / `M140` / `M141` (chamber).
+
+##### G4 — Live tuning *(during print)*  ·  **Effort: S**  ·  **Risk: low**
 - **Print speed factor** — slider 50-200%, sends `M220 S<percent>`. Persists across sessions per printer.
 - **Flow rate** — per-extruder, slider 80-120%, sends `M221`.
 - **Fan speed** — part cooling fan slider 0-100%. Auxiliary fan if the printer reports one.
-- **Effort**: S  ·  **Risk**: low (firmware-bounded values, instantly reversible).
-- **UI**: a "Tuning" expandable strip above the temperature row when a print is active.
 
-##### G5 — Files & macros
-- **File browser** — list `gcode_files/` (Moonraker) or printer-specific roots. Show filename, modtime, est. duration, thumbnail (Moonraker exposes thumbnails via `/server/files/thumbnails`). Reuses the `snapBestThumb` / `snapThumbUrl` helpers already in code.
+♻️ **Reuses**:
+- `snapSendGcode` for `M220` / `M221` / `M106`.
+- `inventory.js` weight-slider auto-save debounce pattern (`_sliderDebounce` at L3290 + CLAUDE.md "Weight slider auto-save" section) — exact same UX (slider + 500ms debounce) for the print-speed and flow sliders. Copy + adapt.
+
+##### G5 — Files & macros  ·  **Effort: L**  ·  **Risk: medium**
+- **File browser** — list `gcode_files/` (Moonraker) or printer-specific roots. Show filename, modtime, est. duration, thumbnail.
 - **Start print from file** — single click + confirm modal showing filename + thumbnail.
 - **Upload G-code** — drag-drop onto the file browser. Requires a free-space check first.
 - **Delete file** — hold-to-confirm.
 - **Custom G-code input** — textarea + Send. History dropdown of last 20 sent commands per printer.
 - **User-defined macros** — saved per printer (Firestore `users/{uid}/printers/{brand}/devices/{id}/macros/{slug}`). Each macro is `{ name, gcode, color, icon? }`. Renders as a row of one-click buttons.
-- **Effort**: L  ·  **Risk**: medium (file APIs vary widely across firmwares; uploads can fail mid-stream and leave half-files).
-- **UI**: dedicated "Files" tab in the printer detail panel.
 
-##### G6 — Multi-tool & advanced
+♻️ **Reuses**:
+- `inventory.js` L6344-6486 — `snapNormalizePath`, `snapJoinPath`, `snapFilenameRel`, `snapBestThumb`, `snapThumbUrl`, `snapFileUrl`. The thumbnail rendering pipeline is fully built — just need to feed it a list of files.
+- `inventory.js` L6720 — `snapSendCustomJson()` already supports custom JSON-RPC — extend to wrap `server.files.list`, `server.files.delete`, `printer.print.start`.
+- `inventory.js` rack drag-drop (L10886+) — drag-drop wiring pattern already established. Reuse for the G-code upload drop zone.
+- The Custom G-code input is essentially the existing `inventory.js` L6720+ debug log "Send" widget promoted to a first-class UI element — already there in debug mode.
+
+##### G6 — Multi-tool & advanced  ·  **Effort: M**  ·  **Risk: low**
 - **Tool selection** — for printers with multiple extruders, a tool picker (T0/T1/T2/…) above the load/unload area. Sends the appropriate `T<n>` before subsequent commands.
 - **Skip current object** — Klipper `SKIP_CURRENT_OBJECT` (with object list browser).
 - **Firmware restart** — `FIRMWARE_RESTART` for Klipper, brand-specific for others. Hold-to-confirm 2.5s.
-- **Effort**: M  ·  **Risk**: low (advanced features — users opting in already know the implications).
+
+♻️ **Reuses**:
+- `snapSendGcode` for everything.
+- `inventory.js` L6618-6680 — Snapmaker's per-extruder filament grid already iterates extruders 0-3 with click handlers. The tool selection chip strip slots in above it with the same pattern.
+- The current Snapmaker WS subscription already includes `extruder.position` and `print_stats.objects` — no additional subscriptions needed.
 
 #### 🛡️ Cross-cutting: safety patterns
 1. **Hold-to-confirm gradients** by danger level:
