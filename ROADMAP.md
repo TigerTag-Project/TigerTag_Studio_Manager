@@ -92,7 +92,69 @@ Grouped by domain. Versions in parentheses are the release that landed the featu
 
 Items where the spec is written and we know roughly how to do it. Ranked by ratio (impact / effort × risk).
 
-### 🥇 Multi-vendor RFID parsers — 7 vendors remaining
+### 🥇 TigerTag POD — dual-reader scan / write / recycle workstation
+
+The TigerTag POD is a desktop hardware unit with **two ACR122U USB NFC readers**. It turns the desktop app into a one-stop tool for the full chip lifecycle — read into inventory, write fresh chips, repurpose chips that are no longer needed.
+
+Today, only **one** reader is supported (single-card detail-panel-open flow). The POD use case requires a richer model: identify which slot fired, treat both slots as a coordinated workstation, and add write/erase capability.
+
+#### 🔧 Sub-feature A — Multi-reader detection
+- **Where**: [`main.js` L153-200](main.js) — `initNFC()` already binds `nfc.on('reader', …)` per reader, but the IPC payload doesn't carry a stable reader id, so the renderer overwrites slot 1 with slot 2 on every `reader-status` message. Fix: include `reader.name` (or a hashed `slotId`) in every IPC payload, and the renderer keeps a `Map<slotId, status>` instead of one global state.
+- **UI**: dual-status pill in the header (`POD slot 1 ✓ · POD slot 2 ✓`) replacing the single `#rfidStatus`.
+- **Persistence**: assign each reader a stable role (`primary` / `secondary`) on first plug-in, persist in `localStorage` keyed by the reader name so the same physical reader keeps the same slot across launches.
+- **Effort**: S
+- **Risk**: low (read-only changes to existing IPC).
+
+#### 🔧 Sub-feature B — Spool scan workflow → inventory
+- **Trigger**: chip detected on either slot. If a matching `state.rows` entry exists → open detail panel (current behaviour, kept).
+- **New**: if the UID is unknown (not yet in Firestore inventory), open a **new "Add spool from scan" sheet** prefilled with the parsed TigerTag fields (TAG_ID, PRODUCT_ID, MATERIAL_ID, ASPECT, TYPE, DIAMETER, color RGB, …). One-click "Add to inventory" writes to `users/{uid}/inventory/{spoolId}`.
+- **Spec**: full byte-layout in [`docs/rfid-vendors/tigertag.md`](docs/rfid-vendors/tigertag.md) — read offsets, field types, lookup table references.
+- **Twin auto-detect**: if a chip is detected on slot 2 within ≤ 5 s of a chip on slot 1, AND both share the same `id_brand` + `id_material` + `id_type` + RGB, propose a "These are twins → link?" inline confirmation. Same atomic batch as the existing manual `linkTwinPair` (renderer/inventory.js L2410-2558) — write `twin_tag_uid` cross-references on both docs.
+- **Effort**: M
+- **Risk**: low (writes are batched + reversible).
+
+#### 🔧 Sub-feature C — Write fresh TigerTag chip
+- **Goal**: blank NTAG → fully-formatted TigerTag chip with brand/material/color/RGB metadata, ready to be put on a new spool.
+- **`nfc-pcsc` API**: supports `reader.write(blockNumber, buffer)` and `reader.transmit(cmd, responseLen)` — raw APDU available. Need to add a new `ipcMain.handle('nfc:write', …)` channel in main.js that takes `(slotId, payloadBytes)`.
+- **UI**: a new "Create chip" wizard in the spool detail panel (visible only when the POD is detected and a blank chip is on slot 2). Steps: pick brand/material/type/diameter → pick color (TD1S sensor, color picker, or copy from another chip) → confirm → write all 4-byte chunks per [tigertag.md](docs/rfid-vendors/tigertag.md). Show a per-page progress bar.
+- **Validation**: read-back-and-compare after write. Refuse to mark the chip as ready if any byte differs.
+- **Open questions**: signing (the spec mentions ECDSA over secp256r1; bytes 80…end are the signature today, OpenRFID doesn't verify but a valid TigerTag chip *should* carry a signed payload). Either skip and write unsigned chips for personal use, or build a small Cloud Function that signs the payload server-side using a TigerTag private key. **Decide before coding.**
+- **Effort**: L
+- **Risk**: medium — chip writes are non-reversible without erase. Need staging tests on disposable NTAGs first.
+
+#### 🔧 Sub-feature D — Recycle TigerTag → plain NFC
+- **Goal**: a chip the user is done with (broken spool, weight depleted, sold) gets repurposed as a normal NFC tag — keychain, badge, business card, URL launcher.
+- **Steps**:
+  1. **Read** — confirm it's a TigerTag (so we don't accidentally erase someone else's tag), and confirm the current Firestore spool is either deleted or has `weight_available <= 0`.
+  2. **Erase** — overwrite user-data pages with `0x00`. (System pages 0–3 stay untouched.)
+  3. **Write NDEF** — a single NDEF record matching the user's choice from a small menu of common types:
+     - 🌐 **Web URL** — `nfc:write-url` with text input (auto-https prefix)
+     - 👤 **vCard** — name, email, phone, company; renders as standard vCard 3.0
+     - 📝 **Plain text** — short note (≤ 100 chars)
+     - 📞 **Tel** — `tel:` URI
+     - ✉️ **Email** — `mailto:` URI with subject/body
+     - 🔗 **Wi-Fi** — SSID + password + auth type (WPA2 default)
+- **Confirmation**: hold-to-confirm 1.5 s pattern (same as Delete spool) before each erase. Show "This action cannot be undone — chip data will be replaced."
+- **Where in code**: new file `renderer/lib/rfid/tigertag-recycle.js` for the byte-level operations, `renderer/lib/rfid/ndef-builder.js` for the NDEF record generation. UI lives in a new "Recycle" tab inside the existing toolbox of the spool detail panel (visible only for empty/deleted spools when a chip is on the POD).
+- **Effort**: M (NDEF record format is well documented + widely implemented).
+- **Risk**: low (erase is pure overwrite, NDEF is standard).
+
+#### 📐 Cross-cutting: POD detection model
+- The app is **not** POD-aware today — it just sees N readers. Detection rule: if the user has ≥ 2 ACR122U readers connected at the same time, surface the "POD mode" UI; otherwise stay in single-reader mode (current behaviour, kept identical).
+- A user-visible toggle in Settings → POD lets them force POD mode even with 1 reader (for testing/debug).
+
+#### 🧮 Total effort
+- A: S, B: M, C: L, D: M → **~XL combined**, but ships incrementally A → B → D → C (write-chip last because of the signing question).
+
+#### 🎯 Recommended sequence
+1. **A — multi-reader IPC fix** (clears the way, no UX surface)
+2. **B — scan → inventory + twin auto-detect** (immediate user value; reuses existing parser + twin-link code)
+3. **D — recycle to NDEF** (popular feature, low risk; useful even before write-chip lands)
+4. **C — write fresh chip** (after the signing question is resolved)
+
+---
+
+### 🥈 Multi-vendor RFID parsers — 7 vendors remaining
 - **Spec**: [`docs/rfid-vendors/NEXT_STEPS.md`](docs/rfid-vendors/NEXT_STEPS.md) is a complete handoff doc — read it first.
 - **What's there**: OpenRFID submodule + 8 self-contained spec sheets. ACR122U reader stack already done.
 - **What's missing**: JS parsers under `renderer/lib/rfid/<vendor>.js`. Only TigerTag is decoded today.
@@ -101,19 +163,19 @@ Items where the spec is written and we know roughly how to do it. Ranked by rati
 - **Effort**: M (Openspool / Anycubic / Elegoo / Qidi each), L (Creality), XL (Bambu, Snapmaker — crypto).
 - **Risk**: low (parsers are pure functions, no UI changes until dispatcher hooks them in).
 
-### 🥈 Firestore Security Rules for `roles` + `Debug` fields
+### 🥉 Firestore Security Rules for `roles` + `Debug` fields
 - **Where**: per [CLAUDE.md L175](CLAUDE.md#debug-mode), the `roles` and `Debug` fields in `users/{uid}` should be writable only via Firebase Admin SDK / Cloud Functions, never by the client. Today's UI toggle is a UX convenience but a malicious client could grant itself `roles: "admin"`.
 - **Action**: add a Firestore Security Rule denying writes to those two fields except by admin SDK. Optionally a Cloud Function exposed to a separate admin tool to flip them.
 - **Effort**: S (rules), M (Cloud Function setup if going that route).
 - **Risk**: medium — bad rule = lockout. Test in Firebase emulator first.
 
-### 🥉 Phase 2 Snapmaker — NFC scan from the printer
+### 🏅 Phase 2 Snapmaker — NFC scan from the printer
 - **Spec**: code at [`renderer/inventory.js` L5542](renderer/inventory.js) leaves a Phase 2 marker: *"manual filament edit ✅, NFC scan, thumbnail metadata."* Manual filament edit shipped in v1.4.8 — what's left is reading filament tags via the printer's own NFC reader (Snapmaker U1 has one) instead of forcing the user to scan via ACR122U.
 - **Approach unknown**: the Moonraker WebSocket likely doesn't expose NFC scan natively — would require a Snapmaker-specific G-code or HTTP endpoint. Research before scoping.
 - **Effort**: L (research-heavy).
 - **Risk**: high — depends on what Snapmaker exposes.
 
-### 🥉 Pre-commit hook extensions
+### 🏅 Pre-commit hook extensions
 - Hook is at `.githooks/pre-commit`. Currently runs only `npm run i18n:check`.
 - **Could add** when the project gains the corresponding tools:
   - `eslint --max-warnings 0` on staged `.js` (project has zero JS lint config today)
@@ -122,7 +184,7 @@ Items where the spec is written and we know roughly how to do it. Ranked by rati
 - **Effort**: S each, but each requires onboarding the corresponding tool first.
 - **Risk**: low.
 
-### 🥉 README screenshots
+### 🎖️ README screenshots
 - README has the line *"Screenshots coming soon"* in the Distribution section.
 - **Action**: capture 4-6 screenshots (inventory, rack view, printer detail, friends modal, login, debug panel) at consistent window sizes, drop into `assets/img/screenshots/`, embed in README.
 - **Effort**: S.
