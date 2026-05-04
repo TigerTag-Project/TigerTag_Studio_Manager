@@ -1,0 +1,1043 @@
+/* ── 30-racks.css — Storage / rack inventory view + drag-drop + unranked panel ── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Racks (storage) — main inventory view mode
+     ═══════════════════════════════════════════════════════════════════ */
+  .inv-rack-view {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 4px 0;
+    /* Take remaining height inside #card-inv (which is overflow:hidden flex:column),
+       and allow internal scrolling when many racks stack vertically. */
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .inv-rack-view.hidden { display: none; }
+  .rv-header { display: flex; gap: 8px; }
+  .rp-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .rp-cta {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 10px 14px;
+    background: var(--primary); border: 1px solid var(--primary); color: #fff;
+    border-radius: 10px; font-size: 13px; font-weight: 600; font-family: inherit;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .rp-cta:hover { background: #f0670d; border-color: #f0670d; }
+  .rp-cta .icon { background: #fff; }
+
+  .rp-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 14px;
+    padding-right: 2px;
+  }
+  .rp-list::-webkit-scrollbar { width: 4px; }
+  .rp-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Single rack card — sized to its content (slot count drives width). */
+  .rp-rack {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    width: fit-content;
+    min-width: 220px;          /* room for the head row even with very narrow racks */
+    flex: 0 0 auto;
+  }
+  .rp-rack-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .rp-rack-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  /* Inline counter — name + "·" + filled/total, all on the same line. The
+     counter dims to muted color so the rack name remains the dominant element. */
+  .rp-rack-name {
+    font-size: 14px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .rp-rack-name-text { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .rp-rack-count { color: var(--muted); font-weight: 400; flex-shrink: 0; }
+  .rp-rack-count-num { color: var(--muted); font-weight: 600; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; }
+  /* Legacy meta line — kept for any other callers, but rack head no longer uses it */
+  .rp-rack-meta { font-size: 11px; color: var(--muted); }
+  .rp-rack-actions { display: flex; gap: 4px; flex-shrink: 0; position: relative; }
+  /* Drag handle on the rack head — left of the name. Subtle by default,
+     amber on hover to invite the user to grab. */
+  .rp-rack-grip {
+    flex-shrink: 0;
+    cursor: grab;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 6px;
+    user-select: none;
+    letter-spacing: -2px;
+    transition: color .15s, background .15s;
+    border-radius: 6px;
+  }
+  .rp-rack-grip:hover { color: var(--primary); background: var(--primary-soft, rgba(249,115,22,.06)); }
+  .rp-rack-grip:active { cursor: grabbing; }
+  /* Source rack visual feedback while dragging */
+  .rp-rack--dragging { opacity: .35; }
+  /* Drop indicators — vertical bar on the left/right edge of the target card */
+  .rp-rack { position: relative; }
+  .rp-rack--drop-before::before,
+  .rp-rack--drop-after::after {
+    content: "";
+    position: absolute;
+    top: 4px; bottom: 4px;
+    width: 3px;
+    background: var(--primary);
+    border-radius: 2px;
+    box-shadow: 0 0 8px var(--primary);
+  }
+  .rp-rack--drop-before::before { left: -8px; }
+  .rp-rack--drop-after::after  { right: -8px; }
+
+  /* "+ Rack" tile shown after the existing rack cards. Sits in the same flex
+     row, hugs its content width, dashed border to look like a placeholder. */
+  .rp-rack-add {
+    /* Sized by JS masonry — pick a sensible default width so the tile reads
+       as a "create new rack" affordance, not a tiny button */
+    width: 220px;
+    min-height: 120px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px;
+    background: transparent;
+    border: 2px dashed var(--border);
+    border-radius: 14px;
+    color: var(--muted);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s, transform .12s;
+  }
+  .rp-rack-add:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-soft, rgba(249,115,22,.06));
+    transform: translateY(-1px);
+  }
+  .rp-rack-add-plus {
+    font-size: 32px; font-weight: 300; line-height: 1;
+  }
+  .rp-rack-add-label {
+    font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .rp-rack-btn {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 8px;
+    cursor: pointer; transition: background .15s;
+  }
+  .rp-rack-btn:hover { background: var(--border); }
+  .rp-rack-btn .icon { background: var(--muted); }
+  .rp-rack-btn:hover .icon { background: var(--text); }
+  .rp-rack-btn--danger:hover { background: var(--danger-soft); }
+  .rp-rack-btn--danger:hover .icon { background: var(--danger); }
+
+  /* Kebab button — fades in on rack hover, fully visible when its menu is open
+     or when the rack is keyboard-focused. Reduces visual noise at rest. */
+  .rp-rack-kebab {
+    opacity: 0;
+    transition: opacity .15s, background .15s;
+  }
+  .rp-rack:hover .rp-rack-kebab,
+  .rp-rack-kebab:focus-visible,
+  .rp-rack-kebab[aria-expanded="true"] {
+    opacity: 1;
+  }
+  .rp-rack-kebab[aria-expanded="true"] {
+    background: var(--border);
+  }
+  .rp-rack-kebab[aria-expanded="true"] .icon { background: var(--text); }
+  /* Floating menu dropped from the kebab. Position is set inline by JS. */
+  .rp-menu {
+    position: fixed;
+    min-width: 180px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.10);
+    padding: 4px;
+    display: flex; flex-direction: column;
+    z-index: 1000;
+    /* Spring-in feel — quick scale + fade */
+    animation: rp-menu-in .14s cubic-bezier(.25, .8, .35, 1.05);
+    transform-origin: top right;
+  }
+  .rp-menu[hidden] { display: none; }
+  @keyframes rp-menu-in {
+    from { opacity: 0; transform: scale(.92) translateY(-4px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .rp-menu-item {
+    position: relative;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: transparent; border: none;
+    border-radius: 6px;
+    color: var(--text);
+    font-family: inherit; font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background .12s;
+    overflow: hidden;   /* clip the hold-progress fill to the rounded corners */
+  }
+  .rp-menu-item:hover { background: var(--surface-2); }
+  .rp-menu-item .icon { background: var(--muted); flex-shrink: 0; position: relative; z-index: 1; }
+  .rp-menu-item:hover .icon { background: var(--text); }
+  .rp-menu-item .rp-menu-label { flex: 1; min-width: 0; position: relative; z-index: 1; }
+  /* Hold-to-confirm variant — fills with the progress bar while pressed.
+     The fill itself is the affordance; no need for an extra label.
+     Icon + label are centered as a group so the action reads as a "button"
+     rather than a list item — emphasises that it's a deliberate action. */
+  .rp-menu-item--hold {
+    justify-content: center;
+    text-align: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .rp-menu-item--hold .rp-menu-label {
+    flex: 0 0 auto;
+  }
+  .rp-menu-item--hold.is-holding { background: var(--surface-2); }
+  .rp-menu-item--hold.is-confirming { background: var(--primary); color: #fff; }
+  .rp-menu-item--hold.is-confirming .icon { background: #fff; }
+  .rp-menu-item--hold.is-confirming.rp-menu-item--danger { background: var(--danger); }
+  /* Make sure the hold-progress overlay sits above the bg but below the label */
+  .rp-menu-item--hold .hold-progress { z-index: 0; opacity: .55; }
+
+  .rp-menu-item--danger { color: var(--danger); }
+  .rp-menu-item--danger .icon { background: var(--danger); }
+  .rp-menu-item--danger:hover { background: var(--danger-soft, rgba(220,38,38,.08)); }
+  .rp-menu-item--danger:hover .icon { background: var(--danger); }
+  .rp-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 6px;
+  }
+
+  /* ── Stats bar (top of the Storage view) ──────────────────────────────── */
+  .rv-stats {
+    flex: 1;
+    display: flex; align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+  }
+  /* "+ New Rack" button — same dimensions as the data stat tiles so the
+     stats bar stays visually uniform. Dashed border to read as a "create"
+     affordance; the "+" plays the role of a number, the label is the unit.
+     Inherits .rv-stat for size + structure, plus a button reset. */
+  button.rv-stat-add {
+    margin: 0;
+    /* Match .rv-stat exactly: same padding so the inner content box has the
+       same height. The 0.5px border delta (1.5 dashed vs 1 solid) is absorbed
+       by box-sizing: border-box → outer height stays identical. */
+    padding: 6px 12px;
+    font: inherit;
+    color: var(--muted);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.2;
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box;
+    background: transparent;
+    border: 1.5px dashed var(--border);
+    flex-shrink: 0;
+    transition: border-color .15s, background .15s, color .15s, transform .12s;
+  }
+  button.rv-stat-add::-moz-focus-inner { border: 0; padding: 0; }
+  button.rv-stat-add:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft, rgba(249,115,22,.06));
+    color: var(--primary);
+    transform: translateY(-1px);
+  }
+  /* The "+" plays the role of a number — must occupy EXACTLY the same line
+     box as a digit (.rv-stat-num is 18px / line-height 1.1), otherwise the
+     tile would render taller than its neighbours and break the row alignment.
+     Thinner weight makes the glyph read as a plus instead of a "1". */
+  .rv-stat-num--plus {
+    font-size: 18px;
+    line-height: 1.1;
+    font-weight: 300;
+    font-family: inherit;
+  }
+  .rv-stat {
+    display: flex; flex-direction: column; justify-content: center;
+    min-width: 64px;
+    padding: 6px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: background .15s, border-color .15s;
+  }
+  .rv-stat--wide { min-width: 160px; flex: 0 1 220px; }
+  /* Slots tile — number and label on a single line, mini progress bar below */
+  .rv-stat--slots .rv-stat-line {
+    display: flex; align-items: baseline; gap: 6px;
+    line-height: 1.1;
+  }
+  .rv-stat-lbl--inline {
+    font-size: 11px;
+    margin-top: 0;
+    text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); font-weight: 600;
+  }
+  .rv-stat--clickable { cursor: pointer; }
+  .rv-stat--clickable:hover {
+    background: var(--surface);
+    border-color: var(--primary);
+  }
+  .rv-stat-num {
+    font-size: 18px; font-weight: 700; color: var(--text);
+    font-family: var(--mono);
+    line-height: 1.1;
+    display: flex; align-items: baseline; gap: 1px;
+  }
+  .rv-stat-num-strong { color: var(--text); }
+  .rv-stat-num-sep    { color: var(--muted); font-weight: 400; opacity: .5; padding: 0 2px; }
+  .rv-stat-num-soft   { color: var(--muted); font-weight: 500; }
+  .rv-stat-lbl {
+    font-size: 10.5px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    margin-top: 1px;
+    white-space: nowrap;       /* keep "NOT STORED" / etc. on a single line */
+    line-height: 1.2;
+  }
+  /* Mini progress bar for the slots cell — shows fill ratio at a glance */
+  .rv-stat-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 5px;
+  }
+  .rv-stat-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width .3s cubic-bezier(.4, 0, .2, 1);
+  }
+  /* Active filter highlight — applied when a stat tile is "selected" to
+     filter the rack view */
+  .rv-stat--active {
+    background: var(--primary-soft, rgba(249,115,22,.10));
+    border-color: var(--primary);
+  }
+  .rv-stat--active .rv-stat-lbl,
+  .rv-stat--active .rv-stat-num { color: var(--primary); }
+
+  /* Permanent orange tint for the "not stored" tile — distinguishes it from
+     the neutral data tiles (racks/slots/empty/locked) since it represents
+     spools that need attention. The element is a <div> (same as Locked) with
+     role=button so its box model is identical to the other tiles.
+     Layout switches to a row (body on the left, chevron on the right) to make
+     room for an affordance hinting that clicking opens a side panel. */
+  .rv-stat--orange {
+    background: rgba(249,115,22,.10);
+    border-color: rgba(249,115,22,.45);
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .rv-stat--orange .rv-stat-body {
+    display: flex; flex-direction: column;
+    flex: 1; min-width: 0;
+  }
+  /* Chevron always points RIGHT — purely an affordance hint that the tile
+     opens a side panel. Color flips to white when the panel is open so it
+     stays readable on the saturated orange background. */
+  .rv-stat-chev {
+    flex-shrink: 0;
+    background: var(--primary);
+    transition: background .15s;
+  }
+  .rv-stat--orange.rv-stat--active .rv-stat-chev {
+    background: #fff;
+  }
+  .rv-stat--orange .rv-stat-num,
+  .rv-stat--orange .rv-stat-lbl { color: var(--primary); }
+  .rv-stat--orange:hover {
+    background: rgba(249,115,22,.18);
+    border-color: var(--primary);
+  }
+  /* When the panel is open, intensify the orange so the toggle reads as ON */
+  .rv-stat--orange.rv-stat--active {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .rv-stat--orange.rv-stat--active .rv-stat-num,
+  .rv-stat--orange.rv-stat--active .rv-stat-lbl { color: #fff; }
+
+  /* ── Drop-zone visibility while dragging a spool ──────────────────────── */
+  /* When body.is-dragging-spool is set, paint the rack to make targets clear:
+       - empty unlocked slots: pulse + colored dashed bg → "drop here"
+       - filled slots: stay normal (drop = swap is valid)
+       - locked slots: dim red so they read as forbidden */
+  body.is-dragging-spool .rp-slot:not(.rp-slot--filled):not(.rp-slot--locked) {
+    border-color: rgba(249,115,22,.55);
+    background: var(--primary-soft, rgba(249,115,22,.06));
+    animation: rp-slot-pulse 1.6s ease-in-out infinite;
+  }
+  /* Subtle pulse — kept low-contrast so the actively-hovered slot pops above */
+  @keyframes rp-slot-pulse {
+    0%, 100% { background: rgba(249,115,22,.04); }
+    50%      { background: rgba(249,115,22,.12); }
+  }
+  body.is-dragging-spool .rp-slot--locked {
+    opacity: .35;
+  }
+  body.is-dragging-spool .rp-rack { transition: box-shadow .15s; }
+
+  /* ── Bounce-in for newly placed slots ─────────────────────────────────── */
+  /* Triggered by .rp-slot--just-placed — scale 0.6 → 1.08 → 1.0 with a soft
+     overshoot. Stripped after ~400ms so it doesn't replay on next render. */
+  @keyframes rp-slot-bounce-in {
+    0%   { transform: scale(.6); opacity: 0; }
+    60%  { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .rp-slot--just-placed {
+    animation: rp-slot-bounce-in .32s cubic-bezier(.34, 1.6, .64, 1) both;
+  }
+
+  /* ── Cascade-out for emptyRack (each slot flies toward the unranked panel) */
+  /* The unranked panel sits to the right, so we slide right + fade as the
+     spool "leaves" the rack. JS sets animationDelay per slot for the stagger. */
+  @keyframes rp-slot-cascade-out {
+    0%   { transform: translateX(0) scale(1); opacity: 1; }
+    50%  { transform: translateX(20px) scale(.9); opacity: .6; }
+    100% { transform: translateX(80px) scale(.4); opacity: 0; }
+  }
+  .rp-slot--cascade-out {
+    animation: rp-slot-cascade-out .28s cubic-bezier(.4, 0, .8, .4) forwards;
+    pointer-events: none;
+  }
+
+  /* ── Rich hover tooltip for filled rack slots ─────────────────────────
+     Floating bubble showing brand / material / color / weight bar / UID
+     for the spool under the cursor. Singleton element appended to <body>.
+     Positioned above the slot by JS (or below if no room). */
+  #rackHoverTip {
+    position: fixed;
+    z-index: 1000;
+    min-width: 220px;
+    max-width: 280px;
+    padding: 10px 12px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.10);
+    font-size: 12px;
+    line-height: 1.35;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .12s, transform .14s cubic-bezier(.34, 1.4, .64, 1);
+  }
+  #rackHoverTip.is-open {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  #rackHoverTip .rht-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 8px;
+  }
+  /* Mini puck preview — same proportion as the rack slots */
+  #rackHoverTip .rht-puck {
+    width: 22px;
+    aspect-ratio: 3 / 5;
+    flex-shrink: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,.12);
+    background: rgba(150,150,150,.12);
+    position: relative; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+  }
+  #rackHoverTip .rht-puck-fill {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background-size: cover; background-position: center;
+  }
+  #rackHoverTip .rht-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  #rackHoverTip .rht-brand {
+    font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #rackHoverTip .rht-mat {
+    color: var(--muted); font-size: 11.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #rackHoverTip .rht-coord {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 11px; font-weight: 700;
+    color: var(--primary);
+    background: var(--primary-soft, rgba(249,115,22,.10));
+    border: 1px solid rgba(249,115,22,.4);
+    padding: 2px 6px;
+    border-radius: 5px;
+  }
+  #rackHoverTip .rht-weight { margin: 6px 0; }
+  #rackHoverTip .rht-weight-line {
+    display: flex; align-items: baseline; gap: 4px;
+    font-family: var(--mono); font-size: 11.5px;
+    margin-bottom: 4px;
+  }
+  #rackHoverTip .rht-weight-cur { font-weight: 700; color: var(--text); }
+  #rackHoverTip .rht-weight-sep { color: var(--muted); opacity: .5; }
+  #rackHoverTip .rht-weight-cap { color: var(--muted); }
+  #rackHoverTip .rht-weight-pct {
+    margin-left: auto;
+    font-weight: 600;
+    color: var(--primary);
+  }
+  #rackHoverTip .rht-weight-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #rackHoverTip .rht-weight-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  #rackHoverTip .rht-meta {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: 10.5px;
+  }
+  #rackHoverTip .rht-meta-k { color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  #rackHoverTip .rht-meta-v { color: var(--text); }
+  #rackHoverTip .rht-locked {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 6px;
+    color: rgb(217, 119, 6);
+    font-size: 11px;
+  }
+  #rackHoverTip .rht-locked .icon { background: rgb(217, 119, 6); }
+
+  /* ── Stat-bar highlight: glow ring around matching slots when a stat tile
+     ("empty" / "locked") is selected. Self-fading pulse so it draws the eye
+     without becoming permanently distracting. */
+  @keyframes rp-slot-highlight-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(249,115,22,.55), 0 0 8px rgba(249,115,22,.5); }
+    50%      { box-shadow: 0 0 0 3px rgba(249,115,22,.85), 0 0 14px rgba(249,115,22,.85); }
+  }
+  .rp-slot--highlight {
+    animation: rp-slot-highlight-pulse 1.6s ease-in-out infinite;
+    z-index: 2;
+  }
+
+  /* Grid */
+  .rp-grid { display: flex; flex-direction: column; gap: 6px; }
+  .rp-row {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);   /* shelf line */
+  }
+  .rp-row:last-child { padding-bottom: 0; border-bottom: none; }
+  /* Coordinate labels (shelf letter A,B,C / slot number 1,2,3) — hidden by
+     default to reduce visual noise, revealed contextually:
+       - on rack hover (so the user can find a coord by mousing over the rack)
+       - while a spool is being dragged (so the user can aim precisely)
+     Tooltips on each slot still expose [B3] etc. on hover individually. */
+  .rp-row-label {
+    width: 18px; flex-shrink: 0; text-align: right;
+    font-size: 11px; font-weight: 700; color: var(--muted); font-family: var(--mono);
+    opacity: 0;
+    text-transform: uppercase;
+    transition: opacity .18s;
+  }
+  /* Column number header — sits above the first shelf, no border, no padding */
+  .rp-row--header {
+    padding-bottom: 4px;
+    border-bottom: none;
+    /* Collapse the row when coordinates are hidden so the rack is more compact */
+    height: 0;
+    overflow: hidden;
+    padding-top: 0;
+    margin-bottom: 0;
+    transition: height .18s, padding-top .18s;
+  }
+  .rp-row--header .rp-col-label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    font-family: var(--mono);
+    text-align: center;
+    opacity: 0;
+    line-height: 1;
+    transition: opacity .18s;
+  }
+  /* Reveal coordinates: rack hover OR while dragging a spool anywhere */
+  .rp-rack:hover .rp-row-label,
+  body.is-dragging-spool .rp-row-label {
+    opacity: .65;
+  }
+  .rp-rack:hover .rp-row--header,
+  body.is-dragging-spool .rp-row--header {
+    height: 14px;
+    padding-top: 0;
+  }
+  .rp-rack:hover .rp-row--header .rp-col-label,
+  body.is-dragging-spool .rp-row--header .rp-col-label {
+    opacity: .55;
+  }
+  .rp-row-slots {
+    flex: 1; display: grid;
+    /* Fixed-width tracks → slots stay small and box-like even on wide columns.
+       The number of tracks is driven by --slots set inline per row. */
+    grid-template-columns: repeat(var(--slots, 8), 32px);
+    gap: 4px;
+    justify-content: start;
+  }
+  .rp-slot {
+    /* Vertical rectangle — simulates a filament spool box seen from the front
+       (boxes are ~60% as wide as they are tall, see physical-rack reference). */
+    aspect-ratio: 3 / 5;
+    border: 1.5px dashed var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+    transition: border-color .15s, background .15s;
+  }
+  .rp-slot:hover { border-color: var(--primary); background: var(--primary-soft); }
+  /* Inner fill = the actual spool color (mono / gradient / conic) at the
+     correct height matching remaining-weight %. Slot stays the "container". */
+  .rp-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background-size: cover;
+    background-position: center;
+    transition: height .35s cubic-bezier(.4,0,.2,1);
+  }
+  /* Depleted-spool visual cue: a thin colored strip at the bottom (so the
+     spool's color is still hinted at) + a faded "0g" tag centered on the
+     slot. Without this, a 0g spool's .rp-fill has height:0 → looks
+     identical to an empty slot. */
+  .rp-fill--depleted {
+    height: 6px !important;
+    opacity: .35;
+    bottom: 0;
+  }
+  .rp-fill-empty-tag {
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 9px; font-weight: 700;
+    color: rgba(0,0,0,.45);
+    letter-spacing: .04em;
+    pointer-events: none;
+    text-shadow: 0 0 2px rgba(255,255,255,.7);
+  }
+
+  /* Filled slot — uses the .rp-fill child to render color + fill level */
+  .rp-slot--filled {
+    border-style: solid;
+    border-color: rgba(0,0,0,.12);
+    background: rgba(150,150,150,.12);   /* the "empty" portion above the fill */
+    cursor: grab;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+    transition: transform .12s, box-shadow .15s;
+  }
+  .rp-slot--filled:hover {
+    transform: translateY(-1px);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 4px 10px rgba(0,0,0,.12);
+  }
+  .rp-slot--filled:active { cursor: grabbing; }
+  /* Read-only mode (friend view) — slots are clickable but not draggable;
+     side-rows + slots use the default pointer cursor instead of grab. */
+  #invRackView.is-read-only .rp-slot--filled,
+  #invRackView.is-read-only .rp-side-row {
+    cursor: pointer;
+  }
+  #invRackView.is-read-only .rp-slot--filled:active,
+  #invRackView.is-read-only .rp-side-row:active {
+    cursor: pointer;
+  }
+  /* ── Active drop target — the slot the cursor is hovering over RIGHT NOW.
+     Must clearly stand out from the ambient "drop-zone" pulse so the user
+     knows where the spool will land if they release the mouse. */
+  .rp-slot--drop {
+    /* Cancel the body.is-dragging-spool pulse on this specific slot */
+    animation: none !important;
+    /* Solid orange ring + glow + slight pop */
+    border-style: solid !important;
+    border-color: var(--primary) !important;
+    background: var(--primary-soft) !important;
+    box-shadow:
+      0 0 0 3px var(--primary),
+      0 0 0 6px rgba(249,115,22,.25),
+      0 6px 18px rgba(249,115,22,.45) !important;
+    transform: scale(1.12);
+    z-index: 3;
+    transition: transform .12s cubic-bezier(.34, 1.6, .64, 1),
+                box-shadow .12s, border-color .12s;
+  }
+  /* Filled slot being hovered → swap target. Same ring/glow but keep the
+     existing fill visible so the user sees what they're swapping with. */
+  .rp-slot--filled.rp-slot--drop {
+    background: rgba(150,150,150,.12) !important;   /* preserve original empty bg */
+  }
+  /* Add a "swap" arrow indicator on filled drop targets so the user knows it
+     swaps rather than overwrites. */
+  .rp-slot--filled.rp-slot--drop::before {
+    content: "⇄";
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 16px; font-weight: 700;
+    text-shadow: 0 0 4px rgba(0,0,0,.7), 0 0 8px rgba(0,0,0,.5);
+    z-index: 4;
+    pointer-events: none;
+    animation: rp-drop-arrow-in .14s ease-out;
+  }
+  @keyframes rp-drop-arrow-in {
+    from { opacity: 0; transform: scale(.6); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .rp-slot--drop-deny {
+    animation: none !important;
+    border-style: solid !important;
+    border-color: var(--danger) !important;
+    background: var(--danger-soft, rgba(220,38,38,.18)) !important;
+    box-shadow:
+      0 0 0 3px var(--danger),
+      0 0 12px rgba(220,38,38,.5) !important;
+    cursor: not-allowed;
+    transform: scale(1.05);
+    z-index: 3;
+  }
+  .rp-dragging  { opacity: .35; }
+
+  /* Search dim — applied to filled rack slots that don't match the query.
+     The slot stays in place but loses color saturation and most opacity, so
+     the matching slots visually pop. */
+  .rp-slot--filled.rp-dim {
+    opacity: .18;
+    filter: grayscale(.85);
+    transition: opacity .15s, filter .15s;
+  }
+  .rp-slot--filled.rp-dim:hover { opacity: .4; }   /* hint that it's still there */
+
+  /* Search-match indicator on the slot CONTAINER — makes the slot stand
+     out via a border+glow on the box itself, NOT via the inner color fill.
+     This is critical for depleted spools (.rp-fill height ~ 0): the slot's
+     box still glows in orange so the user sees it when they search. */
+  .rp-slot--filled.rp-slot--match {
+    border-color: var(--primary) !important;
+    box-shadow:
+      0 0 0 2px rgba(249,115,22,.55),
+      0 0 8px rgba(249,115,22,.55),
+      inset 0 0 0 1px rgba(255,255,255,.28);
+    z-index: 2;
+    animation: rp-slot-match-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes rp-slot-match-pulse {
+    0%, 100% { box-shadow:
+      0 0 0 2px rgba(249,115,22,.55),
+      0 0 8px rgba(249,115,22,.55),
+      inset 0 0 0 1px rgba(255,255,255,.28); }
+    50%      { box-shadow:
+      0 0 0 3px rgba(249,115,22,.85),
+      0 0 14px rgba(249,115,22,.85),
+      inset 0 0 0 1px rgba(255,255,255,.28); }
+  }
+
+  /* Locked slot — solid amber tint + small lock badge top-right.
+     Right-click toggles the lock (handled in JS). */
+  .rp-slot--locked {
+    border-style: solid !important;
+    border-color: rgba(217, 119, 6, .55) !important;
+    box-shadow: inset 0 0 0 1px rgba(217, 119, 6, .25);
+    cursor: not-allowed !important;
+  }
+  .rp-slot--filled.rp-slot--locked { cursor: not-allowed; }
+  /* Lock icon — centered over the slot via SVG mask. Subtle drop-shadow
+     so it stays readable over both empty and filled (colored) slots. */
+  .rp-slot--locked::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    background-color: rgb(217, 119, 6);
+    -webkit-mask-image: url('../../assets/svg/icons/icon_lock.svg');
+            mask-image: url('../../assets/svg/icons/icon_lock.svg');
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    -webkit-mask-position: center; mask-position: center;
+    filter: drop-shadow(0 0 2px rgba(255,255,255,.85));
+    pointer-events: none;
+  }
+  /* On filled slots the cadena should pop above the colored fill */
+  .rp-slot--filled.rp-slot--locked::after {
+    background-color: #fff;
+    filter: drop-shadow(0 0 3px rgba(0,0,0,.55));
+  }
+
+  /* Ghost variant of the rack-view CTA — used by "Auto-fill" */
+  .rp-cta--ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .rp-cta--ghost:hover {
+    background: var(--surface-2);
+    border-color: var(--primary);
+  }
+  .rp-cta--ghost .icon { background: var(--text); }
+  .rp-cta:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ──────────────────────────────────────────────────────────────────
+     Racks fill the full width — the unranked panel is a slide-in
+     ────────────────────────────────────────────────────────────────── */
+  .rp-racks-col {
+    /* Tight masonry — children are absolutely-positioned by JS using a
+       skyline-packing algorithm so each rack hugs its natural width AND
+       is placed at the lowest available position. CSS only sets the
+       container as a positioning context. JS handles the rest. */
+    position: relative;
+    min-width: 0;
+  }
+  .rp-racks-col > .rp-rack,
+  .rp-racks-col > .rp-rack-add {
+    /* JS sets position/left/top — no CSS margins (we use explicit gaps in JS) */
+    margin: 0;
+  }
+  /* Slide-in unranked-spools panel — positioned fixed on the right edge,
+     hidden off-screen by default, slides in via .is-open. NO overlay
+     backdrop so the user keeps drag/drop on the racks behind. */
+  .rp-side {
+    position: fixed;
+    top: 8px; right: 0; bottom: 8px;
+    width: min(320px, 92vw);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-right: none;
+    border-top-left-radius: 14px; border-bottom-left-radius: 14px;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+    z-index: 30;                   /* above content, below modals */
+    transform: translateX(100%);
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+    box-shadow: -8px 0 24px rgba(0,0,0,.12);
+  }
+  .rp-side.is-open { transform: translateX(0); }
+  /* While dragging a spool out of the panel, slide it off-screen so the racks
+     behind become available as drop targets. The persistent open/close state
+     is left untouched — the panel slides back in on dragend. */
+  .rp-side.is-open.is-dragging { transform: translateX(100%); }
+  /* Close button in the panel head */
+  .rp-side-close {
+    margin-left: auto;
+    width: 26px; height: 26px;
+    background: transparent; border: none; border-radius: 6px;
+    color: var(--muted); font-size: 14px; line-height: 1;
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .rp-side-close:hover { background: var(--border); color: var(--text); }
+
+  /* Header toggle — pill button with count badge */
+  .rp-toggle-count {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 6px; margin-left: 4px;
+    background: var(--primary); color: #fff;
+    border-radius: 9px;
+    font-size: 11px; font-weight: 700;
+  }
+  .rp-side-head {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .rp-side-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .rp-side-count {
+    background: var(--primary); color: #fff;
+    border-radius: 10px; padding: 1px 8px;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;     /* badge sits before the title — push close button to the right via the title's flex */
+  }
+  .rp-side-title { flex: 1; min-width: 0; }
+  /* Auto storage / Auto unstorage toggles inside the "Spools not stored"
+     panel. The two opposing policies live together in a single bordered
+     card with a thin divider between them, so the user reads them as a
+     paired automation choice. */
+  .rp-side-auto-card {
+    display: flex; flex-direction: column;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .rp-side-auto-card .rp-side-toggle + .rp-side-toggle {
+    border-top: 1px solid var(--border);
+  }
+  .rp-side-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .rp-side-toggle-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .rp-side-toggle-title { font-size: 12px; font-weight: 600; color: var(--text); }
+  .rp-side-toggle-sub   { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+  .rp-side-search { position: relative; flex-shrink: 0; }
+  .rp-side-search .icon {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: var(--muted); pointer-events: none;
+  }
+  .rp-side-search input {
+    width: 100%; padding: 7px 30px 7px 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: 12px;
+    font-family: inherit; outline: none;
+    transition: border-color .15s;
+  }
+  .rp-side-search input:focus { border-color: var(--primary); }
+  .rp-side-list {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 6px;
+    padding-right: 2px;
+  }
+  .rp-side-list::-webkit-scrollbar { width: 4px; }
+  .rp-side-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .rp-side-list--drop,
+  .rp-unranked-strip--drop {                  /* legacy id-target compat */
+    outline: 2px dashed var(--primary);
+    outline-offset: -4px;
+    border-radius: 10px;
+    background: var(--primary-soft);
+  }
+  .rp-unranked-empty {
+    text-align: center;
+    padding: 18px 10px;
+    font-size: 12px; color: var(--muted);
+  }
+  /* Single unranked-spool row — horizontal: puck + name + weight */
+  .rp-side-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: grab;
+    transition: border-color .15s, background .15s, transform .12s;
+  }
+  .rp-side-row:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    transform: translateX(-1px);
+  }
+  .rp-side-row:active { cursor: grabbing; }
+  .rp-side-puck {
+    /* Match the rack-slot dimensions exactly: 32px wide, 3/5 aspect → ~53px
+       tall. Visually consistent with what the user sees inside the racks, so
+       a glance recognises the same "spool box" shape in both views. */
+    width: 32px;
+    aspect-ratio: 3 / 5;
+    flex-shrink: 0;
+    border-radius: 5px;
+    border: 1.5px solid rgba(0,0,0,.12);
+    background: rgba(150,150,150,.12);
+    position: relative; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+  }
+  .rp-side-meta {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .rp-side-name {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rp-side-sub {
+    font-size: 10.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rp-side-w {
+    font-size: 11px; font-weight: 600; color: var(--text);
+    flex-shrink: 0; font-family: var(--mono);
+    text-align: right;
+  }
+  .rp-side-w-unit {
+    display: block; font-size: 9px; font-weight: 500;
+    color: var(--muted); margin-top: 1px;
+  }
+
+  /* "Frame" wrapper around the slots — gives a slight inset to suggest the
+     metal frame of a physical rack. */
+  /* Inner frame — kept as a layout wrapper so future tweaks (padding, gap) can
+     target the slot area without affecting the rack head. No visual chrome
+     anymore: the surrounding rack card already provides the container, an
+     inner frame just adds noise. */
+  .rp-frame {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  /* Chip = a draggable spool puck (legacy — used in older code paths) */
+  .rp-chip {
+    aspect-ratio: 3 / 5;
+    border-radius: 5px;
+    border: 1.5px solid rgba(0,0,0,.12);
+    background: rgba(150,150,150,.12);
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+    transition: transform .12s, box-shadow .15s;
+  }
+  .rp-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 4px 10px rgba(0,0,0,.12);
+  }
+  .rp-chip:active { cursor: grabbing; }
+
+  /* Empty state — shown when the user has no rack yet. Photo of a real
+     filament rack to suggest what Storage is for. */
+  .rp-empty {
+    text-align: center;
+    padding: 28px 18px 32px;
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    background: var(--surface-2);
+    width: 100%;
+  }
+  .rp-empty-img {
+    display: block;
+    max-width: 220px;
+    width: 60%;
+    height: auto;
+    margin: 0 auto 16px;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,.18));
+    opacity: .92;
+  }
+  /* legacy icon variant — kept for backwards compat in case someone calls it */
+  .rp-empty-icon {
+    width: 48px; height: 48px; margin: 0 auto 12px;
+    background: var(--primary-soft, rgba(249,115,22,.1));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rp-empty-icon .icon { background: var(--primary); }
+  .rp-empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .rp-empty-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; max-width: 320px; margin: 0 auto; }
+  .rp-empty-cta {
+    margin: 18px auto 0;
+    display: inline-flex;       /* override .rp-cta which is inline-flex but inherits centering from parent */
+  }
+

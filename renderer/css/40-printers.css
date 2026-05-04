@@ -1,0 +1,1786 @@
+/* ── 40-printers.css — Printers list view + add/scan/manual modals + side panel ── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Printers view — read-only listing of users/{uid}/printers/{brand}/devices
+     ═══════════════════════════════════════════════════════════════════ */
+  .inv-printer-view {
+    display: flex; flex-direction: column; gap: 18px;
+    padding: 4px 0;
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .inv-printer-view.hidden { display: none; }
+
+  .printers-header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 4px 2px 0;
+  }
+  .printers-h3 {
+    margin: 0 0 4px; font-size: 18px; font-weight: 600; color: var(--text);
+  }
+  .printers-sub {
+    margin: 0; font-size: 13px; color: var(--muted);
+  }
+
+  .printers-section {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .printers-section-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 2px;
+  }
+  .printers-section-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    box-shadow: 0 0 0 3px rgba(0,0,0,.04);
+  }
+  .printers-section-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    letter-spacing: .2px;
+  }
+  .printers-section-count {
+    font-size: 12px; color: var(--muted);
+    background: var(--surface-2);
+    padding: 1px 8px; border-radius: 999px;
+    font-weight: 500;
+  }
+
+  .printers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  /* Flat, single-grid mode (used after the brand-grouping was removed —
+     the user owns the ordering via drag & drop, and sortIndex is the
+     single source of truth across all brands). */
+  .printers-grid--flex {
+    display: flex; flex-wrap: wrap; gap: 12px;
+  }
+  .printers-grid--flex .printer-card {
+    flex: 0 1 240px;
+  }
+  .printer-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 14px 14px 26px;
+    display: flex; flex-direction: column; gap: 6px;
+    transition: border-color .15s, transform .05s, box-shadow .15s, opacity .15s;
+    position: relative;
+  }
+
+  /* Card thumbnail — printer photo from data/printers/<brand>_printer_models.json */
+  .printer-card-thumb {
+    width: 100%;
+    height: 110px;
+    background: var(--surface-2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .printer-card-thumb img {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  /* ── Drag handle (left edge of every card) ────────────────────────── */
+  .printer-card-drag {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 18px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: grab;
+    color: var(--muted);
+    opacity: .4;
+    transition: opacity .15s, background .15s;
+    border-radius: 14px 0 0 14px;
+  }
+  .printer-card:hover .printer-card-drag { opacity: 1; }
+  .printer-card-drag:hover { background: var(--surface-2); }
+  .printer-card-drag:active { cursor: grabbing; }
+  /* Six-dot grip rendered as two columns of three radial dots. */
+  .printer-card-drag-dots {
+    display: block; width: 7px; height: 14px;
+    background-image:
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px),
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px),
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px),
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px),
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px),
+      radial-gradient(circle, currentColor 1.1px, transparent 1.6px);
+    background-size: 3px 3px;
+    background-repeat: no-repeat;
+    background-position:
+      0 0, 0 5px, 0 10px,
+      4px 0, 4px 5px, 4px 10px;
+  }
+
+  /* ── Drag-and-drop visual states ──────────────────────────────────── */
+  .printer-card--dragging {
+    opacity: .35;
+    border-color: var(--primary);
+  }
+  /* Drop indicator — a vertical (or horizontal) blue bar on the side
+     where the dragged card will land. Drawn via box-shadow so we don't
+     need an extra DOM element and don't shift layout on hover. */
+  .printer-card--drop-before {
+    box-shadow: -3px 0 0 0 var(--primary);
+  }
+  .printer-card--drop-after {
+    box-shadow: 3px 0 0 0 var(--primary);
+  }
+  /* Mirror to top/bottom if the layout becomes single-column (mobile). */
+  @media (max-width: 480px) {
+    .printer-card--drop-before { box-shadow: 0 -3px 0 0 var(--primary); }
+    .printer-card--drop-after  { box-shadow: 0  3px 0 0 var(--primary); }
+  }
+  .printer-card:hover {
+    border-color: var(--border-strong, #d0d4dc);
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  }
+  .printer-card--active {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary), 0 4px 14px rgba(0,0,0,.06);
+  }
+  .printer-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+  .printer-brand-pill {
+    display: inline-flex; align-items: center;
+    padding: 2px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    color: #fff; background: var(--brand-accent, #888);
+    letter-spacing: .2px;
+  }
+  .printer-active-badge {
+    font-size: 10px; font-weight: 700;
+    color: var(--primary);
+    background: rgba(56, 110, 207, .12);
+    padding: 2px 8px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .printer-card-name {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .printer-card-model {
+    font-size: 12px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .printer-card-foot {
+    margin-top: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  .printer-card-conn {
+    background: var(--surface-2);
+    padding: 2px 8px; border-radius: 6px;
+    font-weight: 500;
+  }
+  .printer-card-updated {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex-shrink: 1; min-width: 0;
+  }
+
+  .printers-empty-card {
+    margin: 24px auto;
+    max-width: 460px;
+    padding: 32px 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    text-align: center;
+  }
+  .printers-empty-card .icon {
+    background: var(--muted);
+    margin-bottom: 4px;
+  }
+  .printers-empty-title {
+    font-size: 16px; font-weight: 600; color: var(--text);
+  }
+  .printers-empty-sub {
+    font-size: 13px; color: var(--muted);
+    line-height: 1.5;
+  }
+  .printers-empty-bullets {
+    list-style: none; padding: 0; margin: 12px 0 0;
+    text-align: left;
+    width: 100%;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .printers-empty-bullets li {
+    position: relative;
+    padding-left: 18px;
+    font-size: 12px; color: var(--muted);
+    line-height: 1.5;
+  }
+  .printers-empty-bullets li::before {
+    content: "•";
+    position: absolute; left: 4px; top: 0;
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  /* Visual cue when a dragged spool hovers an empty area of the rack
+     view — drop here to unassign / send to the unranked panel. Soft
+     amber glow so it reads as "drop = remove from rack" without
+     looking destructive (the actual delete uses a red trash button
+     elsewhere). */
+  #invRackView.rp-view--drop-void {
+    box-shadow: inset 0 0 0 2px rgba(234, 179, 8, .35);
+    transition: box-shadow .12s ease;
+  }
+
+  /* (Custom eject-ghost / receiving-pulse animations removed — the
+     void-drop now reuses the existing rp-slot-cascade-out keyframe
+     for the source slot and flags the spool with `--just-placed` so
+     it bounces in at its new home in the unranked panel, matching
+     the existing auto-fill / empty-rack visual language.) */
+  /* Primary call-to-action inside the empty card — same brand picker
+     as the grid's "+" card, just placed where a brand-new user is
+     actually looking. Margin-top separates it from the bullets list. */
+  .printers-empty-cta {
+    margin-top: 18px;
+    align-self: center;
+    height: 38px;
+    padding: 0 18px;
+  }
+  .printers-empty-cta .icon { background: #fff; }
+
+  .printer-card { cursor: pointer; }
+
+  /* Online / offline indicator — used in both the printer grid card and
+     the side-card hero. Three states: is-online (green), is-offline
+     (grey), is-checking (amber pulsing while we wait for the first ping). */
+  .printer-online {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .2px;
+  }
+  .printer-online-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .printer-online.is-online .printer-online-dot {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, .18);
+  }
+  .printer-online.is-online .printer-online-lbl { color: #15803d; }
+  .printer-online.is-offline .printer-online-dot { background: #94a3b8; }
+  .printer-online.is-checking .printer-online-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
+    animation: snap-pulse 0.8s ease-in-out infinite;
+  }
+  /* Card variant — sits between the model line and the foot row */
+  .printer-online--card { margin-top: 2px; }
+  /* Side-card variant — sits inside the panel-title next to the pills,
+     so it has to match the pill sizing (10 px font, no margin). */
+  .printer-online--side {
+    font-size: 10px;
+    margin: 0;
+    padding: 2px 9px;
+    background: var(--surface-2);
+    border-radius: 999px;
+  }
+  .printer-online--side.is-online {
+    background: rgba(34, 197, 94, .14);
+  }
+  .printer-online--side.is-offline {
+    background: var(--surface-2);
+  }
+  .printer-online--side.is-checking {
+    background: rgba(245, 158, 11, .14);
+  }
+
+  /* "Add a printer" card — sits at the end of the grid as a permanent
+     affordance. Dashed border + centered + icon to read as a slot. */
+  .printer-card--add {
+    flex: 0 1 240px;
+    background: transparent;
+    border: 2px dashed var(--border);
+    color: var(--muted);
+    padding: 18px 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px;
+    min-height: 200px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s, transform .05s;
+  }
+  .printer-card--add:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(56, 110, 207, .04);
+  }
+  .printer-card--add:active { transform: translateY(1px); }
+  .printer-add-plus {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .printer-card--add:hover .printer-add-plus { background: rgba(56, 110, 207, .12); }
+  .printer-add-plus .icon { background: currentColor; }
+  .printer-add-title {
+    font-size: 14px; font-weight: 600;
+    margin-top: 4px;
+  }
+  .printer-add-sub {
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.4;
+  }
+
+  /* ── Add printer modals (brand picker + form) ───────────────────────── */
+  .pba-card {
+    width: min(440px, calc(100vw - 32px));
+    max-height: 85vh;
+    padding: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  /* Snapmaker scan side-panel — width MUST be set with an ID selector
+     (not just .snap-scan-panel) to override the base `.detail-panel`
+     width: 300px declared LATER in this stylesheet. Same pattern as
+     `#printerPanel { width: min(440px, 92vw); }` so both side-panels
+     match visually when the user toggles between them. */
+  #snapScanPanel { width: min(440px, 92vw); }
+  /* Header lays out title + sub stacked vertically with the close
+     button on the right. The default `.panel-header` is a single
+     row so we use a small flex sub-block here. */
+  .snap-scan-panel .panel-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .snap-scan-panel-titles {
+    display: flex; flex-direction: column;
+    flex: 1; min-width: 0;
+    gap: 2px;
+  }
+  .snap-scan-panel-sub {
+    font-size: 12px; color: var(--muted);
+    line-height: 1.3;
+  }
+  /* Panel footer — Apple-style: hairline separator only (no full border),
+     soft background blends with the panel body. */
+  .snap-scan-panel-footer {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 18px;
+    border-top: 1px solid rgba(0, 0, 0, .06);
+    background: transparent;
+    flex-shrink: 0;
+  }
+  .pba-header {
+    padding: 18px 22px 14px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pba-title {
+    font-size: 16px; font-weight: 600; color: var(--text);
+  }
+  .pba-sub {
+    font-size: 13px; color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .pba-brands {
+    padding: 12px 14px 18px;
+    display: flex; flex-direction: column; gap: 6px;
+    overflow-y: auto;
+  }
+  .pba-brand {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+    height: 56px;
+    padding: 0 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color .12s, background .12s, transform .05s;
+    text-align: left;
+  }
+  .pba-brand:hover {
+    border-color: var(--primary);
+    background: rgba(56, 110, 207, .04);
+  }
+  .pba-brand:active { transform: scale(.99); }
+  .pba-brand-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(0,0,0,.04);
+  }
+  .pba-brand-text {
+    display: flex; flex-direction: column;
+    flex: 1; min-width: 0;
+  }
+  .pba-brand-label {
+    font-size: 14px; font-weight: 600; color: var(--text);
+  }
+  .pba-brand-conn {
+    font-size: 12px; color: var(--muted);
+  }
+  .pba-brand-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .pba-brand:hover .pba-brand-chev { background: var(--primary); }
+
+  .pba-body {
+    padding: 16px 22px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow-y: auto;
+  }
+  .pba-field {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .pba-field-label {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+  }
+  .pba-field-req {
+    color: #ef4444;
+    margin-left: 2px;
+  }
+  .pba-input {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .pba-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(56, 110, 207, .15);
+  }
+  .pba-input--mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+  select.pba-input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+  }
+  .pba-error {
+    background: rgba(239, 68, 68, .1);
+    border: 1px solid rgba(239, 68, 68, .25);
+    color: #b91c1c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .pba-footer {
+    padding: 12px 18px 18px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; gap: 10px;
+  }
+  .pba-footer .adf-btn--primary { flex: 1; }
+
+  /* ── Custom model picker (image + name) ───────────────────────────── */
+  .pba-modelpicker {
+    position: relative;
+  }
+  .pba-mp-trigger {
+    width: 100%;
+    height: 44px;
+    padding: 4px 8px 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    transition: border-color .12s, box-shadow .12s, background .12s;
+    text-align: left;
+  }
+  .pba-mp-trigger:hover { border-color: var(--primary); }
+  .pba-mp-trigger:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(56,110,207,.15); }
+  .pba-mp-trigger--open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(56,110,207,.15); }
+  .pba-mp-trigger-text {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pba-mp-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: transform .15s;
+  }
+  .pba-mp-trigger--open .pba-mp-chev { transform: rotate(90deg); background: var(--primary); }
+
+  .pba-mp-thumb {
+    width: 36px; height: 36px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .pba-mp-thumb img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .pba-mp-thumb--trigger { width: 32px; height: 32px; }
+  .pba-mp-thumb--trigger:empty {
+    background: var(--surface-2);
+    background-image: linear-gradient(135deg, transparent 45%, var(--border) 45%, var(--border) 55%, transparent 55%);
+  }
+
+  .pba-mp-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 10;
+    padding: 4px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .pba-mp-list[hidden] { display: none; }
+  .pba-mp-opt {
+    width: 100%;
+    height: 44px;
+    padding: 4px 8px 4px 6px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    transition: background .12s;
+  }
+  .pba-mp-opt:hover { background: var(--surface-2); }
+  .pba-mp-opt:active { background: rgba(56,110,207,.08); }
+  .pba-mp-opt .pba-mp-name {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 500;
+  }
+
+  /* ── Password input + eye toggle (used in the add-printer form) ───── */
+  .pba-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+  }
+  .pba-input-wrap .pba-input {
+    flex: 1;
+    padding-right: 38px;
+  }
+  .pba-input-eye {
+    position: absolute;
+    top: 50%; right: 4px;
+    transform: translateY(-50%);
+    width: 30px; height: 30px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+    transition: background .12s, color .12s;
+  }
+  .pba-input-eye:hover { background: var(--surface-2); color: var(--text); }
+  .pba-input-eye .icon { background: currentColor; }
+  .pba-input-eye--on { color: var(--primary); }
+
+  /* ── Eye icon stack — both eye-on + eye-off pre-rendered, swap by
+     opacity so toggling the password visibility never reflows the icon's
+     position. The two icons are stacked at the same coordinates inside
+     a fixed 14×14 grid cell. ────────────────────────────────────────── */
+  .pba-eye-stack {
+    position: relative;
+    width: 14px; height: 14px;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .pba-eye-icon {
+    position: absolute;
+    top: 0; left: 0;
+    width: 14px; height: 14px;
+    transition: opacity .12s;
+    pointer-events: none;
+  }
+  /* Default state (password hidden): show eye-on, hide eye-off */
+  .pba-input-eye .pba-eye-icon--off { opacity: 0; }
+  .pba-input-eye .pba-eye-icon--on  { opacity: 1; }
+  /* Revealed state (password visible): swap */
+  .pba-input-eye.pba-input-eye--on .pba-eye-icon--off { opacity: 1; }
+  .pba-input-eye.pba-input-eye--on .pba-eye-icon--on  { opacity: 0; }
+
+  /* ── Per-brand helper banner (above the form fields) ──────────────── */
+  .pba-helper {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--brand-accent, #888) 8%, transparent), transparent 60%);
+    border: 1px solid color-mix(in srgb, var(--brand-accent, #888) 20%, var(--border));
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .pba-helper-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .pba-helper-dot {
+    width: 8px; height: 8px;
+    background: var(--brand-accent, #888);
+    border-radius: 50%;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-accent, #888) 18%, transparent);
+  }
+  .pba-helper-title {
+    font-size: 12px; font-weight: 700;
+    color: var(--text);
+    text-transform: uppercase; letter-spacing: .6px;
+  }
+  .pba-helper-list {
+    margin: 0; padding-left: 22px;
+    display: flex; flex-direction: column; gap: 4px;
+    color: var(--muted);
+    font-size: 12px; line-height: 1.5;
+  }
+  .pba-helper-list li::marker {
+    color: var(--brand-accent, #888);
+    font-weight: 700;
+  }
+  .pba-helper-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--brand-accent, var(--primary));
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .pba-helper-link:hover { text-decoration: underline; }
+
+  /* ── Sections inside the add form ─────────────────────────────────── */
+  .pba-section {
+    display: flex; flex-direction: column; gap: 10px;
+    padding-top: 6px;
+  }
+  .pba-section + .pba-section {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    margin-top: 4px;
+  }
+  .pba-section-head {
+    font-size: 11px; font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase; letter-spacing: .8px;
+    padding-bottom: 2px;
+  }
+
+  /* Per-field hint shown right under the input. */
+  .pba-field-hint {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 2px;
+  }
+
+  /* "(optional)" suffix on optional fields */
+  .pba-field-opt {
+    font-size: 10px; font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase; letter-spacing: .4px;
+    margin-left: 4px;
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ── Snapmaker discovery modals (choice / scan / manual) ──────────────
+     All three reuse .pba-card so they share the modal frame, header and
+     footer with the brand picker. Only the body content + a couple of
+     bespoke widgets (scan progress bar, candidate cards) are new. */
+
+  /* (Choice modal removed — brand-pick Snapmaker now opens the scan
+     panel directly. The .snap-add-choice* rules previously here are
+     deleted along with the unused HTML/JS.) */
+
+  /* Scan modal — progress bar on top, results below, empty state when
+     nothing yet found. Body scrolls; header + footer stay pinned. */
+  .snap-scan-body {
+    /* In the side-panel layout the body fills available height between
+       the panel header and the footer. `flex: 1` claims the remaining
+       space inside the column-flex panel, `min-height: 0` lets it
+       shrink below its intrinsic content size so the inner scroll
+       actually engages instead of pushing the footer off-screen. */
+    flex: 1;
+    min-height: 0;
+    padding: 14px 18px 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow-y: auto;
+  }
+  /* Prevent flex children from shrinking below their natural height —
+     without this, when the cumulative content exceeds the body's
+     max-height, every direct child gets squeezed (default flex-shrink:1)
+     instead of overflowing into the scrollbar. The visible symptom was
+     scan cards rendering at 70px while their content needed 100px,
+     spilling the thumbnail past the bottom border. */
+  .snap-scan-body > * { flex-shrink: 0; }
+  .snap-scan-progress {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .snap-scan-bar {
+    height: 6px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .snap-scan-bar > span {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: var(--primary);
+    transition: width .15s linear;
+  }
+  .snap-scan-stats {
+    font-size: 11px; color: var(--muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .snap-scan-results {
+    display: flex; flex-direction: column; gap: 6px;
+    /* Same anti-shrink rule as the body — keeps each candidate card
+       at its natural height even when the list grows long. */
+  }
+  .snap-scan-results > * { flex-shrink: 0; }
+  .snap-scan-card {
+    /* Apple-style — no border, soft bg, capsule pills inside.
+       `align-items: flex-start` anchors every flex child to the TOP
+       and lets the row size itself to the tallest child's natural
+       height (almost always the main column with 5 stacked text
+       lines). No overflow: hidden, no min-height: the card is
+       exactly as tall as its content needs. */
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .14s ease, transform .06s ease;
+    text-align: left;
+    animation: snap-scan-card-in .25s ease-out;
+    flex-shrink: 0;
+  }
+  .snap-scan-card:hover {
+    background: rgba(56, 110, 207, .06);
+  }
+  .snap-scan-card:active { transform: scale(.995); }
+  /* Focus ring for keyboard navigation on the role=button div. */
+  .snap-scan-card:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+    background: rgba(56, 110, 207, .06);
+  }
+  /* Loading state — short visual feedback while the Firestore write is
+     in flight after a click. Disables further clicks via pointer-events
+     and dims the card so the user sees the action registered. */
+  .snap-scan-card--loading {
+    pointer-events: none;
+    opacity: .55;
+  }
+  /* Model thumbnail — soft surface-2 background, no border. The
+     `align-self: flex-start` keeps the thumbnail anchored to the
+     top of the card on tall cards (5 lines of text in main column)
+     instead of stretching with the row to a 100px-tall thumbnail. */
+  .snap-scan-card-thumb {
+    width: 56px; height: 56px;
+    flex-shrink: 0;
+    align-self: flex-start;
+    border-radius: 12px;
+    background: var(--surface-2);
+    border: 0;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .snap-scan-card-thumb img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    transition: opacity .15s;
+  }
+  .snap-scan-card-main {
+    /* `flex: 1` claims remaining horizontal space; `min-width: 0` lets
+       the children's `text-overflow: ellipsis` rules trigger when the
+       panel is narrow. Without min-width:0, intrinsic content forces
+       the column to grow forever and breaks the card. */
+    display: flex; flex-direction: column;
+    flex: 1; min-width: 0;
+    gap: 3px;
+  }
+  /* Score + chev anchored to the top so they sit on the title row
+     (not vertically centred on a tall multi-line card, which would
+     visually stagger them with the IP / model lines). */
+  .snap-scan-card-score,
+  .snap-scan-card-chev {
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+  .snap-scan-card-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    line-height: 22px;             /* matches the badge height so they sit on the same line */
+    display: flex; align-items: center; gap: 6px;
+    min-width: 0;
+  }
+  .snap-scan-card-title-text {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Brand-confirmed badge — Apple-style flat pill, no border. */
+  .snap-scan-card-badge {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(155, 89, 182, .14);
+    color: #7b3fa3;
+    border: 0;
+    font-size: 10px; font-weight: 600;
+    letter-spacing: .2px;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  .snap-scan-card-ip {
+    font-size: 11px; color: var(--muted);
+    font-family: var(--mono, ui-monospace, monospace);
+    line-height: 1.4;
+    /* Same truncation pattern as the other identity lines so a long
+       IPv6 (one day) wouldn't bleed into the score column. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0;
+  }
+  /* Identity lines below the title:
+       --model  → machine_type · firmware version (regular text colour)
+       --host   → mDNS hostname (mono, dimmer — secondary detail)
+       --sn     → serial number prefixed with "S/N · " (mono, dimmer)
+     Each line truncates with ellipsis so a long hostname doesn't break
+     the card layout. The full value is in the `title` attribute for
+     hover-reveal. */
+  .snap-scan-card-line {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  .snap-scan-card-line--model {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .snap-scan-card-line--host,
+  .snap-scan-card-line--sn {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+  /* Legacy single-line sub kept for backwards compatibility — newer
+     cards use .snap-scan-card-line instead. */
+  .snap-scan-card-sub {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Chevron — softer/dimmer than before. No hover bump-to-primary
+     (Apple style keeps directional indicators muted). */
+  .snap-scan-card-chev {
+    background: var(--border);
+    flex-shrink: 0;
+    opacity: .9;
+  }
+  .snap-scan-card:hover .snap-scan-card-chev {
+    background: var(--muted);
+    opacity: 1;
+  }
+  /* Match-score pill — flat, borderless. Tinted by confidence tier. */
+  .snap-scan-card-score {
+    flex-shrink: 0;
+    min-width: 24px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 11px; font-weight: 600;
+    line-height: 22px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    border: 0;
+  }
+  .snap-scan-card--high .snap-scan-card-score {
+    background: rgba(34, 197, 94, .14);
+    color: #16a34a;
+  }
+  .snap-scan-card--med .snap-scan-card-score {
+    background: rgba(234, 179, 8, .14);
+    color: #b45309;
+  }
+  .snap-scan-card--low {
+    opacity: .82;
+  }
+  .snap-scan-card--low:hover { opacity: 1; }
+  @keyframes snap-scan-card-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .snap-scan-empty {
+    padding: 14px;
+    text-align: center;
+    font-size: 12px; color: var(--muted);
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+  }
+  /* Variant shown when firewall block detected on user-declared subnets:
+     warning palette (amber border, slightly bigger emphasis) so the
+     user notices it's NOT the same generic "nothing found" state. */
+  .snap-scan-empty--warn {
+    color: var(--text);
+    background: rgba(234, 179, 8, .08);
+    border: 1px solid rgba(234, 179, 8, .4);
+    text-align: left;
+    line-height: 1.5;
+  }
+
+  /* Add by IP — collapsible direct-probe widget. Default state is just
+     the trigger button (saves vertical space when the user is happy
+     with the auto-scan). Clicking it expands a vertical body: label →
+     input → Validate button → status. Apple-style: borderless,
+     just a softer surface against the modal body. */
+  .snap-add-ip {
+    background: var(--surface);
+    border: 0;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  /* Summary acts as the trigger button. Collapsed state shows just an
+     "+ Add by IP" row; clicking it expands the body. Same visual
+     language as the Extra-subnets summary so the modal feels coherent. */
+  .snap-add-ip-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    user-select: none;
+    transition: background .1s;
+  }
+  .snap-add-ip-summary:hover { background: rgba(56, 110, 207, .04); }
+  .snap-add-ip-summary::-webkit-details-marker { display: none; }
+  .snap-add-ip-summary-icon {
+    background: var(--primary);
+    flex-shrink: 0;
+  }
+  .snap-add-ip-summary-label {
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .snap-add-ip-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: transform .15s ease;
+  }
+  details[open] > .snap-add-ip-summary .snap-add-ip-chev {
+    transform: rotate(90deg);
+    background: var(--primary);
+  }
+  /* Body — vertical stack: label → input → Validate → status.
+     Apple-style: no top border, just spacing for separation. */
+  .snap-add-ip-body {
+    padding: 0 14px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    padding-top: 4px;
+  }
+  .snap-add-ip-label {
+    font-size: 12px; font-weight: 500;
+    color: var(--muted);
+  }
+  /* Input wrap is `position: relative` so the floating tip can be
+     anchored below the field without affecting layout flow. */
+  .snap-add-ip-input-wrap {
+    width: 100%;
+    position: relative;
+    display: flex;
+  }
+  /* Input — Apple-style: filled background, no border, ring on focus. */
+  .snap-add-ip-input {
+    flex: 1;
+    width: 100%;
+    height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 13px;
+    outline: none;
+    transition: box-shadow .14s ease, background .12s ease;
+  }
+  .snap-add-ip-input:focus {
+    background: var(--surface);
+    box-shadow: 0 0 0 2px rgba(56, 110, 207, .35);
+  }
+  /* Invalid state — red border + soft red ring (HTML5-form-style). */
+  .snap-add-ip-input--err {
+    border-color: #ef4444 !important;
+    background: rgba(239, 68, 68, .04);
+  }
+  .snap-add-ip-input--err:focus {
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, .2) !important;
+  }
+  /* Valid state — soft green to confirm format is parseable. */
+  .snap-add-ip-input--ok {
+    border-color: #16a34a !important;
+  }
+  /* "Invalid IP address format" bubble — floats to the RIGHT of the
+     input (tooltip-style) so it doesn't push down on the Validate
+     button below. Aria role=alert so screen readers announce it the
+     moment it appears. The triangle points left, into the input. */
+  .snap-add-ip-tip {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 10px);
+    transform: translateY(-50%);
+    padding: 6px 10px;
+    background: #ef4444;
+    color: #fff;
+    border-radius: 6px;
+    font-size: 11px; font-weight: 600;
+    line-height: 1.3;
+    display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+    z-index: 10;
+    animation: snap-add-ip-tip-in .12s ease-out;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .snap-add-ip-tip::before {
+    content: "";
+    position: absolute;
+    top: 50%; left: -4px;
+    transform: translateY(-50%) rotate(45deg);
+    width: 8px; height: 8px;
+    background: #ef4444;
+  }
+  .snap-add-ip-tip .icon {
+    background: #fff;
+    flex-shrink: 0;
+  }
+  /* Narrow modal fallback — when the bubble would overflow the modal
+     edge, drop it below the field instead of right of it. Triggered
+     by a CSS class we can't compute purely in CSS, so we fall back
+     to a media query on small viewports. */
+  @media (max-width: 520px) {
+    .snap-add-ip-tip {
+      top: calc(100% + 6px);
+      left: 0;
+      transform: none;
+      white-space: normal;
+    }
+    .snap-add-ip-tip::before {
+      top: -4px; left: 14px;
+      transform: rotate(45deg);
+    }
+  }
+  @keyframes snap-add-ip-tip-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  /* Validate button — full width on its own row, sits below the input.
+     Uses the existing primary style; we just override the height to
+     match the input + add a small top margin so the bubble (which
+     appears below the input) has room to float without colliding. */
+  .snap-add-ip-btn {
+    height: 36px;
+    width: 100%;
+    margin-top: 2px;
+    justify-content: center;
+  }
+  .snap-add-ip-btn:disabled { opacity: .5; cursor: not-allowed; }
+  /* Status row below the input — shows live "Reaching X…" or "No reply"
+     after the user hits the button. Same palette as the legacy manual
+     modal so the visual language is consistent. */
+  .snap-add-ip-status {
+    margin-top: 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+  }
+  .snap-add-ip-status--info {
+    background: rgba(56, 110, 207, .08);
+    color: var(--text);
+    border: 1px solid rgba(56, 110, 207, .25);
+  }
+  .snap-add-ip-status--err {
+    background: rgba(239, 68, 68, .08);
+    color: var(--text);
+    border: 1px solid rgba(239, 68, 68, .3);
+  }
+  .snap-add-ip-anyway {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px; font-weight: 600;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .snap-add-ip-anyway:hover { background: rgba(0,0,0,.04); }
+
+  /* Extra-subnets widget — collapsible. Apple-style: borderless,
+     softer background, larger radius. */
+  .snap-extra-subnets {
+    background: var(--surface);
+    border: 0;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .snap-extra-subnets-summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    user-select: none;
+    transition: background .1s;
+  }
+  .snap-extra-subnets-summary:hover { background: rgba(56, 110, 207, .04); }
+  .snap-extra-subnets-summary::-webkit-details-marker { display: none; }
+  /* Network icon on the left — gives the row visual identity. */
+  .snap-extra-subnets-icon {
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  /* Label takes all remaining space + truncates if the locale is long. */
+  .snap-extra-subnets-label {
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .snap-extra-subnets-count {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 0;
+    color: var(--muted);
+    font-size: 10px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+  /* Chevron on the right — rotates 90° when expanded. Replaces the old
+     "›" pseudo-element so we get a consistent icon weight with the rest
+     of the app. */
+  .snap-extra-subnets-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: transform .15s ease;
+  }
+  details[open] > .snap-extra-subnets-summary .snap-extra-subnets-chev {
+    transform: rotate(90deg);
+    background: var(--primary);
+  }
+  .snap-extra-subnets-body {
+    padding: 4px 14px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .snap-extra-subnets-hint {
+    font-size: 11px; color: var(--muted);
+    line-height: 1.4;
+  }
+  .snap-extra-subnets-row {
+    display: flex; gap: 6px;
+  }
+  .snap-extra-subnets-input {
+    flex: 1;
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 12px;
+    outline: none;
+    transition: box-shadow .14s ease, background .12s ease;
+  }
+  .snap-extra-subnets-input:focus {
+    background: var(--surface);
+    box-shadow: 0 0 0 2px rgba(56, 110, 207, .35);
+  }
+  .snap-extra-subnets-add {
+    height: 32px;
+    padding: 0 16px;
+    background: var(--primary);
+    color: #fff;
+    border: 0;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    transition: opacity .12s;
+  }
+  .snap-extra-subnets-add:hover { opacity: .9; }
+  .snap-extra-subnets-err {
+    font-size: 11px;
+    color: #ef4444;
+    padding: 4px 0;
+  }
+  .snap-extra-subnets-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .snap-extra-subnets-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 4px 4px 12px;
+    background: rgba(56, 110, 207, .1);
+    border: 0;
+    border-radius: 999px;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 11px; font-weight: 600;
+    color: var(--text);
+  }
+  .snap-extra-subnets-chip-text { white-space: nowrap; }
+  .snap-extra-subnets-chip-x {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 11px; line-height: 1;
+    font-family: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background .1s, color .1s;
+  }
+  .snap-extra-subnets-chip-x:hover {
+    background: rgba(239, 68, 68, .15);
+    color: #ef4444;
+  }
+
+  /* Debug-only scan journal — collapsible panel at the bottom of the
+     scan modal. Hidden entirely when state.debugEnabled is false.
+     Apple-style: borderless, just a softer background tier. */
+  .snap-scan-log {
+    margin-top: 8px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .snap-scan-log-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    background: transparent;
+    border-bottom: 0;
+  }
+  /* Toggle + count form a single click target on the LEFT.
+     The actions cluster (Export / Clear) sits on the RIGHT with its
+     own gap so the buttons never crowd the count badge. */
+  .snap-scan-log-toggle {
+    display: flex; align-items: center; gap: 8px;
+    flex: 1; min-width: 0;
+    background: transparent;
+    border: 0;
+    padding: 2px 0;
+    font-family: inherit;
+    font-size: 12px; font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+  }
+  .snap-scan-log-chev {
+    background: var(--muted);
+    transition: transform .15s ease;
+    flex-shrink: 0;
+  }
+  .snap-scan-log-toggle--open .snap-scan-log-chev {
+    transform: rotate(90deg);
+    background: var(--primary);
+  }
+  .snap-scan-log-title {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .snap-scan-log-count {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 0;
+    color: var(--muted);
+    font-size: 10px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+  .snap-scan-log-actions {
+    display: flex; gap: 4px;
+    flex-shrink: 0;
+  }
+  /* Apple-style icon button — soft surface, no border, hover bg shift. */
+  .snap-scan-log-btn {
+    background: var(--surface-2);
+    border: 0;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px; font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background .12s ease;
+  }
+  .snap-scan-log-btn--icon { padding: 7px 9px; gap: 0; }
+  .snap-scan-log-btn .icon {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background .12s;
+  }
+  .snap-scan-log-btn:hover {
+    background: rgba(56, 110, 207, .1);
+  }
+  .snap-scan-log-btn:hover .icon { background: var(--text); }
+  /* Clear button — hovers red, destructive cue. */
+  #snapScanLogClear:hover { background: rgba(239, 68, 68, .1); }
+  #snapScanLogClear:hover .icon { background: #ef4444; }
+  /* Icon next to "Scan log" title — same colour treatment as the chevron. */
+  .snap-scan-log-title-icon {
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .snap-scan-log-toggle--open .snap-scan-log-title-icon { background: var(--primary); }
+  .snap-scan-log-btn:hover {
+    color: var(--text);
+    border-color: var(--primary);
+  }
+  /* Primary variant — used by Export. Stands out so the user notices
+     the action is "do something with the data" rather than "wipe it". */
+  .snap-scan-log-btn--primary {
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--surface);
+  }
+  .snap-scan-log-btn--primary:hover {
+    color: #fff;
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  /* Transient feedback states after Export click. */
+  .snap-scan-log-btn--ok {
+    color: #16a34a !important;
+    border-color: #16a34a !important;
+    background: rgba(34, 197, 94, .12) !important;
+  }
+  .snap-scan-log-btn--err {
+    color: #ef4444 !important;
+    border-color: #ef4444 !important;
+    background: rgba(239, 68, 68, .12) !important;
+  }
+  .snap-scan-log-body {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 4px 0;
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .snap-scan-log-row {
+    display: grid;
+    grid-template-columns: 78px 70px 1fr;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 10px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text);
+    font-family: inherit;
+    font-size: inherit;
+    transition: background .08s;
+  }
+  .snap-scan-log-row:hover:not(:disabled) { background: rgba(56, 110, 207, .06); }
+  .snap-scan-log-row:disabled { cursor: default; opacity: .75; }
+  .snap-scan-log-row--copied { background: rgba(34, 197, 94, .14) !important; }
+  .snap-scan-log-ts { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .snap-scan-log-kind {
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 10px;
+    align-self: center;
+    color: var(--muted);
+  }
+  .snap-scan-log-row--hit       .snap-scan-log-kind { color: #16a34a; }
+  .snap-scan-log-row--ambiguous .snap-scan-log-kind { color: #b45309; }
+  .snap-scan-log-row--error     .snap-scan-log-kind { color: #ef4444; }
+  .snap-scan-log-summary {
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  /* Manual modal — single IP input + status banner. Status flips between
+     info (during probe) and err (no reply / bad IP). */
+  .snap-manual-status {
+    margin-top: 4px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+  }
+  .snap-manual-status--info {
+    background: rgba(56, 110, 207, .08);
+    color: var(--text);
+    border: 1px solid rgba(56, 110, 207, .25);
+  }
+  .snap-manual-status--err {
+    background: rgba(239, 68, 68, .08);
+    color: var(--text);
+    border: 1px solid rgba(239, 68, 68, .3);
+  }
+  .snap-manual-anyway {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px; font-weight: 600;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .snap-manual-anyway:hover { background: rgba(0,0,0,.04); }
+
+  /* ── Printer detail panel (slide-in from right) ──────────────────────── */
+  #printerPanel { width: min(440px, 92vw); }
+  #printerPanelBody {
+    padding: 0 0 24px;
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+
+  /* Hero — printer photo (or fallback when camera is off). The
+     horizontal separator below has been removed: the next section
+     (live block, raw section, etc.) provides its own visual gap so
+     the hero blends into the body without a hard line.
+     Bottom padding reduced — the live block has its own internal
+     spacing so we don't need extra room beneath the hero. */
+  .pp-hero {
+    padding: 18px 20px 0;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+    position: relative;
+  }
+  /* Pills row above the hero image — brand (filled) + model (outline). */
+  .pp-hero-pills {
+    display: flex; flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+  .pp-brand-pill {
+    display: inline-flex; align-items: center;
+    padding: 3px 12px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    color: #fff; background: var(--brand-accent, #888);
+    letter-spacing: .2px;
+  }
+  /* Model pill — outline-style label sitting next to the brand pill,
+     uses the brand accent as the border colour so they read as a pair. */
+  .pp-model-pill {
+    display: inline-flex; align-items: center;
+    padding: 2px 11px;
+    border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    letter-spacing: .2px;
+  }
+  .pp-active {
+    position: absolute; top: 18px; right: 20px;
+    font-size: 10px; font-weight: 700;
+    color: var(--primary);
+    background: rgba(56, 110, 207, .12);
+    padding: 3px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .3px;
+  }
+  .pp-hero-img {
+    width: 100%;
+    height: 180px;
+    margin: 8px 0 4px;
+    background: var(--surface-2);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .pp-hero-img img {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .pp-hero-name {
+    font-size: 20px; font-weight: 600; color: var(--text);
+    margin-top: 4px;
+    word-break: break-word;
+  }
+  .pp-hero-model {
+    font-size: 13px; color: var(--muted);
+  }
+  .pp-features {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 8px;
+  }
+  .pp-feature {
+    font-size: 11px; font-weight: 500;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 3px 9px;
+    border-radius: 999px;
+    letter-spacing: .2px;
+  }
+
+  /* Sections */
+  .pp-section {
+    padding: 12px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pp-section:last-child { border-bottom: none; }
+  .pp-section-head {
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .8px;
+    padding: 4px 0 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .pp-section-head--btn {
+    background: none; border: none; cursor: pointer;
+    width: 100%; padding: 4px 0 10px;
+    color: var(--muted);
+    font-family: inherit;
+    text-transform: uppercase; letter-spacing: .8px; font-weight: 700;
+    font-size: 11px;
+    justify-content: space-between;
+    height: auto;
+  }
+  .pp-section-head--btn:hover { background: none; color: var(--text); }
+  .pp-chev { transition: transform .15s; background: currentColor; }
+  .pp-section--collapsible[data-collapsed="false"] .pp-chev { transform: rotate(90deg); }
+  .pp-section--collapsible[data-collapsed="true"] .pp-section-body { display: none; }
+
+  /* Rows */
+  .pp-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    font-size: 13px;
+    min-height: 28px;
+  }
+  .pp-row-lbl {
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .pp-row-val {
+    color: var(--text);
+    text-align: right;
+    overflow: hidden; text-overflow: ellipsis;
+    display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;
+    min-width: 0;
+    word-break: break-all;
+  }
+  .pp-row-val--mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+  }
+
+  /* Editable cell — pencil hint + click-to-edit + inline input.
+     The pencil sits at the right of the value; the entire cell is the
+     hit target so users can click anywhere on the value to edit. */
+  .pp-row--editable .pp-row-val--editable {
+    cursor: text;
+    border-radius: 6px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background .12s, box-shadow .12s;
+    outline: none;
+  }
+  .pp-row--editable .pp-row-val--editable:hover {
+    background: var(--surface-2);
+  }
+  .pp-row--editable .pp-row-val--editable:focus-visible {
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  .pp-pencil {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px;
+    opacity: 0;
+    transition: opacity .12s;
+    flex-shrink: 0;
+  }
+  .pp-pencil .icon { background: var(--muted); }
+  .pp-row-val--editable:hover .pp-pencil { opacity: 1; }
+  .pp-row-val--editable:focus-visible .pp-pencil { opacity: 1; }
+
+  /* Hero printerName — bigger hover target, pencil also reveals on hover */
+  .pp-hero-name.pp-row-val--editable {
+    cursor: text;
+    border-radius: 8px;
+    padding: 2px 6px;
+    margin: 4px -6px 0;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: background .12s;
+  }
+  .pp-hero-name.pp-row-val--editable:hover { background: var(--surface-2); }
+  .pp-hero-name.pp-row-val--editable .pp-pencil { width: 18px; height: 18px; }
+  .pp-hero-name.pp-row-val--editable .pp-pencil .icon { width: 14px; height: 14px; }
+
+  /* Inline edit input — replaces the cell content */
+  .pp-edit-input {
+    flex: 1; min-width: 0;
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(56, 110, 207, .15);
+  }
+  .pp-row-val--editing { padding: 0 !important; margin: 0 !important; }
+  .pp-row-val--saving {
+    color: var(--muted);
+    font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end;
+  }
+  .pp-edit-spin {
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    display: inline-block;
+  }
+  .pp-edit-error {
+    color: #b91c1c;
+    font-size: 12px;
+    background: rgba(239, 68, 68, .1);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  /* Inline copy + eye buttons */
+  .pp-copy, .pp-eye {
+    background: var(--surface-2); border: 1px solid var(--border);
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    padding: 0; margin: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .12s, color .12s, transform .05s;
+  }
+  .pp-copy:hover, .pp-eye:hover { background: var(--surface); color: var(--text); }
+  .pp-copy:active, .pp-eye:active { transform: scale(0.94); }
+  .pp-copy .icon, .pp-eye .icon { background: var(--muted); }
+  .pp-copy:hover .icon, .pp-eye:hover .icon { background: var(--text); }
+  .pp-copy--ok { background: var(--primary); border-color: var(--primary); }
+  .pp-copy--ok .icon { background: #fff; }
+
+  /* Sensitive section warning */
+  .pp-section--secret {
+    background: linear-gradient(180deg, rgba(239, 68, 68, .04), transparent 80%);
+  }
+  .pp-secret-warn {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: rgba(239, 68, 68, .08);
+    border: 1px solid rgba(239, 68, 68, .25);
+    color: #b91c1c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px; line-height: 1.45;
+    margin-bottom: 10px;
+  }
+  .pp-secret-warn .icon { background: #b91c1c; flex-shrink: 0; margin-top: 1px; }
+  .pp-secret { user-select: all; }
+
+  /* Raw JSON */
+  .pp-raw-wrap {
+    position: relative;
+    margin: 4px 0 0;
+  }
+  .pp-raw {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px 12px 10px;
+    font-size: 11px; line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text);
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  /* Floating copy button in the top-right of the JSON block.
+     Overrides the square .pp-copy inline-row variant: this one is a
+     pill with both icon + label, so it's discoverable without hover. */
+  .pp-raw-copy.pp-copy {
+    position: absolute; top: 8px; right: 8px;
+    width: auto; height: 24px;
+    padding: 0 10px;
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 500;
+    color: var(--muted);
+    background: var(--surface);
+    z-index: 1;
+  }
+  .pp-raw-copy.pp-copy:hover { color: var(--text); background: var(--surface); border-color: var(--primary); }
+  .pp-raw-copy.pp-copy.pp-copy--ok { color: #fff; }
+  .pp-raw-copy.pp-copy.pp-copy--ok .icon { background: #fff; }
+

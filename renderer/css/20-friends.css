@@ -1,0 +1,262 @@
+/* ── 20-friends.css — Friends slide-in panel (.friends-panel) ── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Friends panel — full UI/UX redesign
+     ═══════════════════════════════════════════════════════════════════ */
+  .friends-panel { width: min(420px, 92vw); }
+  .friends-body {
+    padding: 0;
+    display: flex; flex-direction: column;
+    height: calc(100% - 50px);   /* leave room for header */
+    overflow: hidden;
+  }
+
+  /* HERO — share-your-code card */
+  .fp-hero {
+    margin: 16px 16px 0;
+    padding: 22px 18px 18px;
+    background: linear-gradient(135deg, var(--primary) 0%, #ff5e3a 100%);
+    border-radius: 18px;
+    color: #fff;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(249,115,22,.25);
+    position: relative;
+    overflow: hidden;
+  }
+  .fp-hero::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(circle at 20% 0%, rgba(255,255,255,.15), transparent 60%);
+    pointer-events: none;
+  }
+  .fp-hero-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; opacity: .8; margin-bottom: 8px;
+    position: relative;
+  }
+  .fp-hero-code {
+    font-family: var(--mono);
+    font-size: 32px; font-weight: 800;
+    letter-spacing: .12em;
+    margin: 6px 0 16px;
+    text-shadow: 0 2px 12px rgba(0,0,0,.18);
+    position: relative;
+    user-select: all;
+  }
+  .fp-hero-code.pkey-loading { color: rgba(255,255,255,.3); }
+  .fp-hero-code.pkey-loading::after {
+    content: "• • •";
+    font-family: var(--mono); font-size: 32px; font-weight: 800;
+    color: #fff; letter-spacing: .18em;
+    animation: pkey-pulse .9s ease-in-out infinite;
+  }
+  @keyframes pkey-pulse { 0%,100% { opacity:1 } 50% { opacity:.3 } }
+  .fp-hero-actions {
+    display: flex; gap: 8px; justify-content: center;
+    position: relative;
+  }
+  .fp-hero-btn {
+    flex: 1; max-width: 140px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px;
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #fff; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: background .15s, transform .1s, border-color .15s;
+    backdrop-filter: blur(10px);
+  }
+  .fp-hero-btn:hover  { background: rgba(255,255,255,.28); border-color: rgba(255,255,255,.4); }
+  .fp-hero-btn:active { transform: scale(.96); }
+  .fp-hero-btn .icon  { background: #fff; }
+  .fp-hero-btn--copied { background: rgba(26,175,108,.45); border-color: rgba(255,255,255,.5); }
+  .fp-hero-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Toggle row card */
+  .fp-toggle-card {
+    display: flex; align-items: center; gap: 12px;
+    margin: 14px 16px 0; padding: 12px 14px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 14px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .fp-toggle-card:hover { background: var(--surface); border-color: var(--primary-soft, rgba(249,115,22,.3)); }
+  .fp-toggle-icon {
+    width: 32px; height: 32px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--primary-soft, rgba(249,115,22,.1));
+    border-radius: 9px;
+  }
+  .fp-toggle-icon .icon { background: var(--primary); }
+  .fp-toggle-text { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .fp-toggle-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .fp-toggle-sub   { font-size: 11px; color: var(--muted); }
+
+  /* Friends list block */
+  .fp-list-block {
+    flex: 1; min-height: 0;
+    margin: 18px 16px 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .fp-list-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .fp-list-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .fp-list-count {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 1px 8px;
+    font-size: 11px; font-weight: 700;
+  }
+
+  /* Search input — magnifier sits inside the field on the right */
+  .fp-search {
+    position: relative;
+    margin-bottom: 8px;
+  }
+  .fp-search .icon {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: var(--muted); pointer-events: none;
+  }
+  .fp-search input {
+    width: 100%; padding: 8px 32px 8px 12px;   /* room for icon on the right */
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 9px; color: var(--text); font-size: 12px;
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .fp-search input:focus {
+    outline: none; border-color: var(--primary);
+    background: var(--surface);
+  }
+  .fp-search input:focus + .icon { background: var(--primary); }
+  .fp-search input::placeholder { color: var(--muted); }
+
+  /* Scrollable friends list */
+  .fp-list {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column; gap: 4px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .fp-list::-webkit-scrollbar { width: 4px; }
+  .fp-list::-webkit-scrollbar-track { background: transparent; }
+  .fp-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .fp-friend {
+    display: flex; align-items: center; gap: 11px;
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .1s;
+  }
+  .fp-friend:hover {
+    background: var(--surface); border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.05);
+  }
+  .fp-friend:active { transform: translateY(0); }
+  .fp-friend-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.1);
+  }
+  .fp-friend-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .fp-friend-name {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fp-friend-date {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fp-friend-actions {
+    display: flex; gap: 4px; flex-shrink: 0;
+    opacity: 0; transition: opacity .15s;
+  }
+  .fp-friend:hover .fp-friend-actions { opacity: 1; }
+  .fp-friend-btn {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 8px;
+    cursor: pointer; transition: background .15s;
+  }
+  .fp-friend-view:hover   { background: var(--primary-soft, rgba(249,115,22,.1)); }
+  .fp-friend-view .icon   { background: var(--primary); }
+  .fp-friend-remove:hover { background: var(--danger-soft); }
+  .fp-friend-remove .icon { background: var(--muted); }
+  .fp-friend-remove:hover .icon { background: var(--danger); }
+
+  /* ── Blacklist section ─────────────────────────────────────────────── */
+  .fp-blacklist-block { margin-top: 10px; flex: 0 0 auto; }
+  .fp-blacklist-block.hidden { display: none; }
+  .fp-list-count--danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(216,59,59,.25); }
+  .fp-blocked {
+    background: var(--danger-soft) !important;
+    border-color: rgba(216,59,59,.2) !important;
+    cursor: default !important;
+  }
+  .fp-blocked:hover { transform: none !important; box-shadow: none !important; }
+  .fp-blocked .fp-friend-actions { opacity: 1; }
+  .fp-friend-unblock {
+    width: auto !important; height: auto !important;
+    padding: 5px 10px;
+    background: transparent; border: 1px solid var(--danger);
+    color: var(--danger); border-radius: 7px;
+    font-size: 11px; font-weight: 600; font-family: inherit;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .fp-friend-unblock:hover { background: var(--danger); color: #fff; }
+  .fp-friend-unblock:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Empty state */
+  .fp-empty {
+    text-align: center;
+    padding: 32px 16px;
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    background: var(--surface-2);
+  }
+  .fp-empty-icon {
+    width: 48px; height: 48px; margin: 0 auto 12px;
+    background: var(--primary-soft, rgba(249,115,22,.1));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fp-empty-icon .icon { background: var(--primary); }
+  .fp-empty-title {
+    font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px;
+  }
+  .fp-empty-sub {
+    font-size: 12px; color: var(--muted); line-height: 1.4;
+  }
+  .fp-empty--mini {
+    padding: 14px; border: none; background: transparent;
+    font-size: 12px; color: var(--muted);
+  }
+
+  /* CTA — sticky bottom */
+  .fp-cta-wrap {
+    padding: 14px 16px 18px;
+    background: linear-gradient(to top, var(--surface) 80%, transparent);
+    flex-shrink: 0;
+  }
+  .fp-cta {
+    width: 100%;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 13px;
+    background: var(--primary);
+    border: none; border-radius: 12px;
+    color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: background .15s, transform .1s, box-shadow .15s;
+    box-shadow: 0 4px 14px rgba(249,115,22,.25);
+  }
+  .fp-cta:hover  { background: #f0670d; box-shadow: 0 6px 18px rgba(249,115,22,.35); }
+  .fp-cta:active { transform: scale(.98); }
+  .fp-cta .icon  { background: #fff; }
+

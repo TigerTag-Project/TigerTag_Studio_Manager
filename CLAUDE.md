@@ -1,14 +1,22 @@
 # Tiger Studio Manager — Claude reference
 
 ## Stack
-Electron (no bundler) + vanilla HTML/CSS/JS. Entry: `main.js`. Renderer: `renderer/inventory.html` + `renderer/inventory.css` + `renderer/inventory.js`. Preload bridge: `preload.js`.
+Electron (no bundler) + vanilla HTML/CSS/JS. Entry: `main.js`. Renderer: `renderer/inventory.html` + modular CSS in `renderer/css/` + `renderer/inventory.js`. Preload bridge: `preload.js`.
 
 ## File map
 ```
 renderer/
   inventory.html   — pure markup + modals
-  inventory.css    — all styles
   inventory.js     — all application logic (IIFE)
+  css/             — split inventory styles, loaded in order via 8 <link> tags
+    00-base.css         — root vars, reset, sidebar, header, app-layout
+    10-settings.css     — Settings panel
+    20-friends.css      — Friends slide-in panel
+    30-racks.css        — Storage / rack inventory view + drag-drop + unranked panel
+    40-printers.css     — Printers list view + add/scan/manual modals + side panel
+    50-snapmaker.css    — Snapmaker live block + filament edit bottom-sheet
+    60-modals.css       — Rack-edit / friend / account / login / alert modals
+    70-detail-misc.css  — icons, stats, table/grid, detail panel, debug, twin-link, toolbox, TD edit, TD1S, display-name
   locales/         — en.json fr.json de.json es.json it.json zh.json pt.json pt-pt.json pl.json
 data/
   id_brand.json id_material.json id_aspect.json id_type.json
@@ -491,6 +499,6 @@ Behaviour:
 - **i18n**: always add all **9** translations (en/fr/de/es/it/zh/pt/pt-pt/pl) in the same edit batch. **Use `npm run i18n:add` — do NOT hand-edit the locale JSON files.** See the *Adding new keys* section above for syntax.
 - **Commits**: no `Co-Authored-By` line.
 - **JS**: all logic lives in `inventory.js`. Do not inline JS in `inventory.html`.
-- **CSS**: all styles in `inventory.css`. Scoped to `#editAccountModalOverlay`, `#addAccountModalOverlay`, etc. where needed.
+- **CSS**: split across `renderer/css/00-base.css … 70-detail-misc.css` (loaded in numeric order). Add new rules in the section file that matches the feature — e.g. Snapmaker tweaks go in `50-snapmaker.css`, modal tweaks in `60-modals.css`. Asset URLs use `url('../../assets/svg/icons/…')` (two `..` because we're in `renderer/css/`). Scoped IDs (`#editAccountModalOverlay`, `#addAccountModalOverlay`, etc.) still apply where needed.
 - **displayName**: always read from Firestore `users/{uid}.displayName` (pseudo). Never use Firebase Auth `user.displayName` for UI display — it contains the Google real name.
 - **Admin fields**: `roles` and `Debug` in `users/{uid}` must only be written via Firebase Admin SDK / Cloud Function. The client toggle is a UX convenience for admins already authenticated.

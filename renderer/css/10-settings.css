@@ -1,0 +1,274 @@
+/* ── 10-settings.css — Settings panel (sectioned flat layout) ── */
+
+  /* ── Settings panel — flat sectioned layout (v1.4.4 redesign)
+     macOS System Settings style: no card borders, no inner backgrounds,
+     just sections separated by a subtle horizontal rule. Each section
+     has an icon + uppercase label header, then content. Clean & airy. */
+
+  .stg-panel .panel-title {
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .stg-panel .panel-title .icon { background: var(--primary); }
+  /* Override the global .panel-body { padding: 0 0 24px } — needs higher
+     specificity (the rule lives later in the file). */
+  .stg-panel .panel-body.stg-body {
+    padding: 18px 20px 24px;
+    display: flex; flex-direction: column;
+    gap: 0;                    /* sections separate via border, not gap */
+    overflow-y: auto;
+  }
+
+  /* Section (replaces the old .stg-card) — flat, no border, divided by
+     a top border on every section after the first. */
+  .stg-card {
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+  }
+  .stg-card:first-child {
+    border-top: none;
+    padding-top: 4px;
+  }
+  .stg-card:last-child {
+    padding-bottom: 4px;
+  }
+  .stg-card-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stg-card-head .icon { background: var(--primary); flex-shrink: 0; }
+  .stg-card-title {
+    font-size: 11px; font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .stg-card-body {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* Row patterns inside cards */
+  .stg-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+  }
+  .stg-row--toggle {
+    cursor: pointer;
+    user-select: none;
+  }
+  .stg-row-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .stg-row-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .stg-row-sub   { font-size: 11px; color: var(--muted); line-height: 1.35; }
+  .stg-row-help {
+    margin: 0;
+    font-size: 12px; color: var(--muted); line-height: 1.45;
+  }
+
+  /* Action button rows (single line by default, column when --col modifier) */
+  .stg-row-actions {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .stg-row-actions--col {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stg-row-actions--col > * {
+    justify-content: flex-start;
+  }
+  .stg-row-actions .ghost,
+  .stg-row-actions .stg-link-btn {
+    font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .stg-row-actions .ghost:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* About content — flat lines directly inside the card body, no inner box */
+  #stgAbout .stg-about-name    { font-size: 13px; font-weight: 600; color: var(--text); }
+  #stgAbout .stg-about-version { font-size: 13px; color: var(--primary); font-family: var(--mono); font-weight: 700; }
+  #stgAbout .stg-about-tech    { font-size: 11px; color: var(--muted); user-select: text; font-family: var(--mono); margin-bottom: 4px; }
+
+  /* Status line (Checking… / Up to date / Available / Ready / Error) */
+  .stg-status {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    word-break: break-word;
+  }
+  .stg-status[data-kind="ok"]   { color: var(--success, #16a34a); border-color: rgba(22,163,74,.3); }
+  .stg-status[data-kind="warn"] { color: rgb(217, 119, 6); border-color: rgba(217,119,6,.3); }
+  .stg-status[data-kind="err"]  { color: var(--danger); border-color: rgba(220,38,38,.3); }
+
+  /* Spool detail panel → Storage location row.
+     Compact one-liner: package icon · rack name · orange coord badge.
+     Lets the user know exactly where to physically grab / put the spool. */
+  .panel-storage-loc .storage-loc-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .panel-storage-loc .storage-loc-row .icon { background: var(--muted); flex-shrink: 0; }
+  .panel-storage-loc .storage-loc-rack {
+    flex: 1; min-width: 0;
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .panel-storage-loc .storage-loc-coord {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 12px; font-weight: 700;
+    color: var(--primary);
+    background: var(--primary-soft, rgba(249,115,22,.10));
+    border: 1px solid rgba(249,115,22,.4);
+    padding: 2px 8px;
+    border-radius: 5px;
+    letter-spacing: .04em;
+  }
+  .panel-storage-loc .storage-loc-locked {
+    background: rgb(217, 119, 6);
+    flex-shrink: 0;
+  }
+  /* Clickable variant — entire row is a button that takes the user to
+     Storage view with the spool pre-filtered. Hover lights up the border
+     in primary, and the right-side chevron hints at the navigation. */
+  .panel-storage-loc .storage-loc-row--clickable {
+    width: 100%;
+    margin: 0;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    -webkit-appearance: none;
+            appearance: none;
+    transition: border-color .15s, background .15s;
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover {
+    background: var(--surface);
+    border-color: var(--primary);
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover .icon { background: var(--primary); }
+  .panel-storage-loc .storage-loc-row--clickable:hover .storage-loc-rack { color: var(--primary); }
+  .panel-storage-loc .storage-loc-locate {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background .15s, transform .15s;
+  }
+  .panel-storage-loc .storage-loc-row--clickable:hover .storage-loc-locate {
+    background: var(--primary);
+    transform: translateX(2px);
+  }
+
+  /* ── Collapsible section (Data / Tools) ──────────────────────
+     Header is a real <button> for accessibility, no chrome around it.
+     Hover only changes the title + chevron color, no background fill. */
+  .stg-card-head--btn {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    margin: 0 0 10px;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    -webkit-appearance: none;
+            appearance: none;
+  }
+  .stg-card--collapsible[data-collapsed="true"] .stg-card-head--btn { margin-bottom: 0; }
+  .stg-card-head--btn .stg-card-title {
+    flex: 1;
+    transition: color .15s;
+  }
+  .stg-card-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: transform .2s cubic-bezier(.4, 0, .2, 1), background .15s;
+  }
+  .stg-card-head--btn:hover .stg-card-title,
+  .stg-card-head--btn:hover .stg-card-chev { background: var(--primary); color: var(--primary); }
+  .stg-card-head--btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Collapsed: body fully hidden via max-height + padding 0 */
+  .stg-card--collapsible[data-collapsed="true"] .stg-card-body--collapsible {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* Expanded: chevron rotates 90° down, body slides open */
+  .stg-card--collapsible[data-collapsed="false"] .stg-card-chev {
+    transform: rotate(90deg);
+    background: var(--primary);
+  }
+  .stg-card-body--collapsible {
+    max-height: 480px;
+    overflow: hidden;
+    transition:
+      max-height .25s cubic-bezier(.4, 0, .2, 1),
+      margin-top .25s cubic-bezier(.4, 0, .2, 1),
+      opacity   .15s linear;
+  }
+  .sb-community-label {
+    font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: rgba(255,255,255,.22); padding-bottom: 1px;
+  }
+  .sb-github-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 8px;
+    padding: 7px 12px; color: rgba(255,255,255,.75); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+    width: 100%; box-sizing: border-box;
+  }
+  .sb-github-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.25); color: #fff; }
+  .sb-makerworld-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: rgba(0,188,160,.15); border: 1px solid rgba(0,188,160,.35); border-radius: 8px;
+    padding: 7px 12px; color: #00BCA0; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s, border-color .15s, color .15s, box-shadow .2s;
+    width: 100%; box-sizing: border-box;
+  }
+  .sb-makerworld-btn:hover { background: rgba(0,188,160,.28); border-color: rgba(0,188,160,.6); color: #00d9b8; box-shadow: 0 3px 14px rgba(0,188,160,.25); }
+  .sb-discord-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: #5865F2; border: none; border-radius: 8px;
+    padding: 8px 12px; color: #fff; font-size: 12px; font-weight: 600;
+    cursor: pointer; text-decoration: none;
+    transition: background .15s, box-shadow .2s; width: 100%; box-sizing: border-box;
+  }
+  .sb-discord-btn:hover { background: #4752C4; box-shadow: 0 3px 14px rgba(88,101,242,.45); }
+  .sb-qr-wrap {
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 10px; display: flex; flex-direction: column;
+    align-items: center; gap: 6px; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .sb-qr-wrap:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.13); }
+  .sb-qr-img { width: 88px; height: 88px; border-radius: 6px; display: block; image-rendering: pixelated; }
+  .sb-qr-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.72); }
+  .sb-qr-hint { font-size: 10px; color: rgba(255,255,255,.3); text-align: center; }
+
+  /* ── Settings panel — `.stg-copy-btn` is still used by the raw-JSON copy
+     button in the spool detail panel. Other legacy `.stg-*` classes were
+     dropped in v1.4.4 along with the old flat settings layout (see the
+     new `.stg-card` system above). */
+  .stg-copy-btn {
+    width: 32px; height: 30px; padding: 0; border-radius: 7px; flex-shrink: 0;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--muted); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background .15s, color .15s, border-color .15s, transform .15s;
+  }
+  .stg-copy-btn:hover { background: var(--border); color: var(--text); transform: scale(1.08); }
+  .stg-copy-btn.copied { background: var(--success-soft); border-color: rgba(26,175,108,.3); color: var(--success); }
+  @keyframes copyPop { 0%{transform:scale(1)} 40%{transform:scale(1.3)} 100%{transform:scale(1)} }
+  .stg-copy-btn.pop { animation: copyPop .25s cubic-bezier(.4,0,.2,1); }
+

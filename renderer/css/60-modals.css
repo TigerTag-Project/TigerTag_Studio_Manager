@@ -1,0 +1,1278 @@
+/* ── 60-modals.css — Rack-edit / friend / account / login / alert modals ── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Rack create/edit modal — same look as Add Friend modal
+     ═══════════════════════════════════════════════════════════════════ */
+  #rackEditOverlay .rec-card {
+    width: min(420px, calc(100vw - 32px));
+    padding: 22px 22px 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .rec-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .rec-header-text { flex: 1; min-width: 0; }
+  .rec-title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .rec-sub   { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+  .rec-body { display: flex; flex-direction: column; gap: 14px; }
+  .rec-field { display: flex; flex-direction: column; gap: 6px; }
+  .rec-field-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .rec-field input {
+    padding: 10px 12px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  .rec-field input:focus { border-color: var(--primary); background: var(--surface); }
+
+  /* Field-level validation — red border + small bubble below/over the input */
+  .rec-field { position: relative; }
+  .rec-field.is-invalid input {
+    border-color: var(--danger) !important;
+    background: var(--danger-soft, rgba(220,38,38,.06)) !important;
+  }
+  .rec-field.is-invalid input:focus {
+    box-shadow: 0 0 0 3px rgba(220,38,38,.18);
+  }
+  .rec-field-err {
+    position: absolute;
+    left: 0; top: calc(100% + 6px);
+    background: var(--danger);
+    color: #fff;
+    font-size: 11.5px; font-weight: 600;
+    padding: 5px 9px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(220,38,38,.28);
+    z-index: 10;
+    white-space: nowrap;
+    animation: recFieldErrIn .18s ease-out;
+  }
+  /* Speech-bubble pointer */
+  .rec-field-err::before {
+    content: "";
+    position: absolute;
+    top: -4px; left: 12px;
+    width: 8px; height: 8px;
+    background: var(--danger);
+    transform: rotate(45deg);
+  }
+  @keyframes recFieldErrIn {
+    from { opacity: 0; transform: translateY(-3px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Preset picker — one big Panda image on the left that swaps based on the
+     selected preset, 4 preset buttons stacked vertically on the right. */
+  .rec-presets-grid {
+    display: flex; align-items: stretch; gap: 14px;
+  }
+  .rec-presets-img {
+    width: 110px; flex-shrink: 0;
+    object-fit: contain;
+    object-position: center;
+    align-self: stretch;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,.2));
+    transition: opacity .2s;     /* tiny fade when the image swaps */
+  }
+  .rec-presets-list {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  .rec-preset {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text); font-family: inherit;
+    cursor: pointer; transition: background .15s, border-color .15s;
+    text-align: left;
+    flex: 1;
+  }
+  .rec-preset:hover { background: var(--surface); border-color: var(--muted); }
+  .rec-preset--active { border-color: var(--primary); background: var(--primary-soft); }
+  .rec-preset-name { font-size: 14px; font-weight: 700; }
+  .rec-preset-dim { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .rec-preset--active .rec-preset-dim { color: var(--primary); font-weight: 700; }
+
+  .rec-dim-row { display: flex; gap: 10px; }
+  /* Total slots — prominent rounded card to emphasise the headline number
+     (the actual capacity of the rack the user is about to create). */
+  .rec-dim-total {
+    margin: 12px auto 0;
+    padding: 14px 24px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: var(--primary-soft, rgba(249,115,22,.08));
+    border: 1.5px solid var(--primary);
+    border-radius: 16px;
+    min-width: 180px;
+    box-shadow: 0 4px 14px rgba(249,115,22,.18);
+    /* Center the inline-flex element inside its block parent */
+    align-self: center;
+  }
+  /* Wrap the row so the inline-flex card centers in the column */
+  .rec-body > .rec-dim-total { align-self: center; }
+  .rec-dim-total-num {
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--primary);
+    font-family: var(--mono);
+    letter-spacing: -.02em;
+  }
+  .rec-dim-total-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    opacity: .85;
+  }
+  .rec-field--dim { flex: 1; }
+  .rec-field--dim input { text-align: center; font-family: var(--mono); font-weight: 700; font-size: 16px; }
+
+  .rec-result {
+    min-height: 16px; font-size: 12px; color: var(--danger);
+    text-align: center; line-height: 1.4;
+  }
+
+  .rec-footer { display: flex; gap: 8px; align-items: center; }
+  /* All buttons keep their natural width; the <span flex:1> pushes
+     primary action (Save/Create) to the right, Cancel stays to the left. */
+  .rec-footer .adf-btn { flex: 0 0 auto; }
+  /* Make sure the primary CTA still has comfortable width */
+  .rec-footer .adf-btn--primary { min-width: 120px; }
+  /* Icon-only variant — square button, no label */
+  .adf-btn--icon {
+    width: 38px; height: 38px;
+    padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto !important;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Hold-to-confirm progress fill — fills left-to-right while the user
+     holds the button, completes after 1.5s to trigger the action.
+     Default color = danger (red) for irreversible actions like Delete.
+     Variant `--primary` = orange for recoverable actions like Clear all. */
+  .hold-progress {
+    position: absolute;
+    inset: 0;
+    width: 0;
+    background: var(--danger);
+    opacity: .35;
+    pointer-events: none;
+    transition: width 0s;
+    z-index: 0;
+  }
+  .hold-progress--primary { background: var(--primary); }
+
+  /* Make sure the button content sits above the progress fill */
+  .adf-btn--icon > .icon,
+  .adf-btn--secondary > .icon,
+  .adf-btn--secondary > [data-i18n] { position: relative; z-index: 1; }
+
+  /* Secondary button needs the same overflow trick to clip the fill */
+  .adf-btn--secondary { position: relative; overflow: hidden; }
+
+  /* Holding state — soft tint matching the variant color */
+  .adf-btn--icon.is-holding {
+    background: var(--danger-soft, rgba(220,38,38,.08));
+    border-color: var(--danger);
+  }
+  .adf-btn--icon.is-confirming { background: var(--danger); }
+  .adf-btn--icon.is-confirming > .icon { background: #fff; }
+
+  .adf-btn--secondary.is-holding {
+    background: var(--primary-soft, rgba(249,115,22,.08));
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  .adf-btn--secondary.is-holding > .icon { background: var(--primary); }
+  .adf-btn--secondary.is-confirming { background: var(--primary); color: #fff; }
+  .adf-btn--secondary.is-confirming > .icon { background: #fff; }
+
+  /* Mark-as-deleted button inside the spool detail panel — full width,
+     same hold-to-confirm pattern as the rack delete (red fill). */
+  .panel-section--delete { padding-top: 18px; padding-bottom: 18px; }
+  .panel-delete-btn {
+    width: 100%;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 14px;
+    background: transparent;
+    border: 1.5px solid var(--danger);
+    color: var(--danger);
+    border-radius: 10px;
+    font-size: 13px; font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    position: relative; overflow: hidden;
+    transition: background .15s, color .15s;
+  }
+  .panel-delete-btn:hover { background: var(--danger-soft, rgba(220,38,38,.06)); }
+  .panel-delete-btn > .icon { background: var(--danger); position: relative; z-index: 1; }
+  .panel-delete-btn > [data-i18n] { position: relative; z-index: 1; }
+  .panel-delete-btn.is-holding { background: var(--danger-soft, rgba(220,38,38,.08)); }
+  .panel-delete-btn.is-confirming { background: var(--danger); color: #fff; }
+  .panel-delete-btn.is-confirming > .icon { background: #fff; }
+  /* Secondary action — neutral grey, less loud than primary */
+  .adf-btn--secondary {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 14px;
+    background: var(--surface-2);
+    border: 1.5px solid var(--border);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .adf-btn--secondary:hover { background: var(--surface); border-color: var(--primary); }
+  .adf-btn--secondary:disabled { opacity: .5; cursor: not-allowed; }
+  .adf-btn--danger {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 12px;
+    background: transparent;
+    border: 1.5px solid transparent;
+    color: var(--danger);
+    border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .adf-btn--danger:hover {
+    background: var(--danger-soft, rgba(220,38,38,.08));
+    border-color: var(--danger);
+  }
+  .adf-btn--danger .icon { background: var(--danger); }
+  .adf-btn--danger:hover .icon { background: var(--danger); }
+
+  /* ── Friend inventory panel ────────────────────────────────────────────── */
+  #friendInvPanel { width: min(460px, 92vw); }
+  .fi-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .dp-header-identity { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .fi-name { font-size: 15px; font-weight: 700; color: var(--text); }
+  .fi-sub  { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .fi-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+  .fi-loading { font-size: 13px; color: var(--muted); text-align: center; padding: 32px 0; }
+  .fi-empty   { font-size: 13px; color: var(--muted); text-align: center; padding: 32px 0; }
+  #friendInvGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .fi-spool-card {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px; overflow: hidden;
+  }
+  .fi-spool-swatch {
+    width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  }
+  .fi-spool-info    { min-width: 0; flex: 1; }
+  .fi-spool-name    { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fi-spool-meta    { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fi-spool-weight  { font-size: 11px; font-weight: 600; color: var(--primary); margin-top: 2px; }
+  .stg-friends-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .stg-friends-actions .primary { flex: 1; }
+  .stg-regen-btn { flex-shrink: 0; color: var(--muted); font-size: 11px; }
+
+  /* ── Friend requests badge on settings button ── */
+  .friends-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    margin-left: 5px;
+    background: var(--primary, #f97316);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 8px;
+    line-height: 1;
+    vertical-align: middle;
+  }
+  .friends-badge.hidden { display: none; }
+
+  /* ── Friend request incoming modal ──────────────────────────────────── */
+  #friendRequestOverlay .frq-card {
+    width: min(320px, calc(100vw - 32px));
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; padding: 32px 24px 24px; text-align: center;
+  }
+  .frq-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 700; color: #fff;
+    box-shadow: 0 2px 12px rgba(0,0,0,.15);
+  }
+  .frq-name   { font-size: 18px; font-weight: 700; color: var(--text); }
+  .frq-sub    { font-size: 13px; color: var(--muted); margin-top: -4px; }
+  .frq-actions { display: flex; gap: 8px; margin-top: 8px; width: 100%; }
+  .frq-btn-block  { flex: 1; color: var(--danger) !important; font-size: 11px; }
+  .frq-btn-refuse { flex: 1; }
+  .frq-btn-accept { flex: 2; }
+
+  /* ── Add friend modal ────────────────────────────────────────────────── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Add Friend modal — uses .modal-close (standard pattern, like other modals)
+     ═══════════════════════════════════════════════════════════════════ */
+  #addFriendOverlay .adf-card {
+    width: min(360px, calc(100vw - 32px));
+    padding: 22px 22px 20px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+
+  /* Header — title text on the left, .modal-close button on the right */
+  .adf-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .adf-header-text { flex: 1; min-width: 0; }
+  .adf-title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .adf-sub   { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  /* .modal-close already styled globally — no override needed */
+
+  /* Body — code group + preview + result */
+  .adf-body { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Code input */
+  .adf-code-group {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 4px 0 2px;
+  }
+  .adf-seg {
+    width: 100px; box-sizing: border-box;
+    padding: 12px 0; font-size: 22px; font-weight: 700; letter-spacing: .14em;
+    font-family: var(--mono);
+    text-transform: uppercase; text-align: center;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); outline: none;
+    caret-color: var(--primary);
+    transition: border-color .15s, background .15s;
+  }
+  .adf-seg::placeholder { color: var(--border); font-weight: 600; letter-spacing: .14em; }
+  .adf-seg:focus { border-color: var(--primary); background: var(--surface); }
+  .adf-sep {
+    font-size: 22px; font-weight: 700; color: var(--muted); user-select: none;
+    line-height: 1;
+  }
+
+  /* Preview card (live lookup result) */
+  .adf-preview {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+  }
+  .adf-preview.hidden { display: none; }
+  .adf-preview-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .adf-preview-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .adf-preview-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .adf-preview-status { font-size: 11px; color: var(--success, #1aaf6c); font-weight: 600; }
+  .adf-preview-check {
+    width: 22px; height: 22px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--success, #1aaf6c); border-radius: 50%; color: #fff;
+  }
+
+  /* Result line (errors, hints) */
+  .adf-result {
+    min-height: 16px; font-size: 12px; color: var(--muted);
+    text-align: center; line-height: 1.4;
+  }
+  .adf-result.adf-result--error   { color: var(--danger); }
+  .adf-result.adf-result--success { color: var(--success, #1aaf6c); }
+
+  /* Footer — same pattern as other modals (.ghost / .primary buttons) */
+  .adf-footer { display: flex; gap: 8px; }
+  .adf-footer .adf-btn { flex: 1; }
+  .adf-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px;          /* spinner + label spacing when loading; no-op otherwise */
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600; font-family: inherit;
+    cursor: pointer; transition: background .15s, border-color .15s, color .15s;
+  }
+  .adf-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .adf-btn--ghost {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  }
+  .adf-btn--ghost:hover { background: var(--surface); border-color: var(--muted); }
+  .adf-btn--primary {
+    background: var(--primary); border: 1px solid var(--primary); color: #fff;
+    flex: 1.5 !important;
+  }
+  .adf-btn--primary:hover:not(:disabled) { background: #f0670d; border-color: #f0670d; }
+
+  /* settings panel — light-theme overrides for dark sidebar components */
+  #settingsPanel .sb-field-label { color: var(--muted); }
+  #settingsPanel .sb-field-input {
+    background: var(--surface-2); border-color: var(--border); color: var(--text);
+  }
+  #settingsPanel .sb-field-input:focus { border-color: var(--primary); background: var(--primary-soft); }
+  #settingsPanel .sb-eye {
+    background: var(--surface-2); border-color: var(--border); color: var(--muted);
+  }
+  #settingsPanel .sb-eye:hover { background: var(--border) !important; color: var(--text) !important; }
+  #settingsPanel .sb-config-save { height: 32px; }
+
+  /* add account button */
+  .stg-add-btn {
+    width: 100%; height: 32px; margin-top: 12px; border-radius: 8px;
+    border: 1.5px dashed var(--border); background: none;
+    color: var(--muted); font-size: 12px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .stg-add-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+
+  /* ── modals ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(10,12,24,.55); backdrop-filter: blur(7px);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: auto; }
+  .modal-card {
+    background: var(--surface); border-radius: 18px;
+    border: 1px solid var(--border);
+    box-shadow: 0 32px 80px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+    padding: 28px 24px 22px; width: 340px; max-width: calc(100vw - 32px);
+    transform: scale(.92) translateY(14px);
+    transition: transform .22s cubic-bezier(.34,1.3,.64,1);
+  }
+  .modal-overlay.open .modal-card { transform: scale(1) translateY(0); }
+  /* ── edit account card ── */
+  #editAccountModalOverlay .modal-card { padding: 0; overflow: hidden; width: 360px; }
+  .eac-hero {
+    position: relative; display: flex; flex-direction: column; align-items: stretch;
+    padding: 20px 24px 20px;
+    background: linear-gradient(170deg, var(--surface-2) 0%, var(--surface) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .eac-close { position: absolute; top: 12px; right: 12px; }
+  .eac-ident { display: flex; flex-direction: row; align-items: center; gap: 14px; }
+  .eac-ident-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .eac-avatar {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--primary) 0%, #ffb056 100%);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; letter-spacing: -.02em;
+    box-shadow: 0 6px 22px rgba(255,122,24,.32);
+  }
+  .eac-name { font-size: 15px; font-weight: 700; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eac-email { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eac-body { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 0; }
+  .eac-field-label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .07em; margin-bottom: 7px;
+  }
+  .eac-input { background: var(--surface-2) !important; border-color: var(--border) !important; color: var(--text) !important; }
+  .eac-input:focus { border-color: var(--primary) !important; background: var(--primary-soft) !important; }
+  .eac-eye { background: var(--surface-2) !important; border-color: var(--border) !important; color: var(--muted) !important; }
+  .eac-eye:hover { background: var(--border) !important; color: var(--text) !important; }
+  .eac-save { width: 100%; height: 40px; border-radius: 10px; font-size: 14px; font-weight: 600; margin-top: 14px; justify-content: center; }
+  /* admin badge */
+  .eac-admin-badge {
+    font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 20px;
+    background: linear-gradient(135deg, var(--primary), #ffb056);
+    color: #fff; flex-shrink: 0; align-self: center;
+  }
+  /* debug toggle row */
+  .eac-debug-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-top: 1px solid var(--border); margin-top: 14px;
+  }
+  .eac-debug-label {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 500; color: var(--text);
+  }
+  /* toggle switch */
+  .eac-toggle { position: relative; display: inline-flex; cursor: pointer; }
+  .eac-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .eac-toggle-track {
+    width: 38px; height: 22px; border-radius: 11px;
+    background: var(--border); transition: background .2s;
+    display: flex; align-items: center; padding: 0 3px;
+  }
+  .eac-toggle input:checked ~ .eac-toggle-track { background: var(--primary); }
+  .eac-toggle-thumb {
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,.2);
+    transition: transform .2s; flex-shrink: 0;
+  }
+  .eac-toggle input:checked ~ .eac-toggle-track .eac-toggle-thumb { transform: translateX(16px); }
+  .eac-name-row { display: flex; gap: 6px; }
+  .eac-name-input {
+    flex: 1; padding: 7px 10px; font-size: 13px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); outline: none;
+    transition: border-color .15s;
+  }
+  .eac-name-input:focus { border-color: var(--primary); }
+  .eac-name-save {
+    width: 32px; height: 32px; flex-shrink: 0; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+  }
+  .eac-sep {
+    display: flex; align-items: center; gap: 10px; margin: 20px 0 12px;
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .07em;
+  }
+  .eac-sep::before, .eac-sep::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .eac-lang { width: 100%; }
+  .eac-disconnect {
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; margin-top: 14px; padding: 9px; font-family: inherit;
+    border-radius: 9px; border: 1px solid transparent; background: none;
+    color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: color .15s, background .15s, border-color .15s;
+    user-select: none; -webkit-user-select: none;
+  }
+  .eac-disconnect:hover { color: var(--danger); background: var(--danger-soft); border-color: rgba(216,59,59,.15); }
+  /* long-press fill */
+  .eac-disconnect::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: rgba(216,59,59,.18); pointer-events: none;
+    transition: none; border-radius: 8px;
+  }
+  .eac-disconnect.holding { color: var(--danger); border-color: rgba(216,59,59,.3); }
+  .eac-disconnect.holding::before { width: 100%; transition: width 1.5s linear; }
+
+  /* ── account dropdown ── */
+  .sb-avatar-wrap { position: relative; }
+  .acct-dropdown {
+    position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    width: 224px; z-index: 500;
+    background: rgba(16,18,26,.97); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; padding: 6px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.55);
+    backdrop-filter: blur(16px);
+    opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(-6px) scale(.97);
+    transition: opacity .18s, transform .18s cubic-bezier(.34,1.3,.64,1);
+  }
+  .acct-dropdown.open {
+    opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0) scale(1);
+  }
+  /* sidebar collapsed → dropdown pops to the right via position:fixed set by JS */
+  .acct-dropdown.dropdown-fixed {
+    position: fixed !important;
+    left: auto; top: auto;           /* JS sets exact left/top via inline style */
+    transform: translateY(-6px) scale(.97) !important;
+  }
+  .acct-dropdown.dropdown-fixed.open {
+    transform: translateY(0) scale(1) !important;
+  }
+  .acct-drop-item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 10px; border-radius: 9px; border: none; background: transparent;
+    color: rgba(255,255,255,.75); font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit; text-align: left; justify-content: flex-start;
+    transition: background .13s, color .13s;
+  }
+  .acct-drop-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+  .acct-drop-item.active { color: #fff; }
+  .acct-drop-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; letter-spacing: -0.5px;
+  }
+  .acct-drop-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+  .acct-drop-check { margin-left: auto; color: var(--primary); font-size: 13px; flex-shrink: 0; }
+  .acct-drop-sep { height: 1px; background: rgba(255,255,255,.07); margin: 5px 4px; }
+  .acct-drop-action {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 10px; border-radius: 9px; border: none; background: transparent;
+    color: rgba(255,255,255,.55); font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+    transition: background .13s, color .13s;
+  }
+  .acct-drop-action:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.9); }
+  .acct-drop-section-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+    color: rgba(255,255,255,.3); padding: 4px 10px 2px;
+  }
+  .acct-drop-friend-active { color: #fff !important; }
+  .acct-drop-eye {
+    margin-left: auto; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px;
+    opacity: .35; transition: opacity .13s;
+  }
+  .acct-drop-eye .icon { background: rgba(255,255,255,.85); }
+  .acct-drop-item:hover .acct-drop-eye { opacity: .85; }
+
+  /* ── profiles modal ── */
+  .prf-card { width: 380px; padding: 0; overflow: hidden; }
+  .prf-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 22px 16px; border-bottom: 1px solid var(--border);
+  }
+  .prf-title { font-size: 15px; font-weight: 700; letter-spacing: -.015em; }
+  .prf-body {
+    padding: 14px 14px 14px;
+    display: flex; flex-direction: column; gap: 0;
+    max-height: 72vh; overflow-y: auto;
+  }
+  .prf-body::-webkit-scrollbar { width: 3px; }
+  .prf-body::-webkit-scrollbar-track { background: transparent; }
+  .prf-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* vertical card list */
+  .prf-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 10px; }
+  .prf-account-card {
+    display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+    border-radius: 13px; background: var(--surface-2); border: 1.5px solid var(--border);
+    cursor: pointer; font-family: inherit; text-align: left; width: 100%;
+    transition: background .15s, border-color .18s, transform .12s cubic-bezier(.34,1.3,.64,1), box-shadow .18s;
+  }
+  .prf-account-card:hover {
+    background: var(--surface); border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0,0,0,.07), 0 0 0 3px var(--primary-soft);
+  }
+  .prf-account-avatar {
+    width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -0.5px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.14);
+  }
+  .prf-account-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .prf-account-name {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .prf-account-email {
+    font-size: 11px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .prf-account-chevron {
+    flex-shrink: 0; color: var(--border);
+    transition: color .15s, transform .15s;
+  }
+  .prf-account-card:hover .prf-account-chevron {
+    color: var(--primary); transform: translateX(2px);
+  }
+
+  /* ── friends section in profiles modal ── */
+  .prf-section-sep { height: 1px; background: var(--border); margin: 10px 0 14px; }
+  .prf-section-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin-bottom: 8px;
+  }
+  .prf-friend-card .prf-account-chevron { color: var(--muted); }
+  .prf-friend-card:hover .prf-account-chevron { color: var(--primary); transform: none; }
+  .prf-friend-sub { color: var(--muted); font-style: italic; }
+  .prf-friend-active { border-color: var(--primary) !important; background: var(--primary-soft) !important; }
+  .prf-friends-empty {
+    text-align: center; padding: 12px;
+    font-size: 12px; color: var(--muted);
+    background: var(--surface-2); border: 1px dashed var(--border);
+    border-radius: 10px; margin-bottom: 8px;
+  }
+
+  /* ── friend view banner ── */
+  /* User chip in the top header row — to the LEFT of the KPI stats.
+     Two variants share the same frame:
+       • Own user (.fvb--own) → avatar + name + random welcome greeting
+       • Friend view          → avatar + name + READ-ONLY badge (or error)
+     Layout: avatar on the left, then a vertical stack (name on top, sub-line
+     below). Height aligns to the stat tiles so the toolbar reads as one row. */
+  /* No surrounding pill — the chip is now just an avatar + stacked text,
+     blending into the header row. The READ-ONLY badge / welcome greeting
+     give it enough visual identity without an extra frame. */
+  .fvb {
+    display: flex; align-items: center;
+    gap: 10px; padding: 0;
+    background: transparent; border: 0;
+    border-radius: 0;
+    flex-shrink: 0;
+    margin-bottom: 0;
+  }
+  .fvb.hidden { display: none; }
+  .fvb-inner {
+    display: flex; flex-direction: column;
+    gap: 1px;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  /* Avatar size matched to the height of the KPI stat tiles next to it
+     so the chip + stats row reads as one visually-balanced strip. */
+  .fvb-avatar {
+    width: 50px; height: 50px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; color: #fff;
+    letter-spacing: -.7px;
+  }
+  .fvb-name {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 160px;
+    line-height: 1.2;
+  }
+  .fvb-badge {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted);
+    background: var(--border); border-radius: 3px; padding: 1px 5px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+  /* Welcome greeting under the name in own-user mode. Subtle muted text,
+     same vertical rhythm as the READ-ONLY badge but without the chip
+     background — it's an emoji-prefixed greeting, not a status flag. */
+  .fvb-welcome {
+    font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 160px;
+    line-height: 1.2;
+  }
+
+  /* read-only weight bar (no slider) */
+  .wb-track--ro { pointer-events: none; }
+
+  /* Friend view — error variant. The wrapping pill is gone now, so the
+     red `.fvb-badge--error` chip in the inner stack carries the whole
+     error signal on its own. */
+  .fvb-badge--error {
+    background: var(--danger) !important; color: #fff !important;
+  }
+
+  /* ── UID format migration overlay ─────────────────────────────────────
+     Lock-screen modal shown while Tiger Studio is migrating legacy
+     decimal-format inventory ids to the new hex canonical form. Z-index
+     above everything so the user CAN'T interact with the rest of the UI
+     and CAN'T dismiss the modal until the queue drains. The message
+     explicitly warns the user not to close the app. */
+  .uid-migr-overlay {
+    z-index: 10000;
+  }
+  .uid-migr-card {
+    max-width: 480px;
+    text-align: center;
+    padding: 32px 28px 28px;
+  }
+  .uid-migr-icon {
+    width: 64px; height: 64px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background: var(--primary-soft, rgba(255,122,24,.12));
+    display: flex; align-items: center; justify-content: center;
+    color: var(--primary);
+    animation: uidMigrSpin 1.6s linear infinite;
+  }
+  .uid-migr-icon .icon {
+    background: var(--primary);
+    width: 28px; height: 28px;
+  }
+  .uid-migr-card.uid-migr--done .uid-migr-icon {
+    background: rgba(16,185,129,.14);
+    color: #10b981;
+    animation: none;
+  }
+  .uid-migr-card.uid-migr--done .uid-migr-icon .icon {
+    background: #10b981;
+    /* Switch from refresh-arrow to check via mask swap */
+    -webkit-mask-image: url('../../assets/svg/icons/icon_check.svg');
+            mask-image: url('../../assets/svg/icons/icon_check.svg');
+  }
+  @keyframes uidMigrSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .uid-migr-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 12px;
+    letter-spacing: -.01em;
+  }
+  .uid-migr-msg {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin: 0 0 22px;
+  }
+  .uid-migr-msg strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .uid-migr-progress {
+    margin-bottom: 16px;
+  }
+  .uid-migr-progress-track {
+    height: 8px;
+    background: var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .uid-migr-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), #ffb056);
+    width: 0%;
+    transition: width .25s ease;
+    border-radius: 8px;
+  }
+  .uid-migr-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .uid-migr-warn {
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    line-height: 1.4;
+  }
+  .uid-migr-card.uid-migr--done .uid-migr-warn {
+    display: none;
+  }
+  .uid-migr-card.uid-migr--done .uid-migr-msg {
+    /* In success state, simplify to a one-liner */
+    display: none;
+  }
+  .uid-migr-card.uid-migr--done .uid-migr-title::after {
+    content: " — done";
+    color: #10b981;
+  }
+
+  /* ── Confirm modal (phase 1) — user consent before migration starts ──
+     Same visual base as the progress modal but DISMISSIBLE, with three
+     action buttons. The icon doesn't spin (no operation in progress yet). */
+  .uid-migr-confirm-card {
+    max-width: 480px;
+    text-align: center;
+    padding: 32px 28px 24px;
+  }
+  .uid-migr-confirm-icon {
+    animation: none;          /* override the spinning animation from .uid-migr-icon */
+  }
+  #uidMigrationConfirmCount {
+    font-weight: 700;
+    color: var(--text);
+  }
+  .uid-migr-confirm-actions {
+    display: flex; flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .uid-migr-confirm-btn {
+    flex: 1 1 auto;
+    min-width: 110px;
+    height: 38px;
+    padding: 0 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .uid-migr-confirm-btn.ghost {
+    background: transparent;
+    border: 1.5px solid var(--border);
+    color: var(--text);
+  }
+  .uid-migr-confirm-btn.ghost:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-soft, rgba(255,122,24,.06));
+  }
+  .uid-migr-confirm-btn.primary {
+    background: var(--primary);
+    border: 1.5px solid var(--primary);
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(255,122,24,.25);
+  }
+  .uid-migr-confirm-btn.primary:hover {
+    background: var(--primary-hover, #ff8a30);
+  }
+
+  /* Friend view — full error state inside card-inv */
+  .friend-inv-error {
+    text-align: center;
+    padding: 48px 24px;
+    background: var(--danger-soft);
+    border: 1.5px dashed var(--danger);
+    border-radius: 14px;
+    margin-top: 16px;
+  }
+  .friend-inv-error-icon {
+    font-size: 36px; margin-bottom: 12px;
+  }
+  .friend-inv-error-title {
+    font-size: 16px; font-weight: 700; color: var(--danger);
+    margin-bottom: 6px;
+  }
+  .friend-inv-error-msg {
+    font-size: 13px; color: var(--text); margin-bottom: 16px;
+    font-family: var(--mono);
+  }
+  .friend-inv-error-hint {
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+    max-width: 480px; margin: 0 auto 18px;
+  }
+  .friend-inv-error-actions {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  }
+  .fie-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 16px; border-radius: 9px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    color: var(--text); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .fie-btn:hover { background: var(--surface-2); border-color: var(--primary); color: var(--primary); }
+  .fie-btn:hover .icon { background: var(--primary); }
+  .fie-btn .icon { background: var(--text); }
+  .fie-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .fie-btn--danger { color: var(--danger); border-color: rgba(216,59,59,.3); }
+  .fie-btn--danger .icon { background: var(--danger); }
+  .fie-btn--danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+  .fie-btn--danger:hover .icon { background: var(--danger); }
+
+  /* ── color swatches ── */
+  .eac-swatches {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; width: 100%; margin-top: 18px;
+  }
+  .eac-swatch {
+    aspect-ratio: 1; border-radius: 50%; border: 2.5px solid transparent;
+    cursor: pointer; padding: 0; width: 100%;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+  }
+  .eac-swatch:hover { transform: scale(1.18); }
+  .eac-swatch.active { border-color: #fff; box-shadow: 0 0 0 2.5px rgba(255,255,255,.35); transform: scale(1.12); }
+  /* custom color swatch (label element, light context in hero) */
+  .eac-swatch-custom {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2) !important;
+    border: 2px dashed var(--border) !important;
+    color: var(--muted); position: relative; overflow: hidden; cursor: pointer;
+  }
+  .eac-swatch-custom input[type="color"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    width: 100%; height: 100%; border: none; padding: 0;
+  }
+  .eac-swatch-custom:hover { color: var(--text) !important; }
+  .eac-swatch-custom.active {
+    border-style: solid !important; border-color: var(--primary) !important;
+    box-shadow: 0 0 0 2.5px var(--primary-soft) !important;
+  }
+  /* hero: preset swatches keep white borders on dark-ish gradient bg */
+  .eac-hero .eac-swatches { margin-top: 16px; }
+  .eac-hero .eac-swatch[data-color] { border-color: rgba(255,255,255,.1); }
+  .eac-hero .eac-swatch[data-color].active { border-color: #fff; box-shadow: 0 0 0 2.5px rgba(255,255,255,.28); }
+
+  /* add account modal */
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;
+  }
+  .modal-header .modal-title { text-align: left; font-size: 17px; margin: 0; }
+  .modal-close {
+    width: 28px; height: 28px; border-radius: 8px; border: none;
+    background: var(--surface-2); color: var(--muted); cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, color .15s;
+  }
+  .modal-close:hover { background: var(--border); color: var(--text); }
+  #addAccountModalOverlay .sb-field-label { color: var(--muted); }
+  #addAccountModalOverlay .sb-field-input { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+  #addAccountModalOverlay .sb-field-input:focus { border-color: var(--primary); background: var(--primary-soft); }
+  #addAccountModalOverlay .sb-eye { background: var(--surface-2); border-color: var(--border); color: var(--muted); }
+  #addAccountModalOverlay .sb-eye:hover { background: var(--border) !important; color: var(--text) !important; }
+
+  /* ── login modal (Firebase) ── */
+  .login-card { width: 360px; }
+  .login-google-btn {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-top: 14px; height: 42px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .login-google-btn:hover { background: var(--border); border-color: var(--muted); }
+  .login-google-btn:disabled { opacity: .5; pointer-events: none; }
+  .login-or {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0 4px; color: var(--muted); font-size: 12px;
+  }
+  .login-or::before, .login-or::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }
+
+  /* ── login modal 2026 redesign (lm-*) ── */
+  #addAccountModalOverlay .lm-card {
+    width: 400px; padding: 32px 32px 24px;
+    border-radius: 22px; position: relative;
+    display: flex; flex-direction: column;
+  }
+  #addAccountModalOverlay .lm-close {
+    position: absolute; top: 16px; right: 16px; z-index: 2;
+  }
+  /* hero */
+  #addAccountModalOverlay .lm-hero {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 20px; padding-right: 36px;
+  }
+  #addAccountModalOverlay .lm-hero-icon {
+    width: 52px; height: 52px; flex-shrink: 0;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ff7a18 0%, #ffb056 100%);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 20px rgba(255,122,24,.38);
+    font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -1px;
+  }
+  #addAccountModalOverlay .lm-title {
+    font-size: 17px; font-weight: 700; color: var(--text);
+    letter-spacing: -.02em; margin-bottom: 3px;
+  }
+  #addAccountModalOverlay .lm-subtitle {
+    font-size: 12.5px; color: var(--muted); line-height: 1.4;
+  }
+  /* language select */
+  #addAccountModalOverlay .lm-lang-select {
+    width: 100%; height: 36px; margin-bottom: 20px;
+    padding: 0 10px; border: 1.5px solid var(--border);
+    border-radius: 10px; background: var(--surface-2);
+    color: var(--text); font-size: 13px; cursor: pointer; outline: none;
+    transition: border-color .2s;
+  }
+  #addAccountModalOverlay .lm-lang-select:focus { border-color: var(--primary); }
+  /* Google button */
+  #addAccountModalOverlay .lm-google-btn {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+    height: 46px; border-radius: 12px;
+    border: 1.5px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    transition: background .15s, border-color .15s, box-shadow .15s;
+  }
+  #addAccountModalOverlay .lm-google-btn:hover {
+    background: var(--surface-2); border-color: rgba(0,0,0,.15);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  #addAccountModalOverlay .lm-google-btn:disabled { opacity: .5; pointer-events: none; }
+  /* "or" divider */
+  #addAccountModalOverlay .lm-or {
+    display: flex; align-items: center; gap: 10px;
+    margin: 16px 0 4px; color: var(--muted); font-size: 12px;
+  }
+  #addAccountModalOverlay .lm-or::before, #addAccountModalOverlay .lm-or::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }
+  /* floating label fields */
+  #addAccountModalOverlay .lm-field { position: relative; margin-top: 14px; }
+  #addAccountModalOverlay .lm-input {
+    width: 100%; height: 54px; padding: 0 14px;
+    border: 1.5px solid var(--border); border-radius: 12px;
+    font-size: 14px; background: var(--surface); color: var(--text); outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  #addAccountModalOverlay .lm-input:focus {
+    border-color: var(--primary); box-shadow: 0 0 0 3px rgba(255,122,24,.12);
+  }
+  #addAccountModalOverlay .lm-input.lm-pass-input { padding-right: 44px; }
+  #addAccountModalOverlay .lm-label {
+    position: absolute; left: 14px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px; color: var(--muted);
+    pointer-events: none; line-height: 1;
+    background: var(--surface); padding: 0 2px;
+    transition: top .15s ease, font-size .15s ease, color .15s ease, transform .15s ease;
+  }
+  #addAccountModalOverlay .lm-input:focus ~ .lm-label,
+  #addAccountModalOverlay .lm-input:not(:placeholder-shown) ~ .lm-label {
+    top: 0; transform: translateY(-50%) scale(0.82);
+    transform-origin: left center; color: var(--primary);
+  }
+  /* eye toggle */
+  #addAccountModalOverlay .lm-eye {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    width: 28px; height: 28px; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; transition: color .15s;
+  }
+  #addAccountModalOverlay .lm-eye:hover { color: var(--text); }
+  /* remember me + forgot password */
+  #addAccountModalOverlay .lm-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 12px;
+  }
+  #addAccountModalOverlay .lm-check-wrap {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none;
+  }
+  #addAccountModalOverlay .lm-check-wrap input[type="checkbox"] {
+    position: absolute; opacity: 0; width: 0; height: 0;
+  }
+  #addAccountModalOverlay .lm-check-box {
+    width: 16px; height: 16px; flex-shrink: 0;
+    border: 1.5px solid var(--border); border-radius: 4px; background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s, border-color .15s;
+  }
+  #addAccountModalOverlay .lm-check-wrap input[type="checkbox"]:checked ~ .lm-check-box {
+    background: var(--primary); border-color: var(--primary);
+  }
+  #addAccountModalOverlay .lm-check-wrap input[type="checkbox"]:checked ~ .lm-check-box::after {
+    content: ""; display: block; width: 9px; height: 5px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) translateY(-1px);
+  }
+  #addAccountModalOverlay .lm-forgot-btn {
+    background: none; border: none; padding: 0;
+    font-size: 12.5px; color: var(--primary); cursor: pointer;
+    transition: opacity .15s;
+  }
+  #addAccountModalOverlay .lm-forgot-btn:hover { opacity: .7; }
+  /* result feedback */
+  #addAccountModalOverlay #addModalResult { min-height: 0; }
+  /* submit */
+  #addAccountModalOverlay .lm-submit-btn {
+    width: 100%; height: 46px; margin-top: 16px;
+    border-radius: 12px; font-size: 14px; font-weight: 600;
+    justify-content: center;
+  }
+  /* mode toggle footer */
+  #addAccountModalOverlay .lm-mode-toggle {
+    text-align: center; margin-top: 16px;
+    font-size: 12.5px; color: var(--muted);
+  }
+  #addAccountModalOverlay .lm-mode-btn {
+    background: none; border: none; padding: 0 0 0 4px;
+    font-size: 12.5px; font-weight: 600; color: var(--primary);
+    cursor: pointer; transition: opacity .15s;
+  }
+  #addAccountModalOverlay .lm-mode-btn:hover { opacity: .7; }
+
+  /* "Report a problem" link inside the login modal */
+  #addAccountModalOverlay .lm-report-link {
+    display: block; margin: 14px auto 0;
+    background: none; border: none; padding: 4px 8px;
+    font-size: 11.5px; color: var(--muted);
+    cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+    opacity: .8; transition: opacity .15s;
+  }
+  #addAccountModalOverlay .lm-report-link:hover { opacity: 1; color: var(--text); }
+
+  /* Inline "Details" link inside an alert toast */
+  .alert .alert-link {
+    background: none; border: none; padding: 0;
+    font: inherit; color: inherit;
+    text-decoration: underline; text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .alert .alert-link:hover { opacity: .75; }
+
+  /* Badge on the report-problem button when errors are queued */
+  .diag-badge {
+    display: inline-block; margin-left: 6px;
+    min-width: 16px; height: 16px; padding: 0 5px;
+    border-radius: 8px;
+    background: var(--danger); color: #fff;
+    font-size: 10px; font-weight: 700; line-height: 16px;
+    text-align: center; vertical-align: middle;
+  }
+
+  /* Diagnostic modal */
+  #diagModalOverlay .modal-card.diag-card {
+    width: min(640px, 92vw); padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  #diagModalOverlay .diag-header {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #diagModalOverlay .diag-title { font-size: 16px; font-weight: 600; }
+  #diagModalOverlay .diag-sub { font-size: 12.5px; color: var(--muted); margin-top: -4px; }
+  #diagModalOverlay .diag-body {
+    width: 100%; min-height: 280px; max-height: 50vh;
+    padding: 12px 14px; resize: vertical;
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5;
+    white-space: pre; overflow: auto;
+  }
+  #diagModalOverlay .diag-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+  }
+
+  /* main column */
+  .main-col {
+    flex: 1; min-width: 0;
+    padding: 16px 20px 12px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  /* TD1S / Scale / Cloud (and the optional RFID pill) — always pinned to
+     the right edge of the header. `margin-left: auto` makes this work even
+     when the stats wrap (`#sbStats`) is `.hidden` (display:none) and is
+     therefore not contributing flex space, which would otherwise leave
+     `justify-content: space-between` aligning the icons to the left. */
+  .top-status-icons {
+    display: flex; align-items: center; gap: 12px;
+    margin-left: auto;
+  }
+  header.top h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+  header.top h1 .dot { width: 12px; height: 12px; border-radius: 4px; background: linear-gradient(135deg, var(--primary), #ffb056); display: inline-block; }
+  header.top .subtitle { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .health { display: flex; align-items: center; cursor: default; position: relative; }
+  .health .icon { color: var(--neutral); transition: color .25s, filter .25s; }
+  .health.ok  .icon { color: var(--success); filter: drop-shadow(0 0 6px var(--success)); }
+  .health.bad .icon { color: var(--danger);  filter: drop-shadow(0 0 6px var(--danger)); }
+  .health::after {
+    content: attr(data-tooltip);
+    position: absolute; top: calc(100% + 7px); right: 0;
+    background: #1c2030; color: #fff; border: 1px solid rgba(255,255,255,.1);
+    padding: 5px 10px; border-radius: 7px; font-size: 11px; white-space: nowrap;
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3); z-index: 50;
+  }
+  .health:hover::after { opacity: 1; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); }
+  .card h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .card h2 .num { width: 22px; height: 22px; border-radius: 6px; background: var(--surface-2); color: var(--text); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; }
+  .card .desc { color: var(--muted); font-size: 13px; margin: -6px 0 14px; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row.between { justify-content: space-between; }
+
+  label.field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); flex: 1 1 180px; }
+  input[type="text"], input[type="email"], input[type="number"] {
+    height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--text); font-size: 14px;
+    transition: border-color .15s, box-shadow .15s; font-family: inherit; width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+  input.mono { font-family: var(--mono); letter-spacing: .04em; }

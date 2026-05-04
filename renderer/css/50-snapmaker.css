@@ -1,0 +1,1070 @@
+/* ── 50-snapmaker.css — Snapmaker live block + filament edit bottom-sheet ── */
+  /* ═══════════════════════════════════════════════════════════════════
+     Snapmaker Live — read-only block in the printer side card
+     ═══════════════════════════════════════════════════════════════════ */
+  /* Live data host (header + temps + filaments) — direct child of the
+     panel body, so we restore the padding the wrapper section used to
+     give it. Border-bottom delimits it from the Raw data section below. */
+  .snap-live-host {
+    padding: 0 18px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .snap-section { padding: 12px 18px 14px; } /* legacy — kept for safety */
+  .snap-empty {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .snap-empty .icon { background: var(--muted); }
+
+  /* Header row — connection LED + status text + IP */
+  .snap-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 0 10px;
+  }
+  .snap-led {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .snap-led--connected {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, .18);
+    animation: snap-pulse 1.6s ease-in-out infinite;
+  }
+  .snap-led--connecting {
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
+    animation: snap-pulse 0.8s ease-in-out infinite;
+  }
+  .snap-led--offline { background: #94a3b8; }
+  .snap-led--error   { background: #ef4444; }
+  @keyframes snap-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .35; }
+  }
+  .snap-head-text {
+    font-size: 12px; font-weight: 600;
+    color: var(--text);
+    letter-spacing: .2px;
+  }
+  .snap-head-ip {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* ── Print job card — thumbnail on the left, info stack on the right
+     (matches the mobile companion app's layout) ───────────────────── */
+  .snap-job {
+    /* Card frame removed — print-job sits flush in the live block.
+       Zero margin: the next block (.snap-block) provides its own
+       top margin so we don't double the gap. */
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 0;
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+  }
+  .snap-job-thumb {
+    flex: 0 0 96px;
+    width: 96px; height: 96px;
+    border-radius: 10px;
+    background: var(--surface-2) center / contain no-repeat;
+    border: 1px solid var(--border);
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+  .snap-job-info {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column;
+    gap: 4px;
+  }
+  .snap-job-name {
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .snap-job-stats {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+  }
+  .snap-job-pct {
+    font-size: 28px; font-weight: 700; line-height: 1;
+    color: var(--text);
+    letter-spacing: -.02em;
+  }
+  .snap-job-time {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 14px; font-weight: 600;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .snap-job-time-icon {
+    width: 14px; height: 14px;
+    color: inherit;
+  }
+  .snap-job-bar {
+    height: 4px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+  .snap-job-bar > span {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, var(--primary), #6ea8ff);
+    transition: width .25s linear;
+  }
+  .snap-job-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 2px;
+  }
+  .snap-job-state {
+    display: inline-flex; align-items: center;
+    font-size: 13px; font-weight: 600;
+    padding: 4px 14px;
+    border-radius: 999px;
+    background: rgba(56, 110, 207, .12);
+    color: var(--primary);
+    border: 1px solid rgba(56, 110, 207, .24);
+  }
+  /* Standby / Complete / Cancelled — neutral grey since nothing's running. */
+  .snap-job-state--standby,
+  .snap-job-state--cancelled {
+    background: var(--surface-2);
+    color: var(--muted);
+    border-color: var(--border);
+  }
+  /* Idle card variant — slightly washed out so the user sees "nothing
+     to do here" without any active job. */
+  .snap-job--standby .snap-job-pct,
+  .snap-job--cancelled .snap-job-pct { color: var(--muted); }
+  .snap-job--standby .snap-job-thumb,
+  .snap-job--cancelled .snap-job-thumb { opacity: .5; }
+  .snap-job-name--idle { color: var(--muted); font-style: italic; font-weight: 500; }
+  .snap-job-state--paused {
+    background: rgba(245,158,11,.15);
+    color: #b45309;
+    border-color: rgba(245,158,11,.3);
+  }
+  .snap-job-state--complete {
+    background: rgba(34,197,94,.15);
+    color: #15803d;
+    border-color: rgba(34,197,94,.3);
+  }
+  .snap-job-state--error {
+    background: rgba(239,68,68,.12);
+    color: #b91c1c;
+    border-color: rgba(239,68,68,.3);
+  }
+  .snap-job-layers {
+    font-size: 14px; font-weight: 700;
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* Section block — used for both Temperature and Filament titled groups */
+  .snap-block { margin-top: 8px; }
+  .snap-block-title {
+    font-size: 14px; font-weight: 700;
+    color: var(--text);
+    margin: 0 0 8px;
+    letter-spacing: -.01em;
+  }
+
+  /* ── Temperature row — compact pills "26/0°C" with small icon ───── */
+  .snap-temps {
+    display: flex; flex-wrap: wrap;
+    gap: 6px;
+    background: var(--surface-2);
+    border-radius: 12px;
+    padding: 8px;
+  }
+  .snap-temp {
+    flex: 1 1 0;
+    min-width: 64px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px;
+    padding: 6px 4px;
+    color: var(--muted);
+    transition: color .15s;
+  }
+  .snap-temp-icon {
+    width: 18px; height: 18px;
+    color: inherit;
+  }
+  .snap-temp-val {
+    font-size: 12px; font-weight: 700;
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -.02em;
+  }
+  .snap-temp--heating { color: #ef4444; }
+  .snap-temp--heating .snap-temp-val { color: #b91c1c; }
+
+  /* ── Filament grid — flex row so all squares share the available
+     width evenly. With 4 active extruders we get 4 squares on one
+     row; with fewer the squares grow to take the slack. ───────────── */
+  .snap-fil-grid {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .snap-fil {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px;
+  }
+  .snap-fil-tag {
+    font-size: 12px; font-weight: 700;
+    color: var(--muted);
+    letter-spacing: .4px;
+  }
+  .snap-fil-square {
+    width: 72%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    border: 2px solid var(--border);
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px;
+    overflow: hidden;
+    transition: transform .12s, box-shadow .12s;
+    box-shadow: 0 0 0 2px rgba(56, 110, 207, .35) inset;
+    margin: 0 auto;  /* keep the smaller square centered inside its flex card */
+  }
+  .snap-fil-square:hover { transform: translateY(-1px); }
+  .snap-fil-square--empty {
+    color: var(--muted);
+    background-image: linear-gradient(135deg, var(--surface-2) 25%, transparent 25%, transparent 50%,
+                                              var(--surface-2) 50%, var(--surface-2) 75%, transparent 75%);
+    background-size: 8px 8px;
+    box-shadow: none;
+  }
+  .snap-fil-main {
+    font-size: 11px; font-weight: 700;
+    text-align: center;
+    line-height: 1.1;
+    overflow: hidden; text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+    text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  }
+  .snap-fil-square--empty .snap-fil-main { text-shadow: none; }
+
+  /* Stacked layout under each colour square: icon → vendor → material */
+  .snap-fil-meta {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0 2px;
+    text-align: center;
+  }
+  .snap-fil-status {
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .snap-fil-status--locked { background: var(--primary); }
+  .snap-fil-vendor {
+    width: 100%;
+    font-size: 12px; font-weight: 600;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.2;
+  }
+  .snap-fil-sub {
+    width: 100%;
+    font-size: 11px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.2;
+  }
+
+  /* Camera embed — full-width above the temp / filament blocks */
+  .snap-camera {
+    margin-top: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+  }
+  .snap-camera-frame {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: none;
+    display: block;
+    background: #000;
+  }
+  /* Full-width camera banner — sits at the very top of the printer side
+     card, edge-to-edge with no border-radius. Replaces the static
+     product photo when the Snapmaker WebSocket is online. */
+  .pp-cam-full {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #000;
+    line-height: 0;
+    /* No border-bottom — the camera blends straight into the next
+       section without a hard horizontal separator. */
+  }
+  .pp-cam-full .snap-camera-frame {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: none;
+    display: block;
+    background: #000;
+    border-radius: 0;
+    /* `object-fit: cover` only takes effect when the element is an <img>
+       (MJPEG) — it's a no-op on <iframe> (WebRTC player). Keeping it so
+       both code paths render correctly. */
+    object-fit: cover;
+  }
+
+  /* ── Snapmaker WS request log ───────────────────────────────────── */
+  /* Inherit the standard .pp-section padding (12px 20px 14px) so the
+     visual matches the Raw data section exactly. */
+  .snap-log-count {
+    display: inline-block;
+    margin-left: 4px;
+    background: var(--surface-2);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 10px; font-weight: 700;
+  }
+  .snap-log {
+    /* No max-height: the log takes whatever vertical space it needs,
+       sized by its content. Scrolling is handled by the panel-body
+       above (`.detail-panel .panel-body { overflow-y: auto }`), so
+       there's no nested scrollbar fighting with the user's wheel. */
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .snap-log-empty {
+    padding: 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    background: var(--surface-2);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+  /* Toolbar above the log list — Pause + Clear */
+  .snap-log-toolbar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .snap-log-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .snap-log-btn:hover { background: var(--surface-2); border-color: var(--primary); }
+  .snap-log-btn .icon { background: currentColor; }
+  .snap-log-btn--pause.is-paused {
+    background: rgba(56, 110, 207, .12);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+  /* Custom JSON paste zone — collapsible <details>, opens to a
+     monospace textarea + Send button so the user can fire
+     hand-crafted JSON-RPC frames at the printer for testing. */
+  .snap-log-paste { margin-bottom: 8px; }
+  .snap-log-paste > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    font-size: 11px; font-weight: 600;
+    color: var(--muted);
+    padding: 6px 4px;
+    border-radius: 6px;
+    transition: color .12s;
+  }
+  .snap-log-paste > summary::-webkit-details-marker { display: none; }
+  .snap-log-paste > summary::before { content: "+ "; color: var(--primary); font-weight: 700; }
+  .snap-log-paste[open] > summary::before { content: "− "; }
+  .snap-log-paste > summary:hover { color: var(--text); }
+  .snap-log-paste-input {
+    display: block;
+    width: 100%;
+    min-height: 96px;
+    margin: 4px 0 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; line-height: 1.45;
+    resize: vertical;
+    outline: none;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .snap-log-paste-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(56, 110, 207, .15);
+    background: var(--surface);
+  }
+  .snap-log-paste-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+  }
+  .snap-log-paste-error {
+    font-size: 11px;
+    color: #b91c1c;
+    background: rgba(239, 68, 68, .08);
+    border: 1px solid rgba(239, 68, 68, .25);
+    border-radius: 6px;
+    padding: 3px 8px;
+    flex: 1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .snap-log-paste-send {
+    margin-left: auto;
+  }
+  .snap-log-paste-send.snap-log-paste-send--ok {
+    background: var(--primary) !important;
+    color: #fff !important;
+    border-color: var(--primary) !important;
+  }
+  .snap-log-paste-send--ok .icon { background: #fff !important; }
+
+  .snap-log-paused-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    background: rgba(245, 158, 11, .18);
+    color: #b45309;
+    border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+
+  /* Each row is now a head (clickable) + a hidden detail block. */
+  .snap-log-row {
+    display: flex; flex-direction: column;
+    border-radius: 6px;
+    color: var(--text);
+    transition: background .12s;
+    overflow: hidden;
+  }
+  .snap-log-row + .snap-log-row { margin-top: 1px; }
+  .snap-log-row-head {
+    display: grid;
+    grid-template-columns: 16px 64px 1fr 16px;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+    transition: background .12s;
+  }
+  .snap-log-row-head:hover { background: var(--surface); }
+  .snap-log-row--expanded { background: var(--surface); }
+  .snap-log-dir {
+    font-weight: 700;
+    text-align: center;
+    line-height: 1;
+  }
+  .snap-log-row--out .snap-log-dir { color: var(--primary); }
+  .snap-log-row--in  .snap-log-dir { color: #15803d; }
+  .snap-log-ts {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: -.02em;
+  }
+  .snap-log-summary {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text);
+  }
+  .snap-log-row-chev {
+    background: var(--muted);
+    transition: transform .15s;
+  }
+  .snap-log-row--expanded .snap-log-row-chev { transform: rotate(90deg); background: var(--primary); }
+
+  /* Expanded detail panel under each row */
+  .snap-log-detail {
+    position: relative;
+    padding: 6px 8px 8px 28px;
+    background: var(--surface);
+    border-top: 1px dashed var(--border);
+  }
+  .snap-log-detail[hidden] { display: none; }
+  .snap-log-detail-copy {
+    position: absolute; top: 6px; right: 8px;
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 11px; font-weight: 500;
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .snap-log-detail-copy:hover { color: var(--text); border-color: var(--primary); }
+  .snap-log-detail-copy .icon { background: currentColor; }
+  .snap-log-detail-copy--ok {
+    background: var(--primary);
+    color: #fff !important;
+    border-color: var(--primary);
+  }
+  .snap-log-detail-copy--ok .icon { background: #fff; }
+  /* ═══════════════════════════════════════════════════════════════════
+     Snapmaker filament edit — modal pushed to /printer.gcode.script
+     ═══════════════════════════════════════════════════════════════════ */
+  /* Click anywhere on an editable filament card → opens the bottom-sheet
+     editor. The whole card is the hit target; the colour square just
+     gets a slight lift on hover as a discoverability cue. */
+  .snap-fil--editable { cursor: pointer; }
+  .snap-fil--editable .snap-fil-square { transition: transform .12s, filter .12s; }
+  .snap-fil--editable:hover .snap-fil-square { transform: translateY(-2px); filter: brightness(1.05); }
+
+  /* Bottom-sheet — anchors to the right side of the screen behind the
+     printer side card (same width + right alignment). Slides up from the
+     bottom on `open`. The backdrop is constrained to the side-card
+     footprint so it doesn't dim the rest of the app. */
+  .sfe-backdrop {
+    position: fixed;
+    top: 8px; right: 0; bottom: 8px;
+    width: min(440px, 92vw);
+    background: rgba(0, 0, 0, .35);
+    backdrop-filter: blur(2px);
+    border-top-left-radius: 14px;
+    border-bottom-left-radius: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+    z-index: 102;
+  }
+  .sfe-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  .sfe-sheet {
+    position: fixed;
+    right: 0; bottom: 8px;
+    width: min(440px, 92vw);
+    max-height: 86vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-bottom-left-radius: 14px;
+    border-top-left-radius: 18px;
+    box-shadow: -8px -4px 32px rgba(0,0,0,.18);
+    z-index: 103;
+    transform: translateY(calc(100% + 8px));
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sfe-sheet.open { transform: translateY(0); }
+
+  /* Sub-picker sheets (Filament + Colour) — both stack ON TOP of the
+     summary sheet (higher z-index). They open taller than the summary
+     so their content has room to breathe; the summary stays in place
+     underneath, the user keeps their context. */
+  .sfe-sheet--color,
+  .sfe-sheet--filament {
+    z-index: 104;
+    min-height: 60vh;
+    max-height: 92vh;
+    border-top-left-radius: 22px;
+    border-bottom-left-radius: 14px;
+  }
+  /* Drag-grip pill at the top of the sheet — purely decorative, signals
+     "this slides". */
+  .sfe-grip {
+    width: 36px; height: 4px;
+    background: var(--border);
+    border-radius: 999px;
+    margin: 8px auto 0;
+    flex-shrink: 0;
+  }
+  /* Each "screen" stacks inside the sheet — only one is shown at a time
+     (the others are toggled `hidden`). */
+  .sfe-screen {
+    display: flex; flex-direction: column;
+    flex: 1; min-height: 0;
+  }
+  .sfe-screen[hidden] { display: none; }
+  .sfe-screen-head {
+    display: grid;
+    grid-template-columns: 32px 1fr 32px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sfe-screen-head .sfe-title {
+    font-size: 16px; font-weight: 700;
+    text-align: center;
+  }
+  .sfe-screen-head .modal-close { grid-column: 3; }
+  /* Variant for the summary header — title aligned left, no back button */
+  .sfe-screen-head--right { grid-template-columns: 1fr 32px; }
+  .sfe-screen-head--right .sfe-screen-head-text { grid-column: 1; min-width: 0; }
+  .sfe-screen-head--right .sfe-title { text-align: left; }
+  .sfe-screen-head--right .modal-close { grid-column: 2; }
+  .sfe-screen-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sfe-screen-head-text .sfe-sub {
+    font-size: 12px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sfe-back {
+    width: 32px; height: 32px;
+    border: none; background: var(--surface-2);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+  .sfe-back:hover { background: var(--border); color: var(--text); }
+  .sfe-back .icon { background: currentColor; }
+
+  /* Summary lines — Filaments / Color / Subtype rows. Tappable rows
+     mirror the iOS-style settings list look. */
+  .sfe-line {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+    padding: 16px 4px;
+    border: none; background: transparent;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    transition: background .1s;
+  }
+  .sfe-line:hover { background: var(--surface-2); }
+  .sfe-line-lbl {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .sfe-line-val {
+    flex: 1;
+    text-align: right;
+    color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0;
+  }
+  .sfe-line-color-dot {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #888;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.1) inset;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .sfe-line-chev {
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .sfe-line--input {
+    cursor: text;
+    padding: 12px 4px;
+  }
+  .sfe-line--input:hover { background: transparent; }
+  .sfe-line--input .sfe-line-lbl {
+    display: flex; align-items: center; gap: 4px;
+    flex-shrink: 0;
+  }
+  .sfe-line-input {
+    flex: 1;
+    margin-left: auto;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    text-align: right;
+    outline: none;
+    max-width: 60%;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .sfe-line-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(56, 110, 207, .15);
+  }
+  /* <select> variant — same look as the text input but with a chevron
+     dropdown indicator on the right (native select arrows look mismatched
+     across platforms). */
+  select.sfe-line-input--select {
+    appearance: none;
+    -webkit-appearance: none;
+    text-align: left;
+    text-align-last: right;
+    padding-right: 28px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238E8E93' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+  }
+  /* Picker bodies use minimal padding so the columns hug the sheet
+     edges — matches the mobile layout's edge-to-edge look. */
+  .sfe-body--picker { padding: 8px 12px 16px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* Apply button — full-width primary, light fill matching the mobile */
+  .sfe-apply {
+    width: 100%;
+    background: rgba(85, 49, 191, .08) !important;
+    color: #553BBF !important;
+    border-color: transparent !important;
+    font-weight: 700;
+    height: 44px !important;
+    font-size: 15px;
+  }
+  .sfe-apply:hover {
+    background: rgba(85, 49, 191, .14) !important;
+    color: #553BBF !important;
+  }
+
+  /* ── Read-only mode (RFID-locked filament) ──────────────────────────
+     The sheet opens with the EXACT same layout, order and presentation
+     as the editable mode — chevrons, subtype select and Apply button
+     all stay visible. The mutating affordances are simply disabled:
+     the rows don't react to hover/click, the <select> is `disabled`,
+     and the Apply button is `disabled`. The user reads the same
+     information but can't change anything. */
+  .sfe-sheet--readonly .sfe-line { cursor: default; }
+  .sfe-sheet--readonly .sfe-line:hover { background: transparent; }
+  /* Soften the chevrons in read-only — they stay in place to keep the
+     layout identical, but a slightly muted colour signals "not
+     interactive" without screaming about it. */
+  .sfe-sheet--readonly .sfe-line-chev { opacity: .35; }
+  /* The native disabled state on <select> + the Apply button already
+     greys them out and blocks input — nothing extra needed in CSS. */
+
+  /* Colour grid — 5 columns × 5 rows = 25 cells (24 presets + 1 custom).
+     Each cell is a fixed 48 px circle centered in its grid track, so
+     they stay perfectly round whatever the sheet width. */
+  .sfe-color-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px 12px;
+    padding: 8px 4px;
+    justify-items: center;
+  }
+  .sfe-color-cell {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background-clip: padding-box;
+    cursor: pointer;
+    padding: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.08) inset;
+    transition: transform .1s, box-shadow .1s;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .sfe-color-cell:hover { transform: scale(1.08); }
+  .sfe-color-cell.is-selected {
+    box-shadow: 0 0 0 3px var(--primary);
+  }
+  .sfe-color-cell--custom {
+    position: relative;
+    overflow: hidden;
+  }
+  .sfe-color-cell--custom .icon {
+    background: #fff;
+    width: 16px; height: 16px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.4));
+    pointer-events: none;
+    position: relative;
+    z-index: 0;
+  }
+  /* Transparent native colour input overlaid on the custom slot so the
+     OS picker anchors to this exact spot when clicked. We can't style
+     the OS picker dialog itself, but at least it pops open right next
+     to the slot instead of in the top-left corner of the window. */
+  .sfe-color-cell-native {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    /* Transparent visually, but still receives pointer events. */
+    opacity: 0;
+    z-index: 1;
+  }
+  /* Strip default browser swatch borders so the click target is clean. */
+  .sfe-color-cell-native::-webkit-color-swatch-wrapper { padding: 0; }
+  .sfe-color-cell-native::-webkit-color-swatch { border: none; }
+  .sfe-header {
+    padding: 18px 22px 14px;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sfe-title { font-size: 16px; font-weight: 600; color: var(--text); }
+  .sfe-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .sfe-body {
+    padding: 16px 22px;
+    display: flex; flex-direction: column; gap: 14px;
+    overflow-y: auto;
+  }
+  .sfe-field {
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .sfe-field-label {
+    font-size: 12px; font-weight: 500; color: var(--muted);
+  }
+
+  .sfe-color-row {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sfe-color-input {
+    width: 64px; height: 64px;
+    padding: 0;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    appearance: none; -webkit-appearance: none;
+  }
+  .sfe-color-input::-webkit-color-swatch-wrapper { padding: 0; border-radius: 10px; }
+  .sfe-color-input::-webkit-color-swatch { border: none; border-radius: 10px; }
+  .sfe-color-input:hover { border-color: var(--primary); }
+
+  .sfe-color-presets {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+  .sfe-color-chip {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,.12);
+    cursor: pointer;
+    transition: transform .1s, box-shadow .1s;
+    padding: 0;
+  }
+  .sfe-color-chip:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 6px rgba(0,0,0,.18);
+  }
+
+  .sfe-input {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .sfe-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(56, 110, 207, .15);
+  }
+  .sfe-input--custom {
+    margin-top: 6px;
+    height: 32px;
+    font-size: 12px;
+  }
+  .sfe-field-opt {
+    font-size: 10px; font-weight: 500;
+    color: var(--muted);
+    margin-left: 4px;
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+
+  /* Hide the back-arrow in the stacked picker sub-sheets so the header
+     matches the mobile layout (centered title + X on the right only).
+     The X is now the single close affordance — it dismisses just the
+     picker, not the summary underneath. */
+  .sfe-sheet--filament .sfe-back,
+  .sfe-sheet--color .sfe-back { display: none; }
+  /* Reduce the title row to two columns when there's no back button. */
+  .sfe-sheet--filament .sfe-screen-head,
+  .sfe-sheet--color .sfe-screen-head {
+    grid-template-columns: 1fr 32px;
+    padding: 14px 18px;
+  }
+  .sfe-sheet--filament .sfe-screen-head .sfe-title,
+  .sfe-sheet--color .sfe-screen-head .sfe-title {
+    grid-column: 1;
+    text-align: center;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .sfe-sheet--filament .sfe-screen-head .modal-close,
+  .sfe-sheet--color .sfe-screen-head .modal-close { grid-column: 2; }
+
+  /* Two-column filament picker — iso to the mobile companion:
+     vendors on the left (40%), materials on the right (60%), thin
+     vertical divider, generous tap-targets, no brand dots. */
+  .sfe-fil-picker {
+    display: flex;
+    flex: 1;
+    min-height: 320px;
+    background: var(--surface);
+  }
+  .sfe-fil-vendors,
+  .sfe-fil-materials {
+    overflow-y: auto;
+    padding: 8px 6px;
+    display: flex; flex-direction: column;
+    gap: 4px;
+  }
+  .sfe-fil-vendors { flex: 4; }
+  .sfe-fil-materials { flex: 6; }
+  .sfe-fil-divider {
+    width: 1px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  /* Rows match the iOS bottom-sheet feel: roomy padding, light grey
+     for unselected, bold dark for selected vendor, light blue pill +
+     primary colour + green check for selected material. */
+  .sfe-fil-row {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 44px;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    border-radius: 12px;
+    transition: background .12s, color .12s;
+    white-space: nowrap;
+    overflow: hidden;
+    width: 100%;
+  }
+  .sfe-fil-row:hover { background: var(--surface-2); color: var(--text); }
+  /* Vendor (left column) selected — soft grey pill, bold dark text. */
+  .sfe-fil-vendors .sfe-fil-row.is-selected {
+    background: var(--surface-2);
+    color: var(--text);
+    font-weight: 700;
+  }
+  /* Material (right column) selected — light blue pill + primary text. */
+  .sfe-fil-materials .sfe-fil-row {
+    color: var(--text);
+    font-weight: 700;
+  }
+  .sfe-fil-materials .sfe-fil-row.is-selected {
+    background: rgba(56, 110, 207, .1);
+    color: var(--primary);
+  }
+  .sfe-fil-row-text {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sfe-fil-row-check {
+    color: #16a34a;
+    font-weight: 800;
+    font-size: 18px;
+    margin-left: 6px;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  /* No brand colour dots — the mobile app doesn't show them. We keep
+     the modifier class in the markup for backwards-compat but make
+     it visually equivalent to the regular row. */
+  .sfe-fil-row--brand { padding-left: 16px; position: static; }
+  .sfe-fil-row--brand::before { content: none; }
+
+  /* "Use a custom brand / material" disclosure — collapsed by default,
+     mirrors the mobile pattern of putting the picker primary and
+     freeform secondary. */
+  .sfe-fil-custom { margin-top: 6px; }
+  .sfe-fil-custom > summary {
+    cursor: pointer;
+    font-size: 11px; font-weight: 500;
+    color: var(--muted);
+    padding: 6px 0;
+    list-style: none;
+    user-select: none;
+  }
+  .sfe-fil-custom > summary::before { content: "+ "; color: var(--primary); }
+  .sfe-fil-custom[open] > summary::before { content: "− "; }
+  .sfe-fil-custom > summary:hover { color: var(--text); }
+  .sfe-fil-custom .sfe-input--custom { display: block; width: 100%; }
+  .sfe-fil-custom .sfe-input--custom + .sfe-input--custom { margin-top: 6px; }
+
+  .sfe-error {
+    background: rgba(239, 68, 68, .1);
+    border: 1px solid rgba(239, 68, 68, .25);
+    color: #b91c1c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px; line-height: 1.4;
+  }
+
+  .sfe-footer {
+    padding: 12px 18px 18px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 10px;
+  }
+  .sfe-footer .adf-btn--primary { flex: 1; }
+
+  .snap-log-detail-pre {
+    margin: 0;
+    padding: 6px 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; line-height: 1.45;
+    color: var(--text);
+    white-space: pre-wrap; word-break: break-all;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+

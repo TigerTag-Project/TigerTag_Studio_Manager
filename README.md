@@ -399,8 +399,8 @@ TigerTag_Studio_Manager/
 ├── preload.js               # IPC bridge (contextBridge)
 ├── renderer/
 │   ├── inventory.html       # Single-page UI (markup + modals, no inline JS)
-│   ├── inventory.css        # All app styles
 │   ├── inventory.js         # All application logic (IIFE)
+│   ├── css/                 # App styles split into 8 themed files (00-base → 70-detail-misc)
 │   ├── firebase.js          # Firebase SDK initialisation
 │   ├── lib/firebase/        # Bundled Firebase compat SDKs (app, auth, firestore)
 │   └── locales/             # i18n JSON files (en, fr, de, es, it, pl, zh, pt, pt-pt)
