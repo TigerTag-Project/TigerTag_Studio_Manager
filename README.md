@@ -47,6 +47,21 @@
 
 ## Changelog
 
+### v1.4.9 — 2026-05-04
+
+Quality-of-life release. Three internal-tooling improvements that make the codebase healthier going forward — and one user-visible bug fix that was found by the new tooling on its very first run.
+
+#### i18n bug fixes (user-visible)
+- **Missing translations** — `autoUnstorageTitle` and `autoUnstorageSub` (the toggle row in Storage view that tells the rack to free a slot when a spool reaches 0 g) were missing from `zh.json` and `pt-pt.json`. Chinese and European-Portuguese users saw the raw `[autoUnstorageTitle]` key as a fallback string. Both keys are now translated natively (`自动取出` / `线轴为 0g 时自动释放槽位`, `Remoção auto` / `Liberta o espaço quando a bobine chega a 0g`).
+- **Plural inflection consistency** — five duration keys (`agoMin`, `agoHour`, `agoDay`, `agoMonth`, `agoYear`) were a flat string in some locales and a `{one,other}` plural object in others. Renderer's `t()` already supports both forms so nothing was broken at runtime, but the inconsistency would eventually have caused a singular-vs-plural mismatch in a future feature. All 9 locales now use the same plural-object structure (`vor 1 Tag` vs `vor 5 Tagen`, `1 giorno fa` vs `5 giorni fa`, etc., with proper inflection where the language requires it).
+
+#### Internal tooling
+- **`npm run i18n:add`** — single command that adds (or updates) one i18n key across all 9 locale files in one shot. Validates JSON before committing any write, falls back to the EN value when a locale is missing with a stderr warning, supports `--after <anchorKey>` for grouped insertion. Replaces the previous workflow of editing 9 JSON files by hand.
+- **`npm run i18n:check` + pre-commit hook** — validates that every locale file is consistent with `en.json`: same key set (no missing, no extras), same value type per key (plurals stay plurals), no empty strings, valid JSON. Wired as a pre-commit hook via `.githooks/pre-commit` (activated automatically by the npm `prepare` script which sets `core.hooksPath=.githooks/`, no husky dependency). Drift in any locale now blocks the commit with a clear per-file error report. The check itself runs in ~50 ms.
+- **CSS modularization** — the 8047-line monolithic `renderer/inventory.css` is now split into 8 themed files under `renderer/css/` (`00-base.css` through `70-detail-misc.css`), loaded in numeric cascade order. Largest file is 1836 lines (was 8047). Bytes-identical with the original (verified by SHA1 before the per-file headers were added) and asset URLs adjusted from `'../assets/...'` to `'../../assets/...'` since CSS now lives one directory deeper.
+
+---
+
 ### v1.4.8 — 2026-05-04
 
 Discovery, repair & ergonomics release. Adds Snapmaker LAN auto-discovery, manual twin-pair repair for spools the auto-linker missed, a unified spool toolbox, and several rack-management refinements.
