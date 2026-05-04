@@ -288,7 +288,152 @@ After F1 + F2, the CODEMAP entry for the Snapmaker section will need a rewrite (
 
 ---
 
-### 🥉 Multi-vendor RFID parsers — 7 vendors remaining
+### 🥉 Printer control panel — beyond monitoring, into commanding
+
+Today the printer detail panel is **read-only** — it shows live temperatures, the loaded filament per slot, the active print job, and the camera feed. The only command surface is the bottom-sheet filament edit (which sends a single `M104` + filament-load macro). The user wants what OrcaSlicer / Mainsail / Fluidd offer: **interactive controls** to pause/resume, home, jog axes, load/unload filament, set temperatures, run macros, browse the printer's file list, etc.
+
+The primitive exists already: `snapSendGcode(conn, script)` (renderer/inventory.js, in the Snapmaker live block) wraps the Moonraker `printer.gcode.script` JSON-RPC. What's missing is the UI surface, the per-action handlers, the safety patterns, and the per-brand portability.
+
+#### Driver interface extension
+This entry **extends** the `LiveDriver` interface from F1 of *Multi-brand live integration* with control methods. Strict prerequisite: F1 must land first so the same UI calls `drivers[brand].pause()` regardless of the underlying transport.
+
+```js
+interface LiveDriver {
+  // (from F1 — already planned)
+  connect, disconnect, sendGcode, getStatus, getCameraStream
+
+  // print job control
+  pause()
+  resume()
+  cancel()
+  emergencyStop()
+
+  // movement
+  home(axes = ['x', 'y', 'z'])
+  jog(axis, distance, speed?)
+  disableSteppers()
+
+  // temperature
+  setNozzleTemp(temp, extruder = 0)
+  setBedTemp(temp)
+  setChamberTemp?(temp)
+  cooldown()
+
+  // filament
+  loadFilament(extruder = 0, profile?)
+  unloadFilament(extruder = 0)
+
+  // live tuning
+  setPrintSpeedFactor(percent)
+  setFlowRate(percent, extruder = 0)
+  setFanSpeed(speed, fanIndex = 0)
+
+  // files (Phase D)
+  listFiles?()
+  startPrint?(filename)
+  uploadFile?(buffer, filename)
+  deleteFile?(filename)
+
+  // macros (Phase D)
+  listMacros?()
+  runMacro?(name)
+}
+```
+
+Per-protocol implementation:
+- **Moonraker** — most actions are `sendGcode(<script>)` wrappers (e.g. `pause` → `PAUSE`, `home` → `G28`); files via `server.files.*` JSON-RPC; uploads via HTTP POST to `/server/files/upload`. Full feature surface available.
+- **Bambu MQTT** — commands go through `device/{serial}/request` with brand-specific JSON payloads (`{"print": {"command": "pause"}}` etc.). Filament macros are baked into the printer firmware. File API exists but uploads are FTP, not MQTT. Phase A-C reachable; Phase D partial.
+- **Flashforge HTTP** — `/control/*` endpoints cover Phase A and most of B; live tuning more limited; no file upload via the official API on most firmwares.
+
+#### Sub-features by ship phase
+
+##### G1 — Print job control *(safety-critical, biggest user value)*
+- **Pause / Resume** — single button that swaps role based on `printer.status`. Disabled when no print active.
+- **Cancel print** — hold-to-confirm 1.5s pattern (same as Delete spool / Recycle TigerTag). Modal with "Are you sure?" + the active filename for clarity.
+- **Cooldown all** — sets nozzle + bed (and chamber if supported) to 0. Always available.
+- **Emergency stop** — hold-to-confirm 2.5s (longer than Cancel because it's harder to recover from). Warning copy: "Hardware will halt immediately. Mid-print stop may damage the part or extruder."
+- **Effort**: M  ·  **Risk**: medium (a misclick on Cancel kills the print — hence hold-to-confirm everywhere).
+- **UI**: replaces the current static print-job card header with a controls bar.
+
+##### G2 — Movement *(homing + jog)*
+- **Home all / X / Y / Z** — disabled mid-print (firmware would refuse anyway, but better UX to grey out the buttons).
+- **Jog axes** — 4-direction pad for X/Y, up/down for Z. Step picker: 0.1 / 1 / 10 / 100 mm (clamped to printer's max-jog config). Optional speed override.
+- **Disable steppers** — for manually moving the bed/head.
+- **Mid-print lockout** — all jog + home disabled, with a tooltip explaining why ("Available when no print is active").
+- **Effort**: M  ·  **Risk**: low-medium (firmware enforces bounds; step-picker clamps values; mid-print lockout is the main UX safety).
+- **UI**: dedicated "Move" sub-section in the printer detail panel, collapsed by default.
+
+##### G3 — Temperature & filament
+- **Set nozzle / bed / chamber temp** — number inputs with clamps from per-printer config (renderer/`data/printers/<brand>_printer_models.json`). Quick-set chips: PLA (215/60), PETG (240/80), ABS (250/100) — pulled from the existing material lookup tables.
+- **Load / Unload filament** — per-extruder. Confirms target temp is reached before extruding. Default macros tied to the active filament's material when known (Snapmaker bottom-sheet already does this for the filament edit path; reuse the same logic).
+- **Mid-print behaviour**: temp adjustments allowed (live tuning), but load/unload disabled.
+- **Effort**: M  ·  **Risk**: medium (cold extrusion = risk of motor skip / clog if temps not handled correctly — heavy emphasis on the `await targetReached()` step).
+- **UI**: integrates with the existing per-extruder filament cards in the live block.
+
+##### G4 — Live tuning *(during print)*
+- **Print speed factor** — slider 50-200%, sends `M220 S<percent>`. Persists across sessions per printer.
+- **Flow rate** — per-extruder, slider 80-120%, sends `M221`.
+- **Fan speed** — part cooling fan slider 0-100%. Auxiliary fan if the printer reports one.
+- **Effort**: S  ·  **Risk**: low (firmware-bounded values, instantly reversible).
+- **UI**: a "Tuning" expandable strip above the temperature row when a print is active.
+
+##### G5 — Files & macros
+- **File browser** — list `gcode_files/` (Moonraker) or printer-specific roots. Show filename, modtime, est. duration, thumbnail (Moonraker exposes thumbnails via `/server/files/thumbnails`). Reuses the `snapBestThumb` / `snapThumbUrl` helpers already in code.
+- **Start print from file** — single click + confirm modal showing filename + thumbnail.
+- **Upload G-code** — drag-drop onto the file browser. Requires a free-space check first.
+- **Delete file** — hold-to-confirm.
+- **Custom G-code input** — textarea + Send. History dropdown of last 20 sent commands per printer.
+- **User-defined macros** — saved per printer (Firestore `users/{uid}/printers/{brand}/devices/{id}/macros/{slug}`). Each macro is `{ name, gcode, color, icon? }`. Renders as a row of one-click buttons.
+- **Effort**: L  ·  **Risk**: medium (file APIs vary widely across firmwares; uploads can fail mid-stream and leave half-files).
+- **UI**: dedicated "Files" tab in the printer detail panel.
+
+##### G6 — Multi-tool & advanced
+- **Tool selection** — for printers with multiple extruders, a tool picker (T0/T1/T2/…) above the load/unload area. Sends the appropriate `T<n>` before subsequent commands.
+- **Skip current object** — Klipper `SKIP_CURRENT_OBJECT` (with object list browser).
+- **Firmware restart** — `FIRMWARE_RESTART` for Klipper, brand-specific for others. Hold-to-confirm 2.5s.
+- **Effort**: M  ·  **Risk**: low (advanced features — users opting in already know the implications).
+
+#### 🛡️ Cross-cutting: safety patterns
+1. **Hold-to-confirm gradients** by danger level:
+   - 1.5s: Cancel print, Delete file, Unload filament (low risk if cold)
+   - 2.5s: Emergency stop, Firmware restart (irreversible / disruptive)
+   - No hold: Pause, Resume, temp adjustments, jog (instantly reversible)
+2. **Mid-print lockout** — every method declares which states it's allowed in. The UI greys out unavailable actions and shows a tooltip explaining the lockout reason ("Print active — pause first to home").
+3. **Sane temp defaults** — load filament defaults to the active filament's material temp when known (from `state.rows[…].nozzleTemp`); falls back to PLA 215°C with a warning toast.
+4. **Visual feedback** — every command button shows a `loading` state during transit, then a transient success/error toast based on the printer's response (Moonraker returns the `klippy_state` after every script).
+5. **Optimistic UI rollback** — if a `pause` request is sent and the printer doesn't transition to paused within 5s, revert the button state and show an error.
+
+#### Per-brand support level (initial ship)
+
+| Brand | G1 (job) | G2 (move) | G3 (temp/fil) | G4 (tune) | G5 (files) | G6 (advanced) |
+|---|---|---|---|---|---|---|
+| Snapmaker | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Klipper-class (Creality K, Wondermaker, generic) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Bambu Lab | ✅ | ✅ | ✅ | ✅ | partial | ✅ |
+| FlashForge | ✅ | ✅ | ✅ | partial | ❌ (no upload API) | ❌ |
+| Elegoo Centauri | TBD | TBD | TBD | TBD | TBD | TBD |
+
+#### 🎯 Recommended sequence
+1. **G1 — Print job control** for Snapmaker (uses existing `snapSendGcode`). Ship to validate the safety patterns + UX before generalizing.
+2. **G3 — Temperature & filament** for Snapmaker. Replaces the bottom-sheet filament edit's duplicate temp logic with the shared driver method.
+3. **G2 — Movement** for Snapmaker.
+4. **G4 — Live tuning** for Snapmaker.
+5. **(After F1 of Multi-brand live integration ships)** Port G1-G4 to the Moonraker driver interface — automatically lights up Klipper-class brands.
+6. **G5 — Files & macros** for Moonraker drivers (Snapmaker + Klipper-class).
+7. **(After F3 of Multi-brand live integration ships)** Add Bambu MQTT command paths for G1-G4. Bambu G5 partial. Bambu G6 advanced features.
+8. **G6 — Multi-tool & advanced** features for Snapmaker first, then ported.
+
+#### 🧮 Total effort
+G1: M, G2: M, G3: M, G4: S, G5: L, G6: M  ·  **~XL combined** for Snapmaker; multiplier per brand is small once F1 of *Multi-brand live integration* is in (each new brand reuses the UI + safety patterns; only the driver methods need a per-protocol implementation).
+
+#### 📐 Dependency
+**Strict prerequisite**: F1 of *🥈 Multi-brand live integration* (driver layer extraction). Without it, this work would all be locked into the Snapmaker codepath and would have to be ported again afterwards.
+
+**Soft dependency**: the per-printer config in `data/printers/<brand>_printer_models.json` should grow new fields (`max_jog_speed`, `max_nozzle_temp`, `extruder_count`, `has_chamber_heater`) so the UI can clamp inputs and hide unavailable controls per model.
+
+---
+
+### 🏅 Multi-vendor RFID parsers — 7 vendors remaining
 - **Spec**: [`docs/rfid-vendors/NEXT_STEPS.md`](docs/rfid-vendors/NEXT_STEPS.md) is a complete handoff doc — read it first.
 - **What's there**: OpenRFID submodule + 8 self-contained spec sheets. ACR122U reader stack already done.
 - **What's missing**: JS parsers under `renderer/lib/rfid/<vendor>.js`. Only TigerTag is decoded today.
