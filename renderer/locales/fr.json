@@ -185,10 +185,10 @@
   "toolMeasureTd": "Scanner le TD",
   "toolRemoveFromRack": "Retirer du rack",
   "agoNow": "à l'instant",
-  "agoMin": "il y a {{n}}min",
-  "agoHour": "il y a {{n}}h",
-  "agoDay": "il y a {{n}}j",
-  "agoMonth": "il y a {{n}} mois",
+  "agoMin": {"one":"il y a {{n}}min","other":"il y a {{n}}min"},
+  "agoHour": {"one":"il y a {{n}}h","other":"il y a {{n}}h"},
+  "agoDay": {"one":"il y a {{n}}j","other":"il y a {{n}}j"},
+  "agoMonth": {"one":"il y a {{n}} mois","other":"il y a {{n}} mois"},
   "agoYear": {
     "one": "il y a 1 an",
     "other": "il y a {{n}} ans"

@@ -282,6 +282,46 @@ The app launches directly into the inventory view if an account is already saved
 
 ---
 
+## i18n tooling
+
+The app ships with **9 locales** (en, fr, de, es, it, zh, pt, pt-pt, pl) under `renderer/locales/`. Two helpers keep them in sync.
+
+### Add or update a key — `npm run i18n:add`
+One command updates all 9 locale files. Never edit them by hand.
+
+```bash
+# Append at end of every file
+npm run i18n:add -- myKey en="Hello" fr="Bonjour" de="Hallo" \
+  es="Hola" it="Ciao" zh="你好" pt="Olá" pt-pt="Olá" pl="Cześć"
+
+# Insert just after an existing key (keeps related keys grouped)
+npm run i18n:add -- myKey --after toolboxTitle en="Hello" fr="Bonjour" ...
+
+# JSON payload form
+npm run i18n:add -- myKey --json '{"en":"Hello","fr":"Bonjour"}'
+```
+
+Behaviour: updates in-place if the key exists, preserves file order, falls back to the EN value for missing locales (stderr warning), and aborts the run if any file would become invalid JSON. Source: [`scripts/i18n-add.mjs`](scripts/i18n-add.mjs).
+
+### Consistency check — `npm run i18n:check` + pre-commit hook
+A pre-commit hook runs the validator automatically and **blocks the commit** if any locale drifts. Hook activation: the npm `prepare` script (run by `npm install`) sets `core.hooksPath=.githooks/` so the check follows the repo with no per-machine setup.
+
+```bash
+npm run i18n:check
+# → "[i18n-check] OK — 9 locales × 556 keys, all consistent."   (exit 0)
+# or a per-file list of issues + "FAIL — N error(s)"            (exit 1)
+```
+
+What it checks:
+- Every locale file parses as valid JSON.
+- Same key set as `en.json` — no missing, no extras.
+- Same value type per key — a plural object (`{"one":"…","other":"…"}`) in `en.json` must stay a plural object in every locale.
+- No empty string values.
+
+The hook is at [`.githooks/pre-commit`](.githooks/pre-commit) — extend it with lint/format/typecheck as the project grows. To bypass once (don't): `git commit --no-verify`.
+
+---
+
 ## Building installers
 
 | Platform | Command | Output |

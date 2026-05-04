@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — runs project-local checks before each commit.
+#
+# Activated by the npm `prepare` script which sets core.hooksPath to
+# `.githooks/`. To bypass once (don't make it a habit), use:
+#   git commit --no-verify
+#
+# Add new checks below as new functions; keep each one cheap (<200 ms)
+# so the hook never blocks day-to-day work.
+
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# ── i18n consistency ──────────────────────────────────────────────────
+# Validates that every renderer/locales/*.json file is consistent with
+# en.json (key set, value types, no empty strings, valid JSON).
+# Runs in ~50 ms — always on, even if no locale file is staged, so an
+# accidental deletion of a locale also gets caught.
+node scripts/check-i18n-consistency.mjs
+
+# Add more checks here. Examples:
+#   • lint
+#   • formatter
+#   • typecheck

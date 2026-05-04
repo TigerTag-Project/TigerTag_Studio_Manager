@@ -510,6 +510,8 @@
   "storageLocateTip": "Mostrar na vista Storage",
   "autoStorageTitle": "Armazenamento auto",
   "autoStorageSub": "Coloca novas bobines automaticamente",
+  "autoUnstorageTitle": "Remoção auto",
+  "autoUnstorageSub": "Liberta o espaço quando a bobine chega a 0g",
   "rackStatsDepletedTip": "Bobines ativas sem filamento restante (0g)",
   "rackStatsUnranked": "não atribuídas",
   "rackActionMore": "Mais ações",

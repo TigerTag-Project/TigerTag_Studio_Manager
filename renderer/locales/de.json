@@ -185,10 +185,10 @@
   "toolMeasureTd": "TD scannen",
   "toolRemoveFromRack": "Vom Regal entfernen",
   "agoNow": "gerade eben",
-  "agoMin": "vor {{n}} Min.",
-  "agoHour": "vor {{n}} Std.",
-  "agoDay": "vor {{n}} Tag(en)",
-  "agoMonth": "vor {{n}} Mon.",
+  "agoMin": {"one":"vor {{n}} Min.","other":"vor {{n}} Min."},
+  "agoHour": {"one":"vor {{n}} Std.","other":"vor {{n}} Std."},
+  "agoDay": {"one":"vor 1 Tag","other":"vor {{n}} Tagen"},
+  "agoMonth": {"one":"vor 1 Monat","other":"vor {{n}} Monaten"},
   "agoYear": {
     "one": "vor 1 Jahr",
     "other": "vor {{n}} Jahren"

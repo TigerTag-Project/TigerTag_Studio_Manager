@@ -281,6 +281,24 @@ Behaviour:
 - Re-parses every file after write — aborts the entire run if any output isn't valid JSON.
 - Source: `scripts/i18n-add.mjs`.
 
+### Consistency check (auto-run on every commit)
+A pre-commit hook runs `npm run i18n:check` automatically — the commit is blocked if the 9 locale files drift apart. Activated by the `prepare` npm script which sets `core.hooksPath=.githooks/`. To run manually:
+
+```bash
+npm run i18n:check
+# → "OK — 9 locales × N keys, all consistent." (exit 0)
+# or a per-file list of missing/extra/empty/type-mismatch issues (exit 1)
+```
+
+What it checks:
+- Every locale file parses as valid JSON.
+- Same key set as `en.json` (no missing, no extras).
+- Same value type per key (plural objects stay plural objects, etc.).
+- No empty string values.
+
+To bypass once (don't): `git commit --no-verify`.
+Source: `scripts/check-i18n-consistency.mjs` + `.githooks/pre-commit`.
+
 ### App / status
 | Key | Purpose |
 |-----|---------|

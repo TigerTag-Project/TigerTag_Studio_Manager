@@ -185,10 +185,10 @@
   "toolMeasureTd": "Scansiona TD",
   "toolRemoveFromRack": "Rimuovi dal rack",
   "agoNow": "proprio ora",
-  "agoMin": "{{n}} min fa",
-  "agoHour": "{{n}} h fa",
-  "agoDay": "{{n}} giorno/i fa",
-  "agoMonth": "{{n}} mese/i fa",
+  "agoMin": {"one":"{{n}} min fa","other":"{{n}} min fa"},
+  "agoHour": {"one":"{{n}} h fa","other":"{{n}} h fa"},
+  "agoDay": {"one":"1 giorno fa","other":"{{n}} giorni fa"},
+  "agoMonth": {"one":"1 mese fa","other":"{{n}} mesi fa"},
   "agoYear": {
     "one": "1 anno fa",
     "other": "{{n}} anni fa"
