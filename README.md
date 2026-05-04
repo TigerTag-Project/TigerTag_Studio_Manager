@@ -49,6 +49,16 @@
 
 ## Changelog
 
+### v1.4.10 — 2026-05-05
+
+Hot-fix release for the Windows auto-updater + a small UX safety addition on the inventory format upgrade modal.
+
+- **Windows auto-update fixed.** The v1.4.9 release shipped an unsigned `Setup-1.4.9.exe` (Trusted Signing CI secrets missing in the build env), and electron-builder had silently leaked the `mac.identity` string (`Developer ID Application: 3D France (RT4W5WC9P2)`) into the cross-platform `app-update.yml` as the expected `publisherName` — so existing installs running v1.4.7 / v1.4.8 hit `Could not check: New version 1.4.9 is not signed by the application owner` and refused to install the update. v1.4.10 explicitly sets `build.publish.publisherName: null` (the correct location for the option in electron-builder 26.x — `win.publisherName` was removed from the schema). Combined with `verifyUpdateCodeSignature: false`, electron-updater now skips publisher-name verification on Windows. Integrity is still checked via the SHA-512 hash that electron-builder writes into `latest.yml` and that electron-updater verifies after every download — no integrity regression, only the certificate-name comparison is removed. When Trusted Signing keys come back, the `publisherName: null` line gets removed and full signature verification resumes.
+- **Mobile-app prerequisite warning** added to the *Inventory format upgrade available* consent modal. A small amber banner now reminds the user to make sure their TigerTag mobile app is updated to **v1.0.3 or later** before continuing the data upgrade. Translated across the 9 locales.
+- v1.4.9 users who hit the auto-update error: download `Tiger-Studio-Manager-Setup-1.4.10.exe` manually from the [v1.4.10 release page](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/releases/tag/v1.4.10) and run it. From v1.4.10 onwards, future auto-updates will succeed even when the build is unsigned.
+
+---
+
 ### v1.4.9 — 2026-05-04
 
 Quality-of-life release. Three internal-tooling improvements that make the codebase healthier going forward — and one user-visible bug fix that was found by the new tooling on its very first run.

@@ -576,6 +576,7 @@
   "rackMigrProgressWarn": "⚠ Wenn du die App jetzt schließt, wird sie beim nächsten Start fortgesetzt — aber für die beste Erfahrung lass es zu Ende laufen.",
   "migrationConfirmTitle": "Kurze Aktualisierung verfügbar",
   "migrationConfirmMsg": "Eine kleine Datenaktualisierung steht für {{count}} Element(e) bereit. Sie läuft im Hintergrund und dauert {{duration}}. Deine Daten bleiben genau dort, wo sie sind — nichts wird verschoben oder geht verloren.",
+  "uidMigrConfirmMobileWarn": "Bevor Sie fortfahren, stellen Sie sicher, dass Ihre mobile App auf Version 1.0.3 oder höher aktualisiert ist.",
   "migrationProgressTitle": "Aktualisierung läuft",
   "migrationProgressMsg": "Deine Daten werden aufgeräumt — bitte schließe die App nicht. Jedes Element dauert nur Bruchteile einer Sekunde.",
   "migrationProgressWarn": "⚠ Wenn du jetzt schließt, wird beim nächsten Start fortgesetzt — aber für die beste Erfahrung lass es zu Ende laufen."

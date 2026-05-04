@@ -576,6 +576,7 @@
   "rackMigrProgressWarn": "⚠ 现在关闭应用程序只会在下次启动时恢复 — 但为了获得最佳体验，请让它完成。",
   "migrationConfirmTitle": "快速更新可用",
   "migrationConfirmMsg": "已为 {{count}} 个项目准备了一个小更新。它在后台运行，需要 {{duration}}。您的数据保持原位 — 不会移动或丢失。",
+  "uidMigrConfirmMobileWarn": "继续之前，请确保您的移动应用已更新至 1.0.3 或更高版本。",
   "migrationProgressTitle": "更新中",
   "migrationProgressMsg": "正在整理您的数据 — 请不要关闭应用。每个项目只需几分之一秒。",
   "migrationProgressWarn": "⚠ 现在关闭只会在下次启动时恢复 — 但为了获得最佳体验，请让它完成。"

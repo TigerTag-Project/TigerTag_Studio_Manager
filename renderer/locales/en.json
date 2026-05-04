@@ -573,6 +573,7 @@
   "rackMigrProgressWarn": "⚠ Closing the app now would just resume on next launch — but for the cleanest experience, let it finish.",
   "migrationConfirmTitle": "Quick update available",
   "migrationConfirmMsg": "A small data update is ready for {{count}} item(s). It runs in the background and takes {{duration}}. Your data stays exactly where it is — nothing will move or get lost.",
+  "uidMigrConfirmMobileWarn": "Before continuing, make sure your mobile app is updated to version 1.0.3 or later.",
   "migrationProgressTitle": "Update in progress",
   "migrationProgressMsg": "Tidying up your data — please don't close the app. Each item only takes a fraction of a second.",
   "migrationProgressWarn": "⚠ Closing now would just resume on next launch — but for the cleanest experience, let it finish."

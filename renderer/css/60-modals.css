@@ -874,6 +874,29 @@
     font-weight: 700;
     color: var(--text);
   }
+  /* Mobile-app prerequisite warning — appears between the message and the
+     action buttons. Soft amber container so it stands out without alarming. */
+  .uid-migr-mobile-warn {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin: 16px auto 0;
+    max-width: 380px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--warning-soft);
+    color: var(--warning);
+    text-align: left;
+  }
+  .uid-migr-mobile-warn-icon {
+    flex: 0 0 14px;
+    margin-top: 2px;
+    background: var(--warning);
+  }
+  .uid-migr-mobile-warn-text {
+    font-size: 13px; line-height: 1.45;
+    color: var(--warning);
+    font-weight: 500;
+  }
+
   .uid-migr-confirm-actions {
     display: flex; flex-wrap: wrap;
     justify-content: center;

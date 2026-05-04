@@ -588,6 +588,7 @@
   "rackMigrProgressWarn": "⚠ Fechar a aplicação agora apenas retomaria no próximo arranque — mas para a melhor experiência, deixa-a terminar.",
   "migrationConfirmTitle": "Atualização rápida disponível",
   "migrationConfirmMsg": "Uma pequena atualização está pronta para {{count}} item(ns). Executa em segundo plano e demora {{duration}}. Os teus dados mantêm-se exatamente onde estão — nada será movido nem perdido.",
+  "uidMigrConfirmMobileWarn": "Antes de continuar, certifica-te de que a tua aplicação móvel está atualizada para a versão 1.0.3 ou superior.",
   "migrationProgressTitle": "Atualização em curso",
   "migrationProgressMsg": "A organizar os teus dados — não feches a aplicação. Cada item demora apenas uma fração de segundo.",
   "migrationProgressWarn": "⚠ Fechar agora apenas retomaria no próximo arranque — mas para a melhor experiência, deixa-a terminar."

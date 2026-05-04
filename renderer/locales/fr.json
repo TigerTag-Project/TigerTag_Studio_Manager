@@ -576,6 +576,7 @@
   "rackMigrProgressWarn": "⚠ Fermer l'app maintenant la reprendrait au prochain démarrage — mais pour une expérience optimale, laisse-la terminer.",
   "migrationConfirmTitle": "Mise à jour rapide disponible",
   "migrationConfirmMsg": "Une petite mise à jour est prête pour {{count}} élément(s). Elle s'exécute en arrière-plan et prend {{duration}}. Tes données restent exactement où elles sont — rien ne sera déplacé ni perdu.",
+  "uidMigrConfirmMobileWarn": "Avant de continuer, assurez-vous que votre application mobile est mise à jour en version 1.0.3 ou ultérieure.",
   "migrationProgressTitle": "Mise à jour en cours",
   "migrationProgressMsg": "Mise à jour de tes données — ne ferme pas l'application. Chaque élément ne prend qu'une fraction de seconde.",
   "migrationProgressWarn": "⚠ Fermer maintenant reprendrait au prochain démarrage — mais pour une expérience optimale, laisse-la terminer."

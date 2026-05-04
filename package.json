@@ -1,6 +1,6 @@
 {
   "name": "tigertag-inventory",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "Tiger Studio Manager — desktop app",
   "main": "main.js",
   "engines": {
@@ -39,7 +39,8 @@
       "provider": "github",
       "owner": "TigerTag-Project",
       "repo": "TigerTag_Studio_Manager",
-      "releaseType": "draft"
+      "releaseType": "draft",
+      "publisherName": null
     },
     "files": [
       "main.js",

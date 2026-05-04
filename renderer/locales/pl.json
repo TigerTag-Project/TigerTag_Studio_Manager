@@ -587,6 +587,7 @@
   "rackMigrProgressWarn": "⚠ Zamknięcie aplikacji teraz wznowiłoby ją przy następnym uruchomieniu — ale dla najlepszego doświadczenia pozwól jej zakończyć.",
   "migrationConfirmTitle": "Szybka aktualizacja dostępna",
   "migrationConfirmMsg": "Mała aktualizacja gotowa dla {{count}} element(ów). Działa w tle i trwa {{duration}}. Twoje dane pozostają dokładnie tam, gdzie są — nic się nie przeniesie ani nie zgubi.",
+  "uidMigrConfirmMobileWarn": "Przed kontynuacją upewnij się, że Twoja aplikacja mobilna jest zaktualizowana do wersji 1.0.3 lub nowszej.",
   "migrationProgressTitle": "Aktualizacja w toku",
   "migrationProgressMsg": "Porządkowanie twoich danych — nie zamykaj aplikacji. Każdy element trwa tylko ułamek sekundy.",
   "migrationProgressWarn": "⚠ Zamknięcie teraz wznowiłoby przy następnym uruchomieniu — ale dla najlepszego doświadczenia pozwól zakończyć."
