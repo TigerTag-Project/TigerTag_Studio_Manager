@@ -194,7 +194,101 @@ Implementation home: `main.js` exposes one IPC handler `nfc:write-pages` that ta
 
 ---
 
-### 🥈 Multi-vendor RFID parsers — 7 vendors remaining
+### 🥈 Multi-brand live integration — Snapmaker-parity for the other brands
+
+Today only **Snapmaker** has a live block (real-time temps, filament per slot, print-job card, camera). The four other brands in the picker (Bambu Lab · Creality · Elegoo · FlashForge) render as **read-only cards** with an HTTP ping for online/offline. This entry brings them — plus a generic Klipper bucket and Wondermaker — to feature parity.
+
+#### 🏗️ Architectural prerequisite — Driver layer
+The Snapmaker code (renderer/inventory.js L5533-7216 per CODEMAP) is monolithic. Before adding new brands, extract a small `LiveDriver` interface so each protocol slots in cleanly:
+
+```js
+interface LiveDriver {
+  connect(printer, callbacks)   // open transport, start streaming
+  disconnect(printer)
+  sendGcode(printer, script)
+  getStatus(printer)            // sync getter, reads cached snapshot
+  getCameraStream(printer)      // optional — returns URL or null
+}
+```
+
+Three drivers cover most of the universe:
+1. **`drivers/moonraker.js`** — WebSocket on `:7125/websocket`. Snapmaker today; Creality K-series, Wondermaker, generic Klipper all reuse this verbatim.
+2. **`drivers/bambu-mqtt.js`** — MQTTS on `:8883`. Bambu LAN mode + Cloud bridge.
+3. **`drivers/flashforge-http.js`** — HTTP polling on Flashforge's `/control/*` endpoints (AD5X / 5M / 5M Pro).
+
+A `drivers/index.js` dispatcher routes by `printer.brand` (with a `printer.protocol` override for "generic Klipper" printers that need explicit Moonraker selection).
+
+A possible 4th driver later: `drivers/elegoo-mqtt.js` for Centauri — **research-gated** (see F5 below).
+
+#### Per-brand status
+
+| Brand | Protocol | Discovery | Driver | Status |
+|---|---|---|---|---|
+| **Snapmaker** | Moonraker WS (`:7125`) | mDNS `_snapmaker._tcp.local.` | `moonraker` | ✅ shipping |
+| **Bambu Lab** | MQTTS (`:8883`) — LAN mode + Cloud bridge | mDNS `_bambu._tcp.local.` (broadcasts model + serial) | `bambu-mqtt` | New driver. Auth = printer access code (printed on the device, user enters once). LAN mode requires "Local print" enabled on the printer. |
+| **Creality K-series** (K1, K1 Max, K2 Plus) | Moonraker WS (`:7125`) | mDNS `_octoprint._tcp.local.` (when present) or hostname-based | `moonraker` | Reuses existing driver. Plug into the Snapmaker codepath via brand-aware connect URL. |
+| **Elegoo Centauri** | MQTTS — Chitu cloud bridge | TBD (research) | `elegoo-mqtt` (research-gated) | Lower priority — research first whether LAN mode exists or if cloud-only. |
+| **FlashForge** (AD5X, 5M, 5M Pro) | HTTP polling on `:8898` for status; WebSocket on `:8899` for live updates on newer firmware | UDP broadcast on `48899` with magic byte | `flashforge-http` | New driver. Less rich than Moonraker (no temperature stream — poll every 2s). |
+| **Generic Klipper / Wondermaker** | Moonraker WS (`:7125`) | mDNS varies; falls back to manual IP | `moonraker` | Reuses existing driver. New brand entry "Klipper machine" with a manual-IP-only flow (auto-discovery is hit-or-miss across Klipper distros). |
+| (Future) Prusa MK4 / MINI | PrusaLink HTTP (`:80`) | mDNS `_prusalink._tcp.local.` | `prusa-http` | Out of scope for first ship; add to the model JSON files later. |
+
+#### Sub-features — recommended ship order
+
+##### F1 — Driver interface extraction *(refactor)*
+- Create `renderer/lib/drivers/index.js` + `moonraker.js`. Move all `snap*` functions out of `inventory.js` into the Moonraker driver. The `renderPrinterDetail()` codepath calls `drivers[printer.brand].getStatus()` instead of `snapMergeStatus()` directly.
+- **Effort**: M  ·  **Risk**: low (zero new functionality, only reshapes existing code; live tests on Snapmaker keep regressions visible).
+- **Win**: code-map for `inventory.js` shrinks by ~1700 lines; new brands plug in cleanly afterwards. Partial down-payment on the long-parked "modularize inventory.js" item.
+
+##### F2 — Klipper-class enablement *(quick win after F1)*
+- With F1 done, **Creality K-series, Wondermaker, and generic Klipper** light up immediately by reusing the Moonraker driver.
+- For Creality K-series: detect at `/server/info` time whether the host is a Klipper-class device and surface a "Connect via Moonraker" path (some older Creality models run a different stack — fall back to read-only card).
+- For "generic Klipper": brand picker gets a new entry labelled `Klipper machine (generic)`, single field "IP / hostname", no model picker (or a "free text" model field).
+- **Effort**: S each, M for the three combined  ·  **Risk**: low.
+
+##### F3 — Bambu Lab MQTT driver *(headline feature)*
+- New driver hitting `mqtts://{ip}:8883` with username `bblp`, password = printer access code, topic `device/{serial}/report` for telemetry, `device/{serial}/request` for commands.
+- **Reuses the Snapmaker live block UI** — filament grid, temps, print-job card. Bambu's protocol carries the same shape of data, just under different field names.
+- **Camera**: Bambu uses an RTSP stream — known cross-platform pain point. First ship probably skips camera and shows the "Photo card" fallback. Phase 2 if a JS RTSP→MJPEG bridge proves stable.
+- **Discovery**: mDNS `_bambu._tcp.local.` — reuse the existing `bonjour-service` integration in `main.js`.
+- **Effort**: L  ·  **Risk**: medium (MQTT is well-understood, but Bambu has rolled out sudden firmware changes that broke 3rd-party tools historically — keep the parser defensive).
+
+##### F4 — FlashForge HTTP driver *(medium reach)*
+- Polling design: every 2s call `/control/getStatus` and equivalent. Newer firmware exposes a WebSocket — opportunistic upgrade after first poll succeeds.
+- Discovery: UDP broadcast on port 48899 with the documented magic packet.
+- Live block: temps + active job. No mid-print filament editing (Snapmaker's bottom-sheet stays a unique capability — Flashforge's HTTP API doesn't expose the equivalent endpoints today).
+- **Effort**: M  ·  **Risk**: low-medium (protocol is documented; friction is FlashForge's mix of firmware versions in the wild).
+
+##### F5 — Elegoo Centauri MQTT driver *(research-gated)*
+- **Decide first**: does Centauri expose a LAN MQTT endpoint, or is everything through Chitu cloud?
+- If LAN MQTT exists: same scope as F3.
+- If cloud-only: **out of scope** (the app is local-first; cloud integrations require a different trust model, secrets handling, OAuth flows, …). Park as a separate feature with its own design doc.
+- **Effort**: S (research) + L (impl if LAN exists)  ·  **Risk**: high (unknown reachability).
+
+##### F6 — Brand picker + discovery flow polish
+- Per-brand discovery panels analogous to the Snapmaker scan side panel: mDNS browse, port-scan fallback, "Add by IP" widget. Generic-Klipper gets only "Add by IP" (no auto-discovery).
+- Per-brand settings form — different fields per brand: Bambu wants `ip` + `accessCode` + `serial`, Klipper just wants `ip`, FlashForge `ip` only.
+- **Effort**: M  ·  **Risk**: low.
+
+#### 🧮 Total effort
+F1: M  ·  F2: M  ·  F3: L  ·  F4: M  ·  F5: ~S+L (gated)  ·  F6: M → **~XL combined**, ships incrementally:
+- **Quickest win → biggest reach**: F1 → F2 → F6 (Klipper-class brands live with mostly-existing UI)
+- **Headline brand**: F3 (Bambu)
+- **Long tail**: F4 (FlashForge) → F5 (Elegoo, gated on research)
+
+#### 🎯 Recommended sequence
+1. **F1** — extract the driver interface (no new functionality, but clears the way and shrinks `inventory.js`)
+2. **F2** — Klipper-class brands light up immediately by reusing the Moonraker driver (Creality K-series, Wondermaker, generic Klipper). Big perceived progress for low effort.
+3. **F6** — brand picker UX cleanup so the new brands are clickable with the right per-brand forms
+4. **F3** — Bambu Lab MQTT (headline feature, biggest user base after Snapmaker)
+5. **F4** — FlashForge HTTP
+6. **F5** — Elegoo Centauri (research first, build only if LAN mode is reachable)
+
+#### 📐 Cross-cutting note
+After F1 + F2, the CODEMAP entry for the Snapmaker section will need a rewrite (it'll point to `renderer/lib/drivers/moonraker.js` instead of an inline range in `inventory.js`). Update CODEMAP.md as part of F1's commit.
+
+---
+
+### 🥉 Multi-vendor RFID parsers — 7 vendors remaining
 - **Spec**: [`docs/rfid-vendors/NEXT_STEPS.md`](docs/rfid-vendors/NEXT_STEPS.md) is a complete handoff doc — read it first.
 - **What's there**: OpenRFID submodule + 8 self-contained spec sheets. ACR122U reader stack already done.
 - **What's missing**: JS parsers under `renderer/lib/rfid/<vendor>.js`. Only TigerTag is decoded today.
@@ -203,7 +297,7 @@ Implementation home: `main.js` exposes one IPC handler `nfc:write-pages` that ta
 - **Effort**: M (Openspool / Anycubic / Elegoo / Qidi each), L (Creality), XL (Bambu, Snapmaker — crypto).
 - **Risk**: low (parsers are pure functions, no UI changes until dispatcher hooks them in).
 
-### 🥉 Firestore Security Rules for `roles` + `Debug` fields
+### 🏅 Firestore Security Rules for `roles` + `Debug` fields
 - **Where**: per [CLAUDE.md L175](CLAUDE.md#debug-mode), the `roles` and `Debug` fields in `users/{uid}` should be writable only via Firebase Admin SDK / Cloud Functions, never by the client. Today's UI toggle is a UX convenience but a malicious client could grant itself `roles: "admin"`.
 - **Action**: add a Firestore Security Rule denying writes to those two fields except by admin SDK. Optionally a Cloud Function exposed to a separate admin tool to flip them.
 - **Effort**: S (rules), M (Cloud Function setup if going that route).
