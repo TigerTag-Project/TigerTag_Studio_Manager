@@ -92,6 +92,53 @@ Grouped by domain. Versions in parentheses are the release that landed the featu
 
 Items where the spec is written and we know roughly how to do it. Ranked by ratio (impact / effort × risk).
 
+> ### 🐿️🐿️ Sprint mode — days, not months
+>
+> The 3 top-tier items below (POD + Multi-brand live + Printer control panel) total ~**XXL on paper for a single developer over months**. We don't have months; we have **a few days**, working as a duo (Tic & Tac).
+>
+> **What this changes**:
+> - **Pair on every non-trivial sub-feature**. Pair-programming roughly doubles single-developer speed on tricky parts and catches subtle bugs immediately (much cheaper than fixing them post-merge). Trivial stuff (rename, mechanical refactor) one of us takes solo while the other moves the next ticket forward.
+> - **Maximize reuse, minimize new code**. Every sub-feature has a `♻️ Reuses` section — read it FIRST. The estimate sizes already assume aggressive reuse; if a path looks like "this is going to be 2k lines from scratch", **stop and find what to reuse instead**.
+> - **MVP first, scope expansion later**. Each sub-feature has a `🐿️ Sprint scope` line: the minimum that ships in a single day session vs. the full version. Ship the MVP, mark the rest as Phase 2 in the same entry, **don't let perfect block good**.
+> - **Debug interfaces matter from day 1**. Every new code path gets a debug surface (raw log, force-X toggle, inspector) — see the `🐛 Debug surface` block in each entry. We've been bitten enough by silent failures (the i18n-check hook found 24 silent ones in v1.4.9 alone) to know that debug-from-day-1 is cheaper than debug-when-things-break.
+> - **Ship daily**. Even partial work merges to `main` daily (gated behind a feature flag if not user-facing yet). Long-lived branches kill velocity at this pace.
+>
+> **Prioritisation in days-not-months mode**:
+> - Day 1: highest-reuse / lowest-risk items (POD A, F1 driver extraction, G1 print job control)
+> - Day 2-3: dependents of day 1 (POD B/E, F2 Creality driver, G2/G3/G4 control)
+> - Day 4-5: bigger lifts that benefit from day 1-3 foundations (POD C/D, F3 Bambu, G5 files)
+> - Beyond: F4 FlashForge, F5 Elegoo (gated), G6 advanced
+>
+> Effort sizes (S/M/L/XL) below are still based on single-developer convention so they stay comparable to historical estimates — **mentally divide by ~1.7×** for pair-work output.
+>
+> #### 🗓️ Day-by-day Tic-and-Tac plan (illustrative — adjust as we ship)
+>
+> Items chosen for ratio (existing-code reuse × user value × low risk). Cross-references point to sub-feature IDs in the entries below.
+>
+> | Day | What lands | Why this slot |
+> |---|---|---|
+> | **D1** AM | **POD A** (multi-reader IPC) | ~30 min of edits across 3 files; unblocks B/C/D/E |
+> | **D1** AM | **F1** (extract `drivers/snapmaker.js`) | Pure refactor of L5557-7216 + L8030-8226. Pair on it — one reads, one moves blocks. CODEMAP gets a fresh entry. |
+> | **D1** PM | **G1** (print job control: pause/resume/cancel/cooldown/E-stop) | `snapSendGcode` already exists, `setupHoldToConfirm` already exists — pure UI assembly + 5 IPC wrappers. Big user value. |
+> | **D1** PM | **POD E (UX half)** — diff modal for chip-pending changes | ~80% of UX already shipped (`needUpdateAt`, banner, badges, i18n, twin-aware batch clear). Stub the chip-write call, ship the diff modal. |
+> | **D2** AM | **POD B** (scan → inventory + twin auto-detect) | Requires the TigerTag JS parser at `renderer/lib/rfid/tigertag.js`. Spec is 386 lines so the parser writes itself. Plug into `normalizeRow` shape. |
+> | **D2** AM | **F2** (`drivers/creality.js`) | Built **in parallel** with snapmaker.js — Rule of Three. Test on real Creality K-series hardware if available; otherwise stub the deltas + ship as opt-in. |
+> | **D2** PM | **G3** (temp & filament) | The Snapmaker bottom-sheet already does the temp-and-load dance — extract the helper, wire it to per-printer config + material lookup table chips. |
+> | **D2** PM | **G2** (homing + jog) | All `snapSendGcode` wrappers + 4-direction pad UI. Mid-print lockout reads existing `printer.status`. |
+> | **D3** AM | **POD C** (write fresh chip) | New `nfc:write-pages` IPC handler + wizard UI. Spec has the byte layout — translation is mechanical. **Pair on this one** — it's irreversible and benefits from 4-eye review. |
+> | **D3** AM | **POD D** (recycle to NDEF) | Reuses C's `nfc:write-pages` + new NDEF builder. Independent of which sub-feature ships first; pick based on which printer you have on hand. |
+> | **D3** PM | **G4** (live tuning sliders) | S-effort, fast win. Reuses the weight-slider debounce pattern. |
+> | **D3** PM | **F6** (brand picker UX cleanup) | Required so Creality (and future brands) become clickable with the right per-brand forms. |
+> | **D4** AM | **POD E (write half)** — wire actual chip-write into the diff modal | Now that POD C exists, plug its write helper in behind the modal's "Apply" button. |
+> | **D4** all | **F3** (Bambu MQTT driver) | Biggest single-day item. Pair work strongly recommended — one drives MQTT lib + protocol, the other adapts the live block UI to Bambu's status shape. |
+> | **D5** AM | **G5** (file browser + custom G-code console) | Reuses thumbnail pipeline (`snapBestThumb` etc.) + drag-drop pattern from racks. |
+> | **D5** PM | **F2b** (`klipper-generic.js` + planned extraction of `_moonraker-base.js`) | With three Klipper-class implementations now shipped, the empirical common surface is clear — refactor with confidence. |
+> | **D6+** | F4 FlashForge, G6 advanced, F5 Elegoo (research-gated) | Long-tail items, ship as reach permits. |
+>
+> **Stretch goals if any day finishes early**: README screenshots (🎖️), Firestore Security Rules for `roles`/`Debug` (🏅, S-effort), pre-commit hook extensions (🏅).
+>
+> **Re-plan checkpoints**: end of D2 and end of D4. Move items between days based on what's actually shipping vs blocking.
+
 ### 🥇 TigerTag POD — dual-reader scan / write / recycle workstation
 
 The TigerTag POD is a desktop hardware unit with **two ACR122U USB NFC readers**. It turns the desktop app into a one-stop tool for the full chip lifecycle — read into inventory, write fresh chips, repurpose chips that are no longer needed.
@@ -191,6 +238,18 @@ What changes with the POD:
 
 **Dependency**: Sub-feature C (write capability). E can ship the **diff modal + UX** independently and stub the actual write to no-op until C lands; that gives users a clearer "what changed" view today even without the chip-write path.
 
+#### 🐛 Debug surface — POD
+The existing app already gates a `🐛 Debug` panel on `users/{uid}.Debug = true` (admin-set), with a Firestore explorer + last-API-request inspector. The POD work doubles the surface area of NFC code, so it gets dedicated debug interfaces:
+
+- **🔬 NFC log tab** (new tab in the Debug panel) — every `card`, `card.off`, `error`, and `end` event from every connected reader, with raw UID hex, parsed UID, parser output (or "unknown format" + raw bytes), reader name, slot id, timestamp. Newest first; clearable; copy-to-clipboard for support tickets. Reuses the existing debug log scroll/copy CSS from the Snapmaker WS log.
+- **🔬 Chip pages dump** — when a chip is on either slot, debug-only "Read all pages" button shows the full byte dump (page 0 to N) with offsets, hex, and the parser's interpretation side-by-side. Lets the user spot field-decode mismatches at a glance.
+- **🔬 Write log tab** — every `nfc:write-pages` invocation: `{slotId, pages: [{index, before, after}]}` plus the read-back-and-verify result page-by-page. Failed verifies stay in the log highlighted red. Critical for debugging Sub-features C / D / E.
+- **🔬 Force POD mode toggle** in Settings → Debug — surfaces the dual-slot UI even with 1 reader plugged in. Already mentioned in *Cross-cutting: POD detection model* below; wire it as a debug-only setting.
+- **🔬 Twin-pair candidate inspector** (Sub-feature B) — when a chip lands on slot 1, show a debug-only banner listing every `findTwinCandidates()` match with the matched fields. Helps catch the "should have matched but didn't" class of bugs.
+- **🔬 Pending diff inspector** (Sub-feature E) — debug-only "Show pending changes" link in the chip-update banner, expanding to the full Firestore-vs-chip diff with all field types (not just the simplified UI view).
+
+**Reuses**: existing `inventory.js` L4355-4365 (debug panel toggle), L4697-4777 (Firestore explorer pattern), L6681-7130 (Snapmaker WS request log — same UI shape, just a different feed). Most of the debug surfaces are new tabs + new feeds plugged into the existing debug panel chrome.
+
 #### 📐 Cross-cutting: POD detection model
 - The app is **not** POD-aware today — it just sees N readers. Detection rule: if the user has ≥ 2 ACR122U readers connected at the same time, surface the "POD mode" UI; otherwise stay in single-reader mode (current behaviour, kept identical).
 - A user-visible toggle in Settings → POD lets them force POD mode even with 1 reader (for testing/debug).
@@ -247,20 +306,22 @@ Extracting a `drivers/moonraker.js` from a single implementation = textbook leak
 
 **Discipline**:
 1. **1st impl** (Snapmaker, the existing code) → `drivers/snapmaker.js`. All current behaviour preserved verbatim.
-2. **2nd impl** (e.g. Creality K1) → `drivers/creality-k1.js`. Built in parallel, even if 80% of the code looks like a copy of `snapmaker.js`. We **resist** extracting common parts at this stage.
+2. **2nd impl** (e.g. Creality K1) → `drivers/creality.js`. Built in parallel, even if 80% of the code looks like a copy of `snapmaker.js`. We **resist** extracting common parts at this stage.
 3. **3rd impl** (e.g. Wondermaker or generic Klipper) → THEN we have enough comparison points to identify what's truly common, and extract a `drivers/_moonraker-base.js` that the brand drivers compose with.
 
 Cost: ~20% temporary duplication across drivers 1 & 2. Benefit: zero forced re-refactor when the 3rd brand reveals a Snapmaker-only assumption that wasn't visible from the Snapmaker code alone.
 
 ##### Driver map (post-3rd-impl factoring)
-| Driver | Protocol | Brands |
+| Driver | Protocol | Brands / models |
 |---|---|---|
 | `drivers/snapmaker.js` | Moonraker WS (`:7125`) + Snapmaker-specifics | Snapmaker (today) |
-| `drivers/creality-k1.js` | Moonraker WS (`:7125`) + Creality-specifics | Creality K-series (new) |
-| `drivers/klipper-generic.js` | Moonraker WS (`:7125`) — assumed-vanilla path | Wondermaker, generic Klipper machines |
+| `drivers/creality.js` | Moonraker WS (`:7125`) + Creality-specifics | **All Creality printers in scope** — K1, K1 Max, K2 Plus, current-gen Enders running Klipper. One driver covers every model on the Creality side because they share the same Moonraker-Klipper stack. **Per-model specialization is a future concern** — only forked into `creality-k2.js` etc. if/when a specific model needs different behaviour (UI/macros) that pollutes the base. |
+| `drivers/klipper-generic.js` | Moonraker WS (`:7125`) — assumed-vanilla path | Wondermaker, generic Klipper machines (any printer running Moonraker that's not one of the named brands) |
 | `drivers/_moonraker-base.js` | shared primitives (WS lifecycle, gcode, status subscribe) | extracted only after 3 implementations exist and the common surface is empirically clear |
-| `drivers/bambu-mqtt.js` | MQTTS on `:8883` | Bambu Lab |
+| `drivers/bambu-mqtt.js` | MQTTS on `:8883` | Bambu Lab (entire range — same MQTT API across X1/P1/A1/H2D) |
 | `drivers/flashforge-http.js` | HTTP polling on `/control/*` | FlashForge (AD5X / 5M / 5M Pro) |
+
+**Per-brand vs per-model rule of thumb**: one driver per **brand** unless a specific model breaks the brand's protocol contract. Most brands have one stack across their lineup (Bambu MQTT, Creality Klipper); the per-model split is for outliers.
 
 A `drivers/index.js` dispatcher routes by `printer.brand` (with a `printer.protocol` override for "generic Klipper" printers that need explicit Moonraker selection without being one of the named brands).
 
@@ -272,7 +333,7 @@ A possible 7th driver later: `drivers/elegoo-mqtt.js` for Centauri — **researc
 |---|---|---|---|---|
 | **Snapmaker** | Moonraker WS (`:7125`) | mDNS `_snapmaker._tcp.local.` | `snapmaker` | ✅ shipping (lives in `inventory.js` today, extracted to its own driver in F1) |
 | **Bambu Lab** | MQTTS (`:8883`) — LAN mode + Cloud bridge | mDNS `_bambu._tcp.local.` (broadcasts model + serial) | `bambu-mqtt` | New driver. Auth = printer access code (printed on device, user enters once). LAN mode requires "Local print" enabled on the printer. |
-| **Creality K-series** (K1, K1 Max, K2 Plus) | Moonraker WS (`:7125`) | mDNS `_octoprint._tcp.local.` (when present) or hostname-based | `creality-k1` | New driver — built **in parallel** with `snapmaker.js`, even if much of the code looks similar. We resist extracting a shared `_moonraker-base.js` until the 3rd Klipper-class brand lands (Rule of Three above). |
+| **Creality** (K1, K1 Max, K2 Plus, current-gen Enders running Klipper) | Moonraker WS (`:7125`) | mDNS `_octoprint._tcp.local.` (when present) or hostname-based | `creality` (single driver across all current models — see *Per-brand vs per-model rule of thumb* above) | New driver — built **in parallel** with `snapmaker.js`, even if much of the code looks similar. We resist extracting a shared `_moonraker-base.js` until the 3rd Klipper-class brand lands (Rule of Three above). |
 | **Elegoo Centauri** | MQTTS — Chitu cloud bridge | TBD (research) | `elegoo-mqtt` (research-gated) | Lower priority — research first whether LAN mode exists or if cloud-only. |
 | **FlashForge** (AD5X, 5M, 5M Pro) | HTTP polling on `:8898` for status; WebSocket on `:8899` for live updates on newer firmware | UDP broadcast on `48899` with magic byte | `flashforge-http` | New driver. Less rich than Moonraker (no temperature stream — poll every 2s). |
 | **Generic Klipper / Wondermaker** | Moonraker WS (`:7125`) | mDNS varies; falls back to manual IP | `klipper-generic` | New driver — at this point we have 3 Klipper-class implementations (Snapmaker + Creality K + Generic) and the empirical common surface is clear, so this is the right moment to extract `_moonraker-base.js`. New brand entry "Klipper machine" with a manual-IP-only flow (auto-discovery is hit-or-miss across Klipper distros). |
@@ -292,7 +353,7 @@ Create `renderer/lib/drivers/index.js` + `snapmaker.js`. Move all `snap*` functi
 **Win**: `inventory.js` loses ~1700 lines, code-map shrinks meaningfully. Partial down-payment on the long-parked *modularize inventory.js* item from the 🌱 Internal section.
 
 ##### F2 — Second-impl Klipper-class brand (Creality K-series)  ·  **Effort: L**  ·  **Risk: low-medium**
-Build `drivers/creality-k1.js` **in parallel** with `snapmaker.js`. Even though Moonraker's WS protocol is the same on the wire, **resist extracting a shared base** — the goal is to **discover empirically** what's actually common vs Snapmaker-specific by having two real implementations side-by-side. Expected behaviour deltas (educated guesses, to validate by implementing):
+Build `drivers/creality.js` **in parallel** with `snapmaker.js`. Even though Moonraker's WS protocol is the same on the wire, **resist extracting a shared base** — the goal is to **discover empirically** what's actually common vs Snapmaker-specific by having two real implementations side-by-side. Expected behaviour deltas (educated guesses, to validate by implementing):
 - Camera URL pattern (Creality K1 has its own MJPEG endpoint; Snapmaker uses WebRTC)
 - `machine_type` filter ("Creality" vs "Snapmaker")
 - Multi-extruder layout (K1 = 1 extruder, K1 Max = 1, K2 Plus = up to 4)
@@ -313,7 +374,7 @@ With Snapmaker and Creality K both shipping, build `drivers/klipper-generic.js` 
 After this third implementation, perform the **planned extraction**: identify the genuinely common code across all three drivers and lift it into `drivers/_moonraker-base.js`. The three brand drivers become thin specializations that compose the base.
 
 ♻️ **Reuses**:
-- `drivers/snapmaker.js` + `drivers/creality-k1.js` — diff them to find the genuinely common parts
+- `drivers/snapmaker.js` + `drivers/creality.js` — diff them to find the genuinely common parts
 - The result becomes the architectural decision deferred from F1 — backed by 3 concrete data points instead of 1.
 
 ##### F3 — Bambu Lab MQTT driver *(headline feature)*  ·  **Effort: L**  ·  **Risk: medium**
@@ -362,16 +423,29 @@ Per-brand settings form — different fields per brand: Bambu wants `ip` + `acce
 #### 🧮 Total effort
 F1: M  ·  F2: L  ·  F2b: M (includes the deferred `_moonraker-base.js` extraction)  ·  F3: L  ·  F4: M  ·  F5: ~S+L (gated)  ·  F6: M → **~XXL combined**.
 
-The F2 → L bump (vs. the original M estimate) reflects the *Rule of Three* discipline: building a parallel `creality-k1.js` instead of refactoring Snapmaker into a forced abstraction. The cost is real (extra implementation work) but the saving is also real (no leaky-abstraction debt to fix when F2b lands).
+The F2 → L bump (vs. the original M estimate) reflects the *Rule of Three* discipline: building a parallel `creality.js` instead of refactoring Snapmaker into a forced abstraction. The cost is real (extra implementation work) but the saving is also real (no leaky-abstraction debt to fix when F2b lands).
 
 #### 🎯 Recommended sequence
 1. **F1** — extract `drivers/snapmaker.js` from inventory.js (no new functionality, refactor only).
-2. **F2** — second parallel implementation: `drivers/creality-k1.js`. **Resist** any extraction urge; the goal is to discover what's truly common by having two real impls side-by-side.
+2. **F2** — second parallel implementation: `drivers/creality.js`. **Resist** any extraction urge; the goal is to discover what's truly common by having two real impls side-by-side.
 3. **F6** — brand picker UX cleanup so the new brands are clickable with the right per-brand forms.
 4. **F2b** — third Klipper-class implementation (`drivers/klipper-generic.js`) + planned extraction of `drivers/_moonraker-base.js` from the empirically-common parts of all three.
 5. **F3** — Bambu Lab MQTT (headline feature, biggest user base after Snapmaker).
 6. **F4** — FlashForge HTTP.
 7. **F5** — Elegoo Centauri (research first, build only if LAN mode is reachable).
+
+#### 🐛 Debug surface — Multi-brand live
+Snapmaker already has a debug-only WS request log (`inventory.js` L6681-7130). Generalising to multi-brand means the debug surface multiplies — each driver gets its own log feed, plus brand-agnostic inspectors:
+
+- **🔬 Per-driver request log** (one tab per active driver) — every command sent + response received, wire-format. Moonraker WS frames, MQTT topic+payload, FlashForge HTTP status. Same UI shape as today's WS log; the feed source changes per driver.
+- **🔬 Live status inspector** — debug-only side panel that shows the **parsed** status object the driver hands back to the renderer, in real time. Lets us catch field-name mismatches and stale-data bugs without reading wire protocol traces.
+- **🔬 Connection state machine** — visualizes `idle → connecting → connected → reconnecting → disconnected` per printer. Shows last error, retry count, ms since last frame. Cures the "why does this printer keep disconnecting" black hole.
+- **🔬 Force-connect-to-IP** debug button — bypasses discovery entirely; types in an IP + protocol and starts a session. Critical for testing Bambu / Creality / FlashForge during F3-F4 development.
+- **🔬 Driver dispatch trace** — shows which driver was selected for each printer in `state.printers`, and **why** (brand match, protocol override, fallback). Helps diagnose F2/F2b extraction edge cases.
+- **🔬 Discovery scan journal** — already exists for Snapmaker (`inventory.js` L7521-8029); generalise to per-brand journals during F6 so any brand's scan can be exported as a JSON dump for support tickets.
+- **🔬 Raw frame replay** — paste a captured wire frame back into the active driver to test the parser in isolation. Lower priority but very useful for regression-testing after Bambu firmware updates.
+
+**Reuses**: existing `inventory.js` L7521-8029 (Snapmaker scan journal — generalise during F6), L6681-7130 (WS log UI), L4697-4777 (debug panel tab pattern). Most of the multi-brand debug surfaces are mechanical extensions of patterns already shipped for Snapmaker.
 
 #### 📐 Cross-cutting note
 After F1, the CODEMAP entry for the Snapmaker section needs a rewrite (it'll point to `renderer/lib/drivers/snapmaker.js` instead of an inline range in `inventory.js`). Update CODEMAP.md as part of F1's commit. The same applies to F2 (add Creality), F2b (add Klipper-generic + base), F3 (add Bambu), F4 (add FlashForge): every driver added bumps the CODEMAP.
@@ -502,6 +576,21 @@ Per-protocol implementation:
 - `snapSendGcode` for everything.
 - `inventory.js` L6618-6680 — Snapmaker's per-extruder filament grid already iterates extruders 0-3 with click handlers. The tool selection chip strip slots in above it with the same pattern.
 - The current Snapmaker WS subscription already includes `extruder.position` and `print_stats.objects` — no additional subscriptions needed.
+
+#### 🐛 Debug surface — Printer control panel
+Printer control is the highest-risk feature surface (a misclick can damage hardware), so the debug interfaces are also the most important. They're not optional polish — they're a precondition for shipping confidently.
+
+- **🔬 Action audit log** — every command issued via the control panel: `{ts, printer, brand, action, payload, gcode, response, durationMs}`. Newest first; persistent (Firestore `users/{uid}/printers/{brand}/devices/{id}/actionLog/{auto}` with a 30-day retention rule) so multi-day debugging works. Filterable by action type. Critical for "what command did I send before the print failed?".
+- **🔬 Custom G-code console** (already partially shipped in Snapmaker debug — promote it) — textarea + Send + history of last 50 commands sent on this printer (per-printer, persisted to localStorage). Each sent command shows its response inline. Use this to test new control bindings before wiring them to UI buttons.
+- **🔬 Mid-print lockout bypass** — debug-only toggle that disables the "is printing" gate on home/jog/load-filament/etc. **Strictly debug** — leaves a banner at the top of the panel reminding "Lockout bypassed" and the audit log records every command sent in this mode.
+- **🔬 Macro execution trace** — when a user-defined macro runs, debug shows the expansion: which gcode lines fired, the response after each, the elapsed time. Helps debug macros that mostly-but-not-quite work.
+- **🔬 Live status diff** — when a state change is expected (e.g. pause → paused), debug shows the printer state before / after / delta-ms. Surfaces optimistic-rollback misfires (Sub-feature G1's "if printer doesn't transition in 5s, revert").
+- **🔬 Temperature target / actual graph** (small) — last 5 minutes of nozzle + bed target vs actual, plotted. Spot temp-control oscillations before they cause print issues.
+- **🔬 File operation log** — every `listFiles`/`uploadFile`/`deleteFile`/`startPrint` call with bytes-transferred + duration. File API is the most likely source of brand-specific bugs; this catches them.
+
+**Reuses**: existing `inventory.js` L4355-4365 (debug panel toggle), L6681-7130 (Snapmaker WS log shape), L4524-4696 (deleted-spools list — same "debug-tab with filters" pattern). New tabs in the existing debug panel chrome — no new chrome needed.
+
+**Sprint scope**: ship the Action audit log + Custom G-code console + Mid-print lockout bypass with G1. The rest can land progressively as the corresponding G-feature ships (e.g. File operation log alongside G5).
 
 #### 🛡️ Cross-cutting: safety patterns
 1. **Hold-to-confirm gradients** by danger level:
