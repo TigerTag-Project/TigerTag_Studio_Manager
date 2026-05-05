@@ -70,6 +70,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // multi-VLAN without reflector) — renderer falls back to port-scan.
   mdnsBrowseSnapmaker: () => ipcRenderer.invoke('mdns:browse-snapmaker'),
 
+  // ── FlashForge HTTP — bridge through main process to bypass CORS.
+  // The FlashForge firmware (port 8898 /detail + /control) doesn't handle
+  // CORS preflight, so direct fetch() from the renderer fails. This IPC
+  // lets the renderer issue the same POST through Node's fetch (no CORS).
+  // Returns the parsed JSON or { code:-1|-2, message } error envelopes —
+  // identical shape to what the renderer used to build inline.
+  ffgHttpPost: (url, body) => ipcRenderer.invoke('ffg:http-post', url, body),
+
   // ── Image cache (main-process side) ─────────────────────────────────────
   imgGet: (url) => ipcRenderer.invoke('img:get', url),
 

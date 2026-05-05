@@ -151,6 +151,14 @@
       <div class="row between" style="gap:10px">
         <div class="inv-search">
           <input id="searchInv" type="text" placeholder="Search material, brand, color, UID…" data-i18n-placeholder="searchPlaceholder" />
+          <!-- Clear button — sits to the LEFT of the magnifier so the loupe
+               stays in its established position when the X appears/hides.
+               `hidden` by default; the renderer toggles visibility based on
+               the input value (see #searchInv `input` handler in inventory.js). -->
+          <button type="button" id="searchInvClear" class="inv-search-clear" hidden
+                  aria-label="Clear search" title="Clear search">
+            <span class="icon icon-close icon-13" aria-hidden="true"></span>
+          </button>
           <span class="icon icon-search icon-13"></span>
         </div>
         <div class="inv-filter-group">
@@ -164,7 +172,12 @@
             <option value="" data-i18n="filterAllTypes">All types</option>
           </select>
         </div>
-        <div class="view-toggle" style="flex-shrink:0">
+      </div>
+      <!-- View selector lives on its OWN row below the search bar — gives
+           the buttons more breathing room and stops them from being squeezed
+           when the user opens the brand/material/type dropdowns above. -->
+      <div class="inv-view-row">
+        <div class="view-toggle">
           <button id="btnViewTable" class="active" data-i18n="btnViewTable">☰ Table</button>
           <button id="btnViewGrid" data-i18n="btnViewGrid">⊞ Grid</button>
           <button id="btnViewRack"><span class="icon icon-package icon-13"></span><span data-i18n="btnViewRack">Storage</span></button>

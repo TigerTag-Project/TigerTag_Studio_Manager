@@ -253,6 +253,36 @@
     background-size: 8px 8px;
     box-shadow: none;
   }
+  /* "Filled" — slot has filament loaded. Show ONLY the colour fill;
+     no outer border (transparent) and no baseline blue inset glow.
+     Reads as a clean colour rectangle rather than colour-on-colour
+     edges that drew attention to the seam between fill and border. */
+  .snap-fil-square--filled {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  /* "Configured but empty" — the slot has a colour + material assigned
+     in the printer's matlStation but no filament is loaded. We mark
+     the identity with a thick coloured ring drawn ENTIRELY INSIDE the
+     square's existing footprint via `box-shadow: inset` so the empty
+     and filled tiles share the exact same outer dimensions (no 1-2px
+     visual jitter when a slot toggles between states). The border
+     itself is kept transparent — without zeroing it the element box
+     would grow by 4px in CSS's default content-box layout. */
+  .snap-fil-square--configured {
+    background: transparent;
+    color: var(--muted);
+    border-color: transparent;
+    /* Inline style supplies the coloured `inset` shadow per slot; the
+       baseline shadow is cleared here so the colour-specific one isn't
+       fighting the default blue inset glow. */
+    box-shadow: none;
+  }
+  .snap-fil-square--configured .snap-fil-main {
+    text-shadow: none;
+    opacity: 0.65;
+    font-weight: 600;
+  }
   .snap-fil-main {
     font-size: 11px; font-weight: 700;
     text-align: center;
@@ -333,6 +363,81 @@
        both code paths render correctly. */
     object-fit: cover;
   }
+
+  /* ── FlashForge camera fallback ────────────────────────────────────
+     Shown when the MJPEG <img> errors out — typically because the
+     printer's mjpg-streamer is already serving its 1 allowed client
+     to another viewer. We display the static printer photo so the
+     hero area doesn't go blank, with an overlay carrying the error
+     message + a Retry button that bumps the camSession to issue a
+     fresh GET. */
+  .ffg-cam-fallback {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    overflow: hidden;
+  }
+  .ffg-cam-fallback-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    display: block;
+    /* Slightly desaturated so the live overlay reads as the focal point,
+       not the dim photo behind it. */
+    filter: grayscale(35%) brightness(0.55);
+  }
+  .ffg-cam-fallback-img--placeholder {
+    background: linear-gradient(135deg, #1c2233, #0e1422);
+  }
+  .ffg-cam-fallback-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    text-align: center;
+    /* Slight scrim so the message is legible regardless of the photo's
+       average luminance — pure transparent would clash on light shots. */
+    background: linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.55) 100%);
+  }
+  .ffg-cam-fallback-icon {
+    color: #ffb45b;
+    background: var(--icon-bg, currentColor);
+  }
+  .ffg-cam-fallback-msg {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    max-width: 320px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  .ffg-cam-fallback-retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.35);
+    background: rgba(255,255,255,.08);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .12s;
+  }
+  .ffg-cam-fallback-retry:hover {
+    background: rgba(255,255,255,.16);
+    border-color: rgba(255,255,255,.55);
+  }
+  .ffg-cam-fallback-retry:active { transform: translateY(1px); }
+  .ffg-cam-fallback-retry .icon { background: currentColor; }
 
   /* ── Snapmaker WS request log ───────────────────────────────────── */
   /* Inherit the standard .pp-section padding (12px 20px 14px) so the

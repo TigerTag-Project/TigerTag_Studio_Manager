@@ -762,6 +762,58 @@ ipcMain.handle('update:check-now', async () => {
   }
 });
 
+// ── FlashForge HTTP — main-process bridge (CORS bypass) ───────────────────
+// Why this can't run in the renderer: Electron renderers ARE Chromium, so
+// an HTTP POST from `http://localhost:5784` to `http://192.168.40.107:8898`
+// is treated as a cross-origin request. Sending JSON triggers a CORS
+// preflight (OPTIONS) that the FlashForge firmware doesn't handle — the
+// browser blocks the request before the actual POST is even sent. Node's
+// fetch (here in main) is not subject to CORS, so it goes through cleanly.
+// Mirrors the Flutter monolith's `http.post()` exactly:
+//   url   → http://<ip>:8898/{detail|control}
+//   body  → { serialNumber, checkCode, … }   (already JSON-encoded by caller)
+//   headers → Content-Type: application/json, Accept: */*
+// Returns the parsed JSON body, or { code:-1|-2, message } envelopes that
+// match what the Flutter side produces on parse / network errors. The
+// renderer treats those exactly like a regular FlashForge error code.
+const FFG_TIMEOUT_MS = 4000;
+ipcMain.handle('ffg:http-post', async (_evt, url, body) => {
+  if (!url || typeof url !== 'string') {
+    return { code: -2, message: 'Network error: missing url' };
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    return { code: -2, message: 'Network error: invalid url scheme' };
+  }
+  // Tight allowlist on the path so a renderer compromise can't pivot
+  // this IPC into a generic outbound HTTP proxy. Both endpoints take
+  // the SAME auth body so this list will rarely grow.
+  const ok = /\/(detail|control)$/i.test(new URL(url).pathname);
+  if (!ok) {
+    return { code: -2, message: 'Network error: path not allowed' };
+  }
+  const ctrl = new AbortController();
+  const tm = setTimeout(() => ctrl.abort(), FFG_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
+      body: typeof body === 'string' ? body : JSON.stringify(body || {}),
+    });
+    let parsed;
+    try {
+      parsed = await res.json();
+    } catch (_) {
+      parsed = { code: -1, message: 'Invalid JSON', httpStatus: res.status };
+    }
+    return parsed;
+  } catch (e) {
+    return { code: -2, message: `Network error: ${e?.message || e}` };
+  } finally {
+    clearTimeout(tm);
+  }
+});
+
 // ── Image cache IPC handler ───────────────────────────────────────────────────
 ipcMain.handle('img:get', async (_, url) => {
   if (!url || url === '--') return null;

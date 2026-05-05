@@ -10,7 +10,9 @@
     vertical-align: middle;
   }
   .icon-9  { width:  9px; height:  9px; }
+  .icon-10 { width: 10px; height: 10px; }
   .icon-11 { width: 11px; height: 11px; }
+  .icon-12 { width: 12px; height: 12px; }
   .icon-13 { width: 13px; height: 13px; }
   .icon-14 { width: 14px; height: 14px; }
   .icon-16 { width: 16px; height: 16px; }
@@ -55,6 +57,11 @@
   .icon-printer   { -webkit-mask-image: url('../../assets/svg/icons/icon_printer.svg');      mask-image: url('../../assets/svg/icons/icon_printer.svg'); }
   .icon-github    { -webkit-mask-image: url('../../assets/svg/icons/icon_github.svg');       mask-image: url('../../assets/svg/icons/icon_github.svg'); }
   .icon-discord   { -webkit-mask-image: url('../../assets/svg/icons/icon_discord.svg');      mask-image: url('../../assets/svg/icons/icon_discord.svg'); }
+  .icon-plug      { -webkit-mask-image: url('../../assets/svg/icons/icon_plug.svg');         mask-image: url('../../assets/svg/icons/icon_plug.svg'); }
+  .icon-battery   { -webkit-mask-image: url('../../assets/svg/icons/icon_battery.svg');      mask-image: url('../../assets/svg/icons/icon_battery.svg'); }
+  .icon-bolt      { -webkit-mask-image: url('../../assets/svg/icons/icon_bolt.svg');         mask-image: url('../../assets/svg/icons/icon_bolt.svg'); }
+  .icon-clock     { -webkit-mask-image: url('../../assets/svg/icons/icon_clock.svg');        mask-image: url('../../assets/svg/icons/icon_clock.svg'); }
+  .icon-wifi      { -webkit-mask-image: url('../../assets/svg/icons/icon_wifi.svg');         mask-image: url('../../assets/svg/icons/icon_wifi.svg'); }
 
   button {
     height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -289,7 +296,10 @@
   .inv-search input {
     width: 100%;
     height: 40px;
-    padding: 0 36px 0 14px;
+    /* Right padding accommodates BOTH the clear button AND the magnifier
+       so typed text never slides under either icon. The magnifier hugs
+       the right edge; the clear button sits to its left when visible. */
+    padding: 0 64px 0 14px;
     margin: 0;
     background: var(--surface-2);
     border: 1px solid var(--border);
@@ -305,6 +315,44 @@
     position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
     background: var(--muted);
     pointer-events: none;
+  }
+  /* Clear button — sits LEFT of the magnifier, only revealed when the
+     input has a value (renderer toggles `hidden` attr). Kept compact so
+     the input cursor stays comfortably away from both icons. */
+  .inv-search-clear {
+    position: absolute;
+    right: 36px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .12s, color .12s, transform .1s;
+  }
+  .inv-search-clear:hover {
+    background: var(--muted);
+    color: var(--surface);
+  }
+  .inv-search-clear:active { transform: translateY(-50%) scale(.92); }
+  .inv-search-clear[hidden] { display: none; }
+  .inv-search-clear .icon { position: static; transform: none; background: currentColor; }
+
+  /* Row dedicated to the view selector — sits directly below the search
+     bar and filter dropdowns so the toggle keeps its full size (incl.
+     the Storage/Printers labels) regardless of how wide the filters
+     above end up. Slight top margin separates the two rows visually. */
+  .inv-view-row {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 8px;
   }
 
   /* Quick-filter group — keeps the 3 dropdowns clustered together,
@@ -1603,50 +1651,162 @@
     margin-top: 2px;
     font-style: italic;
   }
+  /* Apple-flat outer card — single soft surface (slightly tinted to
+     stand against the white panel background), no nested frames
+     inside. Separators between sections come from hairline borders
+     on the inner blocks (.scale-last-spool, .scale-debug) instead
+     of the previous nested-card look. */
   .scale-card {
-    background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: 14px; padding: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
     display: flex; flex-direction: column; gap: 10px;
   }
+  /* Head — photo (left) + identity column (centre) + actions (right) */
   .scale-card-head {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 12px;
   }
-  .scale-card-status {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--neutral); flex-shrink: 0;
-    transition: background .25s, box-shadow .25s;
+  .scale-card-photo {
+    width: 56px; height: 56px;
+    flex-shrink: 0;
+    object-fit: contain;
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 4px;
+    border: 1px solid var(--border);
+    user-select: none;
+    -webkit-user-drag: none;
   }
-  .scale-card.is-online .scale-card-status {
-    background: var(--success);
-    box-shadow: 0 0 6px var(--success);
+  .scale-card-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .scale-card-name-row {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0;
   }
-  .scale-card-info { flex: 1; min-width: 0; }
   .scale-card-name {
     font-size: 14px; font-weight: 700; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex: 1; min-width: 0;
   }
-  .scale-card-meta {
-    font-size: 11px; color: var(--muted); margin-top: 2px;
+  /* Online/offline pill — bigger than the legacy bare dot, gives the
+     status a clearer affordance especially when scrolling a long list. */
+  .scale-card-status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px; font-weight: 600;
+    text-transform: lowercase;
+    letter-spacing: .01em;
+    flex-shrink: 0;
+  }
+  .scale-card-status-pill.is-online {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+  .scale-card-status-pill.is-offline {
+    background: rgba(150,150,150,.12);
+    color: var(--muted);
+  }
+  .scale-card-status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    display: inline-block;
+    background: currentColor;
+  }
+  .scale-card.is-online .scale-card-status-pill.is-online .scale-card-status-dot {
+    box-shadow: 0 0 4px currentColor;
+  }
+  .scale-card-mac {
+    font-size: 10.5px; color: var(--muted);
     font-family: var(--mono);
+    letter-spacing: .02em;
   }
-  .scale-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .scale-card-actions { display: flex; gap: 4px; flex-shrink: 0; align-self: flex-start; }
   .scale-card-btn {
+    /* Hold-to-confirm container: position:relative + overflow:hidden so
+       the .hold-progress fill child can animate inside without leaking
+       outside the rounded rect. */
+    position: relative; overflow: hidden;
     width: 30px; height: 30px;
     display: flex; align-items: center; justify-content: center;
     background: transparent; border: none; border-radius: 8px;
     cursor: pointer; transition: background .15s;
   }
   .scale-card-btn:hover { background: var(--danger-soft, rgba(220,38,38,.1)); }
-  .scale-card-btn .icon { background: var(--muted); }
+  /* Icon sits above the .hold-progress fill, so the red fill grows
+     UNDER the trash glyph instead of obscuring it. */
+  .scale-card-btn .icon {
+    position: relative; z-index: 1;
+    background: var(--muted);
+    transition: background .15s;
+  }
   .scale-card-btn:hover .icon { background: var(--danger); }
+  /* While holding, lock the icon to the danger colour and bump the
+     button background to the soft-red so the fill animation pops
+     against the surrounding card. */
+  .scale-card-btn.is-holding,
+  .scale-card-btn.is-confirming {
+    background: var(--danger-soft);
+  }
+  .scale-card-btn.is-holding .icon,
+  .scale-card-btn.is-confirming .icon { background: var(--danger); }
 
-  /* Last-spool block inside the scale card */
-  .scale-last-spool {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px;
+  /* ── Chips strip — telemetry at a glance.
+     A horizontal row of compact pills, each showing one piece of info
+     (Wi-Fi signal, power source, battery, firmware, last seen). Wraps
+     on narrow viewports so nothing is clipped. */
+  .scale-card-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .scale-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .scale-chip .icon {
+    background: currentColor; /* SVG mask — colour follows chip text */
+    flex-shrink: 0;
+  }
+  .scale-chip-text { font-weight: 500; }
+  /* Bolt overlay shown on the power chip when is_charging == true */
+  .scale-chip-bolt {
+    color: var(--warning);
+    margin-left: 1px;
+  }
+
+  /* Wi-Fi quality colour coding */
+  .scale-chip--wifi { color: var(--text); }
+  .scale-chip--wifi-excellent { color: var(--success); border-color: var(--success-soft); background: var(--success-soft); }
+  .scale-chip--wifi-good      { color: var(--success); }
+  .scale-chip--wifi-fair      { color: var(--warning); }
+  .scale-chip--wifi-weak      { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
+
+  /* Battery level colour coding */
+  .scale-chip--bat-high { color: var(--success); }
+  .scale-chip--bat-mid  { color: var(--warning); }
+  .scale-chip--bat-low  { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
+
+  /* Power chip — neutral by default */
+  .scale-chip--power { color: var(--muted); }
+
+  /* Firmware chip — subtle, monochrome */
+  .scale-chip--fw { color: var(--muted); }
+
+  /* Last-seen chip — subtle muted, only shown when offline */
+  .scale-chip--seen { color: var(--muted); }
+
+  /* Last-spool block inside the scale card — Apple-flat, no inner
+     frame. The data sits directly on the card surface, separated
+     from the chips strip above only by a hairline. */
+  .scale-last-spool {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--border);
   }
   .scale-last-puck {
     width: 24px; height: 38px;
@@ -1677,12 +1837,42 @@
   }
   .scale-last-empty {
     font-size: 11.5px; color: var(--muted); font-style: italic;
-    padding: 8px 4px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--border);
   }
 
-  .scale-card-fw {
-    font-size: 10px; color: var(--muted);
-    display: flex; gap: 12px;
+  /* ── Scale card — Debug-only raw JSON viewer ──────────────────────
+     Collapsed by default, click "Raw JSON (debug)" to expand. Shows
+     every field of the Firestore scales/{mac} doc so the developer
+     can spot what the firmware is actually writing. */
+  .scale-debug {
+    margin-top: 10px;
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+  }
+  .scale-debug-summary {
+    cursor: pointer;
+    font-size: 11px; font-weight: 600;
+    color: var(--muted);
+    padding: 2px 4px;
+    list-style: none;
+    user-select: none;
+  }
+  .scale-debug-summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform .15s ease;
+  }
+  .scale-debug[open] .scale-debug-summary::before {
+    transform: rotate(90deg);
+  }
+  .scale-debug-summary:hover { color: var(--text); }
+  /* The dark JSON theme + syntax-highlight colours come from the
+     canonical `pre.json` rule (see "Pre.json + .k/.s/.n/.b" further
+     up in this file). We just add a small top margin so the block
+     breathes after the <summary>. */
+  .scale-debug-pre {
+    margin-top: 6px;
   }
 
   /* ── TD1S device icon (settings button) ── */

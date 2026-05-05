@@ -2950,7 +2950,36 @@
   else if (state.viewMode === "rack") { $("btnViewRack")?.classList.add("active"); $("btnViewTable").classList.remove("active"); }
   else if (state.viewMode === "printer") { $("btnViewPrinter")?.classList.add("active"); $("btnViewTable").classList.remove("active"); }
 
-  $("searchInv").addEventListener("input", e => { state.search = e.target.value.trim(); renderInventory(); });
+  // Toggle the clear-button visibility in lock-step with the input
+  // value — only shown when there's something to clear. The same pass
+  // updates state.search and re-renders so typing feels native.
+  function _refreshSearchClearVisibility(value) {
+    const btn = $("searchInvClear");
+    if (!btn) return;
+    btn.hidden = !value || !value.length;
+  }
+  $("searchInv").addEventListener("input", e => {
+    const v = e.target.value;
+    state.search = v.trim();
+    _refreshSearchClearVisibility(v);
+    renderInventory();
+  });
+  // Clear button — wipes the input, refocuses for further typing, and
+  // re-renders the inventory immediately. We dispatch an `input` event
+  // too so anything else listening (e.g. future autocomplete) sees the
+  // empty value through the same channel as a manual delete.
+  $("searchInvClear")?.addEventListener("click", () => {
+    const inp = $("searchInv");
+    if (!inp) return;
+    inp.value = "";
+    state.search = "";
+    _refreshSearchClearVisibility("");
+    renderInventory();
+    inp.focus();
+  });
+  // Initial sync — covers the case where the input was pre-populated
+  // by a previous render or autofill (rare but possible).
+  _refreshSearchClearVisibility($("searchInv")?.value);
   $("brandFilter")?.addEventListener("change", e => {
     state.brandFilter = e.target.value;
     e.target.classList.toggle("is-active", !!state.brandFilter);
@@ -5476,6 +5505,13 @@
   function openPrinterDetail(brand, id) {
     const printer = state.printers.find(p => p.brand === brand && p.id === id);
     if (!printer) return;
+    // Defensive: if a previous side-card was open and the user clicked
+    // a different printer card directly (no close in between), tear
+    // down any lingering FlashForge MJPEG stream BEFORE the next
+    // renderPrinterDetail rebuilds the panel body. Without this, the
+    // stale `<img>` is replaced wholesale (Chromium GCs eventually) but
+    // the printer may still see the old slot as taken for a few seconds.
+    try { ffgTearDownCamera(); } catch (_) {}
     _activePrinter = printer;
     renderPrinterDetail();
     $("printerPanel").classList.add("open");
@@ -5506,6 +5542,12 @@
     if ($("ffgFilEditSheet")?.classList.contains("open")) {
       try { closeFlashforgeFilamentEdit(); } catch {}
     }
+    // Cut the MJPEG stream BEFORE the panel slides out. The `<img>`
+    // stays in DOM while the .open class is removed (just CSS-hidden),
+    // so without an explicit src reset Chromium keeps the connection
+    // alive — and the FlashForge mjpg-streamer (1 concurrent client
+    // limit) refuses the next open until the held connection drops.
+    try { ffgTearDownCamera(); } catch (_) {}
     $("printerPanel").classList.remove("open");
     $("printerOverlay").classList.remove("open");
     // Tear down the Snapmaker live connection if any was active for this
@@ -6847,8 +6889,15 @@
     // is enabled (some models report the URL with the camera disabled
     // server-side; in that case the <img> would 404).
     const ffgConn = (p.brand === "flashforge") ? _ffgConns.get(ffgKey(p)) : null;
-    const ffgCamUrl = ffgConn?.data?.camera?.url || null;
+    const ffgCamUrlRaw = ffgConn?.data?.camera?.url || null;
     const ffgCamEnabled = !!(ffgConn?.data?.camera?.enabled);
+    // Append the per-open camSession as `&_=<ts>` so each fresh open of
+    // the side-card hits a brand-new URL (forcing a new HTTP GET → new
+    // MJPEG slot on the printer). Re-renders during the SAME open reuse
+    // the same camSession so we don't churn connections on every poll.
+    const ffgCamUrl = ffgCamUrlRaw && ffgConn?.camSession
+      ? (ffgCamUrlRaw + (ffgCamUrlRaw.includes("?") ? "&" : "?") + "_=" + ffgConn.camSession)
+      : ffgCamUrlRaw;
     const showFfgCam = !!(ffgCamUrl && ffgCamEnabled && ffgConn?.status === "connected");
 
     const showCam = showSnapCam || showFfgCam;
@@ -6866,19 +6915,17 @@
         </div>`;
     } else if (showFfgCam) {
       // The MJPEG stream is requested as an <img> src — the browser
-      // keeps the connection open and refreshes frame-by-frame. On a
-      // network/decode error we hide the wrapper so the photo
-      // placeholder underneath stays visible. We also disable the
-      // referrer so the printer's nginx doesn't reject the stream
-      // request based on the Origin header.
+      // keeps the connection open and refreshes frame-by-frame.
+      // On `error` (load fails — typically because the FlashForge
+      // mjpg-streamer is already serving its 1 allowed client to
+      // someone else), we swap the inner of #ffgCamHost to a fallback:
+      // the static printer photo with an overlay explaining the
+      // single-stream limit + a Retry button. Both the error capture
+      // and the retry click are wired by the body delegated handlers
+      // (no inline onerror string — keeps the IIFE clean).
       camBannerHtml = `
-        <div class="pp-cam-full ffg-cam-host">
-          <img class="snap-camera-frame ffg-camera-img"
-               src="${esc(ffgCamUrl)}"
-               alt="${esc(t("ffgCameraAlt"))}"
-               loading="lazy"
-               referrerpolicy="no-referrer"
-               onerror="this.closest('.pp-cam-full').style.display='none'"/>
+        <div id="ffgCamHost" class="pp-cam-full ffg-cam-host">
+          ${ffgRenderCamBannerInner(p, ffgCamUrl, heroImgUrl, modelName)}
         </div>`;
     }
 
@@ -6901,6 +6948,42 @@
     // with the Snapmaker dispatch above.
     const ffgLiveHtml = (p.brand === "flashforge")
       ? `<div id="ffgLive" class="snap-live-host">${renderFlashforgeLiveInner(p)}</div>`
+      : "";
+
+    // FlashForge HTTP request log — same shape as the Snapmaker block
+    // below, but driven by /detail polling. Surfaces every outgoing
+    // POST + the printer's response so the user can pinpoint where the
+    // connection breaks (no IP, bad SN, wrong password, network drop).
+    // The user's expand/collapse choice is persisted on `conn.logExpanded`
+    // (set by the toolbar click handler) so partial re-renders during
+    // status flapping don't snap the section closed under their cursor.
+    const ffgConnLogRef = (p.brand === "flashforge") ? _ffgConns.get(ffgKey(p)) : null;
+    const isFfgPaused = !!(ffgConnLogRef?.logPaused);
+    const ffgLogExpanded = !!(ffgConnLogRef?.logExpanded);
+    const ffgLogHtml = (p.brand === "flashforge")
+      ? `<section class="pp-section pp-section--collapsible snap-log-section" data-collapsed="${ffgLogExpanded ? "false" : "true"}">
+           <button class="pp-section-head pp-section-head--btn" type="button">
+             <span>${esc(t("snapLogTitle"))}
+                   <span class="snap-log-count" id="ffgLogCount">${(ffgConnLogRef?.log?.length) || 0}</span>
+                   ${isFfgPaused ? `<span class="snap-log-paused-tag" id="ffgLogPausedTag">${esc(t("snapLogPaused"))}</span>` : ""}
+             </span>
+             <span class="pp-chev icon icon-chevron-r icon-14"></span>
+           </button>
+           <div class="pp-section-body">
+             <div class="snap-log-toolbar">
+               <button type="button" class="snap-log-btn snap-log-btn--pause${isFfgPaused ? " is-paused" : ""}" id="ffgLogPauseBtn"
+                       data-paused="${isFfgPaused ? "true" : "false"}">
+                 <span class="icon ${isFfgPaused ? "icon-play" : "icon-pause"} icon-13"></span>
+                 <span class="label">${esc(t(isFfgPaused ? "snapLogResume" : "snapLogPause"))}</span>
+               </button>
+               <button type="button" class="snap-log-btn" id="ffgLogClearBtn">
+                 <span class="icon icon-trash icon-13"></span>
+                 <span>${esc(t("snapLogClear"))}</span>
+               </button>
+             </div>
+             <div id="ffgLog">${renderFlashforgeLogInner(p)}</div>
+           </div>
+         </section>`
       : "";
 
     // Snapmaker WS request log — sibling collapsible section at the
@@ -6978,6 +7061,14 @@
     if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
     if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
 
+    // Tear down any previous FlashForge MJPEG `<img>` BEFORE we wipe
+    // the panel body. Setting innerHTML drops the old element, but
+    // Chromium can take a moment to actually close the underlying
+    // socket — during that gap the printer (1-client mjpg-streamer)
+    // would refuse the new `<img>`'s GET. Aborting first guarantees
+    // the slot is free by the time the new element fires its request.
+    try { ffgTearDownCamera(); } catch (_) {}
+
     $("printerPanelBody").innerHTML = `
       ${camBannerHtml}
       <div class="pp-hero">
@@ -7005,7 +7096,8 @@
         </div>
       </section>
 
-      ${snapLogHtml}` : ""}`;
+      ${snapLogHtml}
+      ${ffgLogHtml}` : ""}`;
 
     // Wire interactions
     const body = $("printerPanelBody");
@@ -7054,6 +7146,13 @@
         const sec = btn.closest(".pp-section");
         const collapsed = sec.dataset.collapsed === "true";
         sec.dataset.collapsed = collapsed ? "false" : "true";
+        // Persist the FlashForge Request log open state on the conn so
+        // it survives partial / full re-renders triggered by polling.
+        if (sec.classList.contains("snap-log-section")
+            && _activePrinter?.brand === "flashforge") {
+          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          if (conn) conn.logExpanded = collapsed;  // newly expanded if was collapsed
+        }
       });
     });
 
@@ -7063,6 +7162,22 @@
     // it here would double-toggle and the section would never visibly open.)
     if (!body.dataset.snapDelegated) {
       body.dataset.snapDelegated = "1";
+      // FlashForge MJPEG `<img>` error capture. Image-element error
+      // events DON'T bubble, so we listen on the panel body in CAPTURE
+      // phase to catch them. Triggers when the printer rejects the
+      // stream (1-client limit), times out, or returns a non-image
+      // response. We flip conn.camFailed and swap the banner inner —
+      // user sees the printer photo + retry button instead of nothing.
+      body.addEventListener("error", e => {
+        const tgt = e.target;
+        if (!(tgt instanceof HTMLElement)) return;
+        if (!tgt.classList?.contains("ffg-camera-img")) return;
+        if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
+        const conn = _ffgConns.get(ffgKey(_activePrinter));
+        if (!conn || conn.camFailed) return;
+        conn.camFailed = true;
+        ffgRefreshCamBanner();
+      }, /*useCapture*/ true);
       body.addEventListener("click", e => {
         // Filament edit — color square or edit icon (only when editable).
         const filEditTrigger = e.target.closest("[data-snap-fil-edit]");
@@ -7081,6 +7196,26 @@
           if (idx >= 0 && _activePrinter && _activePrinter.brand === "flashforge") {
             openFlashforgeFilamentEdit(_activePrinter, idx);
           }
+          return;
+        }
+        // FlashForge — Retry camera button. Bumps camSession so the
+        // browser issues a brand-new GET (the printer's mjpg-streamer
+        // sees a "fresh" client) and clears camFailed so the next
+        // render shows the live <img>. Only swaps the camera banner
+        // — the rest of the sidecard (log, edits) stays untouched.
+        if (e.target.closest("[data-ffg-cam-retry]")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
+          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          if (!conn) return;
+          // Tear down any lingering <img> first so the printer sees the
+          // close BEFORE the new GET arrives (otherwise the firmware
+          // counts both and refuses the new one again).
+          try { ffgTearDownCamera(); } catch (_) {}
+          conn.camFailed = false;
+          conn.camSession = Date.now();
+          ffgRefreshCamBanner();
           return;
         }
         // Pause / Resume — surgical update. We deliberately AVOID a full
@@ -7144,6 +7279,58 @@
           snapSendCustomJson();
           return;
         }
+        // FlashForge — Pause / Resume. Same surgical update pattern as
+        // the Snapmaker handler above to avoid resetting the log
+        // section's `data-collapsed` state under the user's cursor.
+        if (e.target.closest("#ffgLogPauseBtn")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter) return;
+          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          if (!conn) return;
+          conn.logPaused = !conn.logPaused;
+          const btn  = $("ffgLogPauseBtn");
+          const icon = btn?.querySelector(".icon");
+          const lbl  = btn?.querySelector(".label");
+          if (btn) {
+            btn.classList.toggle("is-paused", conn.logPaused);
+            btn.dataset.paused = String(conn.logPaused);
+          }
+          if (icon) {
+            icon.classList.toggle("icon-pause", !conn.logPaused);
+            icon.classList.toggle("icon-play",   conn.logPaused);
+          }
+          if (lbl) lbl.textContent = t(conn.logPaused ? "snapLogResume" : "snapLogPause");
+          let tag = $("ffgLogPausedTag");
+          if (conn.logPaused && !tag) {
+            const headSpan = btn?.closest(".snap-log-section")
+                                ?.querySelector(".pp-section-head--btn > span");
+            if (headSpan) {
+              tag = document.createElement("span");
+              tag.id = "ffgLogPausedTag";
+              tag.className = "snap-log-paused-tag";
+              tag.textContent = t("snapLogPaused");
+              headSpan.appendChild(tag);
+            }
+          } else if (!conn.logPaused && tag) {
+            tag.remove();
+          }
+          return;
+        }
+        // FlashForge — Clear log buffer in place.
+        if (e.target.closest("#ffgLogClearBtn")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter) return;
+          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          if (!conn) return;
+          conn.log = [];
+          const host = $("ffgLog");
+          if (host) host.innerHTML = renderFlashforgeLogInner(_activePrinter);
+          const countEl = $("ffgLogCount");
+          if (countEl) countEl.textContent = "0";
+          return;
+        }
         // Copy button inside an expanded row — copies the pretty JSON.
         const copyBtn = e.target.closest(".snap-log-detail-copy");
         if (copyBtn) {
@@ -7160,12 +7347,17 @@
         // Row head click — toggle expansion. We persist the flag on the
         // log entry object so it survives the next partial re-render
         // (typical when paused — no new pushes mean the rows array is
-        // stable and the index → entry mapping holds).
+        // stable and the index → entry mapping holds). Resolve the conn
+        // from the brand of the active printer so FlashForge rows
+        // expand against `_ffgConns` and Snapmaker rows against
+        // `_snapConns`.
         const head = e.target.closest("[data-row-toggle]");
         if (head) {
           const rowEl = head.closest(".snap-log-row");
           if (!rowEl || !_activePrinter) return;
-          const conn = _snapConns.get(snapKey(_activePrinter));
+          const conn = (_activePrinter.brand === "flashforge")
+            ? _ffgConns.get(ffgKey(_activePrinter))
+            : _snapConns.get(snapKey(_activePrinter));
           const idx = parseInt(rowEl.dataset.logIdx || "-1", 10);
           if (conn?.log?.[idx]) conn.log[idx].expanded = !conn.log[idx].expanded;
           // DOM swap — toggle the hidden attribute + the row's class
@@ -7311,6 +7503,24 @@
 
   function ffgKey(p) { return `${p.brand}:${p.id}`; }
 
+  // Force any active MJPEG stream to release. The FlashForge mjpg-streamer
+  // accepts a single concurrent client — if we don't break the held-open
+  // connection on close, reopening the side-card (or opening a different
+  // FlashForge after this one) hits the printer while it still thinks
+  // the previous client is connected, and the second `<img>` never
+  // receives a frame. Setting `src=""` then removing the attribute
+  // signals Chromium to abort the in-flight load → the TCP socket gets
+  // FIN'd → printer frees the slot. We also clear cached URLs from the
+  // attribute so even a quick reopen-with-same-URL forces a new GET.
+  function ffgTearDownCamera() {
+    document.querySelectorAll(".ffg-camera-img").forEach(img => {
+      try {
+        img.src = "about:blank";
+        img.removeAttribute("src");
+      } catch (_) {}
+    });
+  }
+
   // Authoritative "is this FlashForge reachable?" reading.
   // 1. Active poller status wins.  2. HTTP ping cache as fallback.
   // 3. Returns null when no signal yet (renders as "checking" dot).
@@ -7333,13 +7543,30 @@
     return `http://${raw}:8898`;
   }
 
+  // Normalize a FlashForge serial to the form the firmware expects on
+  // its HTTP API (port 8898 /detail + /control). The label printed on
+  // the AD5X / 5M chassis shows the SN as e.g. "MQQE9501368", but the
+  // firmware's authentication compares against the internal value
+  // "SNMQQE9501368" (queryable via `~M115` on port 8899). The mobile
+  // companion app strips the `SN` prefix when it shows the SN to the
+  // user, so anyone who copies it off-screen ends up with the short
+  // form — and the printer rejects every poll with `code:1, "SN is
+  // different"`. We force the prefix back on. Idempotent: an SN that
+  // already starts with `SN` (any case) is left as-is.
+  function ffgNormalizeSerial(raw) {
+    const sn = String(raw || "").trim();
+    if (!sn) return "";
+    if (/^sn/i.test(sn)) return sn;
+    return "SN" + sn;
+  }
+
   function ffgAuthBody(printer) {
     // Both fields land on the printer doc when the user adds a FlashForge
     // (see PRINTER_ADD_SCHEMA.flashforge above). Falsy values still get
     // sent — the printer answers with the helpful "sn is different" /
     // "access code is different" payloads we surface as toasts.
     return {
-      serialNumber: String(printer.serialNumber || "").trim(),
+      serialNumber: ffgNormalizeSerial(printer.serialNumber),
       checkCode:    String(printer.password || "").trim()
     };
   }
@@ -7355,33 +7582,26 @@
     const now = Date.now();
     if (cached && now - cached.lastChecked < 30_000) return;
     _ffgPings.set(k, { online: cached?.online ?? null, lastChecked: now });
+    // Route through main process to bypass renderer CORS (the FlashForge
+    // firmware doesn't handle CORS preflight; see main.js ffg:http-post).
+    // Same defensive shape as ffgPollOnce — bridge unavailability /
+    // rejection / non-object response all collapse to "offline" without
+    // breaking the periodic ping.
+    let online = false;
     try {
-      const ctrl = new AbortController();
-      const tm = setTimeout(() => ctrl.abort(), 2500);
-      const res = await fetch(`${base}/detail`, {
-        method: "POST",
-        signal: ctrl.signal,
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "*/*" },
-        body: JSON.stringify(ffgAuthBody(printer))
-      });
-      clearTimeout(tm);
-      // Even an authentication failure (code:1, "sn is different") implies
-      // the printer is reachable — only network errors / non-OK status
-      // count as "offline".
-      let online = res.ok;
-      if (online) {
-        try {
-          const j = await res.json();
-          if (j && (j.code === -2 || /network error/i.test(String(j.message || "")))) {
-            online = false;
-          }
-        } catch (_) { /* non-JSON → still treat as reachable since status was ok */ }
+      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
+      if (typeof bridge === "function") {
+        const j = await bridge(`${base}/detail`, ffgAuthBody(printer));
+        const code = j?.code;
+        const msg  = String(j?.message || "");
+        // Even an auth failure (code:1, "sn is different") implies the
+        // printer is reachable — only network errors count as "offline".
+        online = !(code === -2 || /network error/i.test(msg));
       }
-      _ffgPings.set(k, { online, lastChecked: now });
     } catch (_) {
-      _ffgPings.set(k, { online: false, lastChecked: now });
+      online = false;
     }
+    _ffgPings.set(k, { online, lastChecked: now });
     ffgRefreshOnlineUI(k);
   }
 
@@ -7444,6 +7664,23 @@
       retry: 0,
       retryTimer: null,
       intervalId: null,
+      // Cache-buster stamped on every camera URL emitted during this
+      // session so the browser never reuses a held-open MJPEG connection
+      // from a previous open. The FlashForge MJPEG server (mjpg-streamer
+      // on port 8080) only serves ONE concurrent client — without a
+      // fresh URL the second open would attach to a stale connection
+      // (or the printer would refuse the stream because it still thinks
+      // the previous client is connected). Set ONCE per ffgConnect so
+      // partial re-renders during the same open keep the same URL and
+      // don't initiate a new GET on every poll tick.
+      camSession: Date.now(),
+      // Surface the camera fallback when the `<img>` errors out (most
+      // common cause: another client already streaming, since the
+      // printer's mjpg-streamer accepts only ONE concurrent viewer).
+      // Reset to false on every status transition into "connected" and
+      // when the user clicks the in-banner Retry button (which also
+      // bumps camSession to force a new GET).
+      camFailed: false,
       // Flat shape — same field structure as the Snapmaker conn so the
       // renderer can reuse format helpers across both brands.
       data: {
@@ -7501,6 +7738,51 @@
     }, delay);
   }
 
+  /* ── Request log (debug-mode only) ────────────────────────────────
+     Mirrors the Snapmaker log block (snapLogPush / renderSnapmakerLogInner)
+     but tailored to HTTP polling: every poll pushes one outbound entry
+     (→ POST /detail) immediately followed by one inbound entry (← <json>).
+     Stored as `conn.log` — array of { dir, ts, summary, raw, expanded }.
+     The visible buffer is capped so memory stays bounded over hours of
+     polling. Surfaced via the collapsible Request log section under the
+     side-card body when state.debugEnabled is true. */
+  const FFG_LOG_MAX = 100;
+  // `summaryOverride` lets the outbound caller stamp the row head with
+  // "POST <url>" while keeping `raw` equal to the EXACT body that goes
+  // on the wire — that way the expanded JSON never shows a UI envelope
+  // the user could mistake for the real payload.
+  function ffgLogPush(conn, dir, raw, summaryOverride = null) {
+    if (!conn) return;
+    if (conn.logPaused) return;
+    if (!conn.log) conn.log = [];
+    let summary = summaryOverride || "";
+    if (!summary) {
+      try {
+        const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+        // Inbound /detail response — surface code + a couple of useful
+        // detail keys so you can see at a glance whether the printer
+        // returned a real status payload or an auth error.
+        if (obj && typeof obj === "object") {
+          if (typeof obj.code !== "undefined") {
+            summary = `code:${obj.code}`;
+            if (obj.message) summary += `  ${String(obj.message).slice(0, 40)}`;
+          }
+          if (obj.detail && typeof obj.detail === "object") {
+            const keys = Object.keys(obj.detail).slice(0, 4);
+            summary += (summary ? "  · " : "") + "detail · " + keys.join(", ");
+          }
+          if (!summary) summary = "(empty)";
+        } else {
+          summary = "(non-object)";
+        }
+      } catch { summary = "(non-json)"; }
+    }
+    const ts = new Date().toLocaleTimeString([], { hour12: false });
+    const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
+    conn.log.push({ dir, ts, summary, raw: rawStr });
+    if (conn.log.length > FFG_LOG_MAX) conn.log.splice(0, conn.log.length - FFG_LOG_MAX);
+  }
+
   async function ffgPollOnce(conn) {
     if (!conn || !_ffgConns.has(conn.key)) return;
     const printer = conn.printer;
@@ -7512,29 +7794,38 @@
       return;
     }
     conn.lastPollAt = Date.now();
+    // Outbound frame — `wireBody` is the EXACT body main-process fetch()
+    // will serialise. The HTTP verb + URL go in the row-head summary so
+    // the expanded JSON in the log matches what's on the wire byte for
+    // byte (no nested envelope to confuse the user).
+    const wireBody = ffgAuthBody(printer);
+    ffgLogPush(conn, "→", wireBody, `POST ${base}/detail`);
+    // Bridge through main: the renderer can't POST application/json
+    // cross-origin to the printer (CORS preflight blocked by firmware).
+    // Wrap every failure mode into the same `{ code:-2, message }`
+    // envelope the FlashForge driver already understands — preload
+    // missing, IPC handler not registered (e.g. partial reload before
+    // main restart), main process throwing, all surface uniformly so
+    // the inbound log row always renders and polling keeps going.
     let resp;
     try {
-      const ctrl = new AbortController();
-      const tm = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(`${base}/detail`, {
-        method: "POST",
-        signal: ctrl.signal,
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "*/*" },
-        body: JSON.stringify(ffgAuthBody(printer))
-      });
-      clearTimeout(tm);
-      // Non-JSON / non-200 → treat as offline (mirrors the Flutter
-      // catch-all branch that returns code:-1 + "Invalid JSON").
-      try { resp = await res.json(); }
-      catch (_) {
-        resp = { code: -1, message: "Invalid JSON", httpStatus: res.status };
+      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
+      if (typeof bridge !== "function") {
+        resp = { code: -2, message: "Network error: ffgHttpPost bridge unavailable (full app restart required)" };
+      } else {
+        resp = await bridge(`${base}/detail`, wireBody);
       }
     } catch (e) {
-      resp = { code: -2, message: `Network error: ${e?.message || e}` };
+      resp = { code: -2, message: `Network error: IPC failed — ${e?.message || e}` };
+    }
+    if (!resp || typeof resp !== "object") {
+      resp = { code: -2, message: "Network error: empty response from bridge" };
     }
     // Stash for the request log + debug overlay.
     conn.data.lastDetail = resp;
+    // Inbound frame — log every response (success, auth error, network
+    // failure) so the user can pinpoint where a connection breaks down.
+    ffgLogPush(conn, "←", resp);
     ffgMergeStatus(conn, resp);
   }
 
@@ -7591,13 +7882,19 @@
     const code = resp?.code;
     const msg  = String(resp?.message || "");
     const msgLower = msg.toLowerCase();
+    // Track the previous status so we only flag statusChanged when a
+    // poll *actually* moves us to a different state. Without this, every
+    // failing poll re-flags `true` and triggers a full renderPrinterDetail()
+    // every 2s — which resets data-collapsed on every section (closing
+    // the user's open Request log) and makes the whole sidecard flicker.
+    const prev = conn.status;
 
     // ── Error contract (lifted from the Flutter monolith) ─────────────
     // Network error → mark offline + schedule reconnect.
     if (code === -2 || /network error/.test(msgLower)) {
       conn.status = "offline";
       conn.lastError = msg || "network error";
-      ffgNotifyChange(conn, /*statusChanged*/ true);
+      ffgNotifyChange(conn, /*statusChanged*/ prev !== "offline");
       ffgScheduleReconnect(conn);
       return;
     }
@@ -7609,14 +7906,14 @@
       conn.lastError = msg;
       conn.data.snMismatch = true;
       ffgWarnOnce(conn, "sn", t("ffgErrSnMismatch"));
-      ffgNotifyChange(conn, true);
+      ffgNotifyChange(conn, prev !== "error");
       return;
     }
     if (code === 1 && /access code is different/.test(msgLower)) {
       conn.status = "error";
       conn.lastError = msg;
       ffgWarnOnce(conn, "pwd", t("ffgErrBadPassword"));
-      ffgNotifyChange(conn, true);
+      ffgNotifyChange(conn, prev !== "error");
       return;
     }
     // Anything else with code !== 0 and no `detail` payload — stay silent
@@ -7627,7 +7924,7 @@
     if (!detail || typeof detail !== "object") {
       if (code !== 0) {
         conn.status = "connecting";
-        ffgNotifyChange(conn, true);
+        ffgNotifyChange(conn, prev !== "connecting");
       }
       return;
     }
@@ -7639,6 +7936,14 @@
     conn.status = "connected";
     conn.lastError = null;
     conn.retry = 0;
+    // Status is freshly back online — give the camera another shot. If
+    // the previous open hit the 1-stream limit and we showed the fallback,
+    // a successful poll suggests the printer is reachable again so the
+    // viewer should re-attempt automatically. The user can still
+    // manually clear an error via the in-banner Retry button.
+    if (!wasConnected) {
+      conn.camFailed = false;
+    }
     const d = conn.data;
 
     // Temperatures — `rightTemp` is the active extruder; on dual-extruder
@@ -7666,21 +7971,60 @@
       const ms = detail.matlStationInfo;
       const currentSlot = (typeof ms.currentSlot === "number") ? ms.currentSlot : 0;
       const slots = Array.isArray(ms.slotInfos) ? ms.slotInfos : [];
-      const merged = [{}, {}, {}, {}];
+      // 5-slot layout: [Ext.] + [1A 1B 1C 1D].
+      //   • Ext.  = indepMatlInfo  → ipdMsConfig_cmd on save
+      //   • 1A-D = matlStationInfo → msConfig_cmd with slot 1-4
+      // Each entry carries `slotKind` ("ext" | "ms") so the renderer
+      // can pick the right tag and the edit sheet can dispatch the
+      // right /control command WITHOUT relying on array length tricks.
+      // Ext is always rendered (even with no material assigned) so the
+      // user has a fixed entry point to configure the indep extruder
+      // without needing to hunt through the matlStation slots.
+      const indep = (detail.indepMatlInfo && typeof detail.indepMatlInfo === "object")
+                    ? detail.indepMatlInfo : {};
+      const indepName  = String(indep.materialName || "").trim();
+      const indepColor = ffgParseHexColor(indep.materialColor);
+      // Ext is "live" only when the matlStation isn't actively feeding
+      // (currentSlot === 0) AND the extruder reports filament loaded.
+      // Otherwise the active feed is via matlStation, Ext is
+      // configured-but-not-active.
+      const anyExtruderHas = (detail.hasLeftFilament === true || detail.hasLeftFilament === 1)
+                          || (detail.hasRightFilament === true || detail.hasRightFilament === 1);
+      const extActive = currentSlot === 0 && anyExtruderHas;
+      const merged = [];
+      merged.push({
+        slotId: 0,
+        slotKind: "ext",
+        hasFilament: extActive,       // only "loaded" when currentSlot===0 + extruder reports filament
+        color: indepColor,
+        vendor: null,
+        type: indepName || null,
+        subType: null,
+        official: false,
+        isActive: extActive
+      });
       for (let i = 1; i <= 4; i++) {
         const s = slots.find(x => x && x.slotId === i) || {};
         const has = s.hasFilament === true || s.hasFilament === 1;
         const name = String(s.materialName || "").trim();
         const colorHex = ffgParseHexColor(s.materialColor);
-        merged[i - 1] = {
+        // KEEP the slot's assigned color + material even when
+        // hasFilament is false. The AD5X firmware always reports the
+        // last configured `materialColor` / `materialName` per slot;
+        // surfacing them lets the user see at a glance which filament
+        // is *intended* for each bay so they can refill the right one.
+        // Vendor stays null — /detail doesn't carry brand info.
+        merged.push({
           slotId: i,
-          color: has && colorHex ? colorHex : null,
-          vendor: "FlashForge",       // monolith doesn't expose a brand field
-          type: has && name ? name : null,
+          slotKind: "ms",
+          hasFilament: has,
+          color: colorHex,            // preserved across has/!has
+          vendor: null,               // unknown — not in /detail
+          type: name || null,         // preserved across has/!has
           subType: null,              // not exposed by /detail
           official: false,            // FlashForge slots are always editable
           isActive: has && (i === currentSlot)
-        };
+        });
       }
       d.filaments = merged;
     } else {
@@ -7691,10 +8035,14 @@
       const name = String(indepName || "").trim();
       const colorHex = ffgParseHexColor(indepColor);
       if (name || colorHex) {
+        // Same rationale as the matlStation branch — vendor isn't in
+        // the payload, so we leave it null rather than mislabel it.
         d.filaments = [{
           slotId: 1,
+          slotKind: "ext",             // no matlStation → indep extruder is the only path
+          hasFilament: true,           // single-extruder only renders when loaded
           color: colorHex,
-          vendor: "FlashForge",
+          vendor: null,
           type: name || null,
           subType: null,
           official: false,
@@ -7784,6 +8132,13 @@
         if (liveHost && typeof renderFlashforgeLiveInner === "function") {
           liveHost.innerHTML = renderFlashforgeLiveInner(_activePrinter);
         }
+        // Request log — incremental update so the section's open /
+        // closed state survives every poll tick. Mirrors the Snapmaker
+        // partial-render path at L6492.
+        const logHost = $("ffgLog");
+        if (logHost) logHost.innerHTML = renderFlashforgeLogInner(_activePrinter);
+        const countEl = $("ffgLogCount");
+        if (countEl) countEl.textContent = String(conn.log?.length || 0);
       }
     });
   }
@@ -7835,6 +8190,72 @@
     if (!key) return norm || "—";
     const lbl = t(key);
     return lbl && lbl !== key ? lbl : (norm || "—");
+  }
+
+  // Render the inner contents of the FlashForge camera banner. Two
+  // branches:
+  //   1. healthy   → MJPEG `<img>` streaming the printer's view
+  //   2. fallback  → static product photo overlaid with the error
+  //                  message + a Retry button (used when the `<img>`'s
+  //                  load fails — typically because mjpg-streamer is
+  //                  already serving its 1 allowed client elsewhere)
+  // The host wrapper (#ffgCamHost) is created by the caller; this
+  // helper only produces what goes INSIDE so we can swap it in place
+  // on error / retry without rebuilding the whole sidecard body.
+  function ffgRenderCamBannerInner(p, busted, heroUrl, modelName) {
+    const conn = _ffgConns.get(ffgKey(p));
+    if (conn?.camFailed) {
+      const photo = heroUrl
+        ? `<img class="ffg-cam-fallback-img" src="${esc(heroUrl)}"
+                alt="${esc(modelName || "")}"
+                onerror="this.style.opacity='.15'"/>`
+        : `<div class="ffg-cam-fallback-img ffg-cam-fallback-img--placeholder"></div>`;
+      return `
+        <div class="ffg-cam-fallback">
+          ${photo}
+          <div class="ffg-cam-fallback-overlay">
+            <div class="ffg-cam-fallback-icon icon icon-warn icon-18" aria-hidden="true"></div>
+            <div class="ffg-cam-fallback-msg">${esc(t("ffgCamFailMsg"))}</div>
+            <button type="button" class="ffg-cam-fallback-retry" data-ffg-cam-retry="1">
+              <span class="icon icon-refresh icon-13" aria-hidden="true"></span>
+              <span>${esc(t("ffgCamRetry"))}</span>
+            </button>
+          </div>
+        </div>`;
+    }
+    return `
+      <img class="snap-camera-frame ffg-camera-img"
+           src="${esc(busted)}"
+           alt="${esc(t("ffgCameraAlt"))}"
+           loading="lazy"
+           referrerpolicy="no-referrer"/>`;
+  }
+
+  // Swap the inner of #ffgCamHost in place — used by the error/retry
+  // handlers so toggling between healthy / fallback doesn't rebuild
+  // the whole panel body (which would blow away the Request log open
+  // state, the inline edits, etc.).
+  function ffgRefreshCamBanner() {
+    if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
+    const host = $("ffgCamHost");
+    if (!host) return;
+    const conn = _ffgConns.get(ffgKey(_activePrinter));
+    const url = conn?.data?.camera?.url || null;
+    const enabled = !!(conn?.data?.camera?.enabled);
+    if (!url || !enabled || conn?.status !== "connected") {
+      host.style.display = "none";
+      return;
+    }
+    host.style.display = "";
+    const busted = (url && conn?.camSession)
+      ? (url + (url.includes("?") ? "&" : "?") + "_=" + conn.camSession)
+      : url;
+    const meta = PRINTER_BRAND_META[_activePrinter.brand] || {};
+    const heroUrl = printerImageUrlFor(_activePrinter.brand, _activePrinter.printerModelId)
+                 || printerImageUrl(findPrinterModel(_activePrinter.brand, "0"));
+    const modelName = printerModelName(_activePrinter.brand, _activePrinter.printerModelId);
+    void meta;
+    host.innerHTML = ffgRenderCamBannerInner(_activePrinter, busted, heroUrl, modelName);
   }
 
   // Format an estimated-time-remaining count (seconds) into "Hh MMm".
@@ -7938,37 +8359,102 @@
       : "";
 
     // ── Filament grid — colored squares with material centred ────────
-    // 1 to N slots. matlStation models always emit a 4-element array,
-    // single-extruder models emit just one.
+    // matlStation rigs emit FIVE entries: [Ext.] + [1A 1B 1C 1D].
+    // Single-extruder rigs emit one entry (slotKind="ext").
+    //
+    // Three visual states (matlStation slots — single-extruder is binary):
+    //   1. FILLED       (hasFilament + color)  → solid fill, contrasting text
+    //   2. CONFIGURED   (!hasFilament + color) → bold coloured ring drawn
+    //                                            INSIDE the square (inset
+    //                                            shadow), "Empty" label inside,
+    //                                            material printed below — the
+    //                                            slot is *assigned* to a
+    //                                            specific filament so the
+    //                                            user knows what to refill
+    //                                            this bay with.
+    //   3. UNCONFIGURED (!hasFilament + no color) → existing gray --empty style
     const filCards = [];
     const fils = Array.isArray(d.filaments) ? d.filaments : [];
     for (let i = 0; i < fils.length; i++) {
       const fil  = fils[i] || {};
-      const has  = !!(fil.color || fil.type || fil.vendor);
-      // For matlStation we always render the slot tile (even when empty)
-      // so the user sees the full 4-bay layout and can edit each one;
-      // for single-extruder we only render when there's something.
-      const isMs = fils.length === 4;
-      if (!has && !isMs) continue;
+      const has  = !!fil.hasFilament;
       const color = fil.color || null;
-      const fg    = color ? snapTextColor(color) : "var(--text)";
+      const hasMeta = !!(color || fil.type);   // either color or material is set
+      // For multi-slot rigs (matlStation, fils.length>1) we always render
+      // every tile so the layout stays stable and editable. For
+      // single-extruder we only render when there IS something to show.
+      const isMulti = fils.length > 1;
+      if (!has && !hasMeta && !isMulti) continue;
+      const fg    = (has && color) ? snapTextColor(color) : "var(--text)";
       const slotId = fil.slotId || (i + 1);
-      const squareLabel = fil.type || t("snapNoFilament");
+      // Filled slot → show the material name in the square. Configured
+      // empty slot → say "Empty" in the square (the material name still
+      // appears in the meta row below). Unconfigured empty matlStation
+      // slot → fall back to the existing "no filament" placeholder.
+      const squareLabel = has
+        ? (fil.type || t("snapNoFilament"))
+        : (hasMeta ? (t("ffgSlotEmpty") || "Empty") : t("snapNoFilament"));
       const typeAndSub = fil.type || "—";
+      // CSS modifier classes:
+      //   --empty       → unconfigured (gray hatch — current behavior)
+      //   --configured  → empty but assigned (solid colored border, no fill)
+      let squareCls = "snap-fil-square";
+      let squareStyle = "";
+      if (has && color) {
+        // Filled: full colour background, no visible outer border or
+        // inset blue glow (`--filled` class clears both at the CSS
+        // level so the colour reads as a clean rectangle, not as a
+        // colour-on-colour rim that draws attention to the seam).
+        squareCls += " snap-fil-square--filled";
+        squareStyle = `background:${esc(color)};color:${esc(fg)};`;
+      } else if (hasMeta && color) {
+        // Configured but empty: thick coloured ring drawn INSIDE the
+        // square's existing box (inset box-shadow). The element's
+        // `border` is forced transparent by the .--configured class
+        // so the outer dimensions stay identical to a filled tile —
+        // toggling between states doesn't shift neighbouring slots.
+        // 4px is thick enough to read as a deliberate "ring of
+        // colour" but doesn't crowd the centred "Empty" label.
+        squareCls += " snap-fil-square--configured";
+        squareStyle = `box-shadow: inset 0 0 0 4px ${esc(color)};`;
+      } else {
+        // Unconfigured (no color, no material) → fallback hatch.
+        squareCls += " snap-fil-square--empty";
+      }
+      // Vendor is not surfaced by the FlashForge /detail API, so we
+      // skip the vendor row entirely when null. The material line
+      // (snap-fil-sub) becomes the primary text below the edit icon —
+      // matches what the user sees when there's truly no vendor data
+      // to honour, rather than displaying a misleading placeholder.
+      const vendorRow = fil.vendor
+        ? `<div class="snap-fil-vendor">${esc(fil.vendor)}</div>`
+        : "";
+      // Slot tag mapping:
+      //   • slotKind "ext"  → "Ext."  (always leftmost)
+      //   • slotKind "ms"   → "1A" / "1B" / "1C" / "1D" (1 + A..D for slot 1..4)
+      // `1` is the matlStation index — single-station printers always
+      // report it as 1; future multi-station rigs would reuse this
+      // numbering. Falls back to "E1" if a future driver path emits a
+      // slot without a kind (defensive — shouldn't happen in practice).
+      const slotTag = fil.slotKind === "ext"
+        ? "Ext."
+        : fil.slotKind === "ms"
+        ? `1${"ABCD"[(slotId - 1) | 0] || ""}`
+        : "E1";
       filCards.push(`
         <div class="snap-fil snap-fil--editable${fil.isActive ? " snap-fil--active" : ""}"
              data-ffg-fil-edit="1"
              data-extruder-idx="${i}"
              data-slot-id="${slotId}"
+             data-slot-kind="${esc(fil.slotKind || "ext")}"
              title="${esc(t("snapFilEditableTip"))}">
-          <div class="snap-fil-tag">${esc(isMs ? `S${slotId}` : "E1")}</div>
-          <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
-               style="${color ? `background:${esc(color)};color:${esc(fg)};border-color:${esc(color)};` : ""}">
+          <div class="snap-fil-tag">${esc(slotTag)}</div>
+          <div class="${squareCls}" style="${squareStyle}">
             <span class="snap-fil-main">${esc(squareLabel)}</span>
           </div>
           <div class="snap-fil-meta">
             <span class="snap-fil-status icon icon-edit icon-13" aria-hidden="true"></span>
-            <div class="snap-fil-vendor">${esc(fil.vendor || "—")}</div>
+            ${vendorRow}
             <div class="snap-fil-sub">${esc(typeAndSub)}</div>
           </div>
         </div>`);
@@ -7986,6 +8472,42 @@
       ${filamentsHtml}`;
   }
 
+  /* ── Request log render ──────────────────────────────────────────
+     Inner contents of the #ffgLog container — replaced on every poll
+     tick (incremental, no full side-card rebuild). Mirrors
+     renderSnapmakerLogInner so the UI feels identical across brands.
+     Each row click toggles the pretty-printed JSON detail panel. */
+  function renderFlashforgeLogInner(p) {
+    const conn = _ffgConns.get(ffgKey(p));
+    const log = conn?.log || [];
+    if (!log.length) {
+      return `<div class="snap-log-empty">${esc(t("snapLogEmpty"))}</div>`;
+    }
+    const rows = log.slice().reverse().map((e, i) => {
+      let pretty = e.raw;
+      try { pretty = JSON.stringify(JSON.parse(e.raw), null, 2); } catch (_) {}
+      const expanded = !!e.expanded;
+      return `
+        <div class="snap-log-row snap-log-row--${e.dir === "→" ? "out" : "in"}${expanded ? " snap-log-row--expanded" : ""}"
+             data-log-idx="${log.length - 1 - i}">
+          <button type="button" class="snap-log-row-head" data-row-toggle="1">
+            <span class="snap-log-dir">${esc(e.dir)}</span>
+            <span class="snap-log-ts">${esc(e.ts)}</span>
+            <span class="snap-log-summary">${esc(e.summary)}</span>
+            <span class="snap-log-row-chev icon icon-chevron-r icon-13"></span>
+          </button>
+          <div class="snap-log-detail"${expanded ? "" : " hidden"}>
+            <button type="button" class="snap-log-detail-copy" data-copy="${esc(pretty)}" title="${esc(t("copyLabel"))}">
+              <span class="icon icon-copy icon-13"></span>
+              <span>${esc(t("copyLabel"))}</span>
+            </button>
+            <pre class="snap-log-detail-pre">${esc(pretty)}</pre>
+          </div>
+        </div>`;
+    }).join("");
+    return `<div class="snap-log">${rows}</div>`;
+  }
+
   /* ── Manual filament edit — bottom sheet ──────────────────────────
      Click on a colour square in the FlashForge live block opens a
      bottom-sheet pre-filled with the slot's current filament data.
@@ -8001,13 +8523,15 @@
   // chooser so the user picks documented values (PLA / PETG / …) by
   // default. Custom material names still flow through via the typed
   // input hooks.
+  // The vendor isn't sent to the printer (the /control payload only
+  // carries `mt` + `rgb`), so we keep the catalogue intentionally tiny:
+  // "Generic" first as the safe default, then "FlashForge" for users
+  // who specifically want to track that. Other brands were removed —
+  // they were mislabelling slots without changing what reaches the
+  // wire.
   const FFG_FIL_VENDOR_MATERIALS = {
-    "Generic":   ["PLA", "PETG", "ABS", "TPU", "ASA", "PA", "PC", "PVA", "HIPS", "Wood"],
-    "FlashForge":["PLA", "PETG", "ABS", "TPU", "ASA"],
-    "Bambu Lab": [],
-    "eSun":      [],
-    "Polymaker": [],
-    "Sunlu":     []
+    "Generic":    ["PLA", "PETG", "ABS", "TPU", "ASA", "PA", "PC", "PVA", "HIPS", "Wood"],
+    "FlashForge": ["PLA", "PETG", "ABS", "TPU", "ASA"]
   };
   const FFG_FIL_BRANDS = Object.keys(FFG_FIL_VENDOR_MATERIALS);
   const FFG_FIL_PRIORITY = ["PLA", "PETG", "ABS", "TPU"];
@@ -8102,10 +8626,13 @@
   }
 
   function ffeUpdateSummary() {
-    const v = _ffeSelectedBrand    || "—";
+    // The vendor isn't sent on the wire (printer only stores `mt` +
+    // `rgb`), so the summary header just shows the material the user
+    // is selecting — no brand prefix. Keeps the bottom-sheet visually
+    // honest about what will actually reach the printer.
     const m = _ffeSelectedMaterial || "—";
     const valEl = $("ffgFilSummaryVal");
-    if (valEl) valEl.textContent = `${v} ${m}`;
+    if (valEl) valEl.textContent = m;
     const dot = $("ffgColorSummaryDot");
     if (dot) dot.style.background = $("ffgColorInput")?.value || "#888";
   }
@@ -8113,18 +8640,29 @@
   function openFlashforgeFilamentEdit(printer, extruderIndex) {
     const conn = _ffgConns.get(ffgKey(printer));
     const fil = (conn?.data?.filaments?.[extruderIndex]) || {};
-    const fils = conn?.data?.filaments || [];
-    const isMatlStation = fils.length === 4;
+    // Derive the dispatch flag from the slot's own `slotKind` instead
+    // of the array length — the array is now 5-long for matlStation
+    // rigs (Ext + 1A-D), so the old `length === 4` heuristic would
+    // mis-dispatch every slot. "ms" → msConfig_cmd with slot 1-4;
+    // "ext" → ipdMsConfig_cmd (no slot).
+    const isMatlStation = fil.slotKind === "ms";
     const slotId = fil.slotId || (extruderIndex + 1);
     _ffgFilEdit = {
       brand: printer.brand,
       deviceId: printer.id,
       key: ffgKey(printer),
       slotId,
+      slotKind: fil.slotKind || "ext",
       isMatlStation,
       printer
     };
-    _ffeSelectedBrand    = fil.vendor || "FlashForge";
+    // The driver no longer stamps `fil.vendor` (the /detail payload
+    // doesn't carry one and we won't make one up). Default to Generic
+    // — first in FFG_FIL_BRANDS — so the picker has a valid selection
+    // even when we genuinely don't know the brand.
+    _ffeSelectedBrand    = (fil.vendor && FFG_FIL_BRANDS.includes(fil.vendor))
+                            ? fil.vendor
+                            : "Generic";
     _ffeSelectedMaterial = fil.type   || "PLA";
 
     const colorInp = $("ffgColorInput");
@@ -8262,7 +8800,11 @@
     const errEl = $("ffgError");
     errEl.hidden = true;
 
-    const vendor   = String($("ffgVendor").value || _ffeSelectedBrand   || "FlashForge").trim();
+    // Vendor never reaches the wire (the /control payload only
+    // carries `mt` + `rgb`), but we still resolve it locally so the
+    // optimistic state and any future TigerTag tagging has a value.
+    // Default Generic — same first-in-list logic as the picker.
+    const vendor   = String($("ffgVendor").value || _ffeSelectedBrand   || "Generic").trim();
     const material = String($("ffgMaterial").value || _ffeSelectedMaterial || "PLA").trim();
     const rgb      = ffgColorToHash($("ffgColorInput").value);
 
@@ -8294,18 +8836,15 @@
     btn.classList.add("loading");
     btn.disabled = true;
     try {
-      const ctrl = new AbortController();
-      const tm = setTimeout(() => ctrl.abort(), 5000);
-      const res = await fetch(`${base}/control`, {
-        method: "POST",
-        signal: ctrl.signal,
-        cache: "no-store",
-        headers: { "Content-Type": "application/json", "Accept": "*/*" },
-        body: JSON.stringify(payload)
-      });
-      clearTimeout(tm);
-      let resp = null;
-      try { resp = await res.json(); } catch (_) { resp = { code: -1 }; }
+      // Bridge through main process — same CORS bypass story as /detail.
+      // Defensive shape: bridge missing → user-friendly error.
+      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
+      if (typeof bridge !== "function") {
+        errEl.textContent = "Bridge unavailable — restart Tiger Studio Manager";
+        errEl.hidden = false;
+        return;
+      }
+      const resp = await bridge(`${base}/control`, payload);
       if (resp && resp.code !== 0 && resp.code !== undefined) {
         // Surface the printer's own message verbatim — varies a lot
         // between firmware revisions and is the most actionable hint.
@@ -8321,11 +8860,20 @@
         const idx = (_ffgFilEdit.slotId - 1) | 0;
         const fils = Array.isArray(conn.data.filaments) ? conn.data.filaments.slice() : [];
         if (fils[idx]) {
+          // Don't stamp a vendor — the printer doesn't store one, and
+          // the next /detail poll will reset vendor to null anyway.
+          // Setting "FlashForge" here would briefly mislabel the slot.
+          // For matlStation slots, hasFilament:true is wrong if the
+          // user just *configured* the bay without loading filament —
+          // the next /detail poll corrects this within ≤2s. For Ext,
+          // editing IS the act of assignment (no physical "load"
+          // step), so we treat it the same way and let the poll fix
+          // any drift.
           fils[idx] = {
             ...fils[idx],
             color: rgb,
             type: material,
-            vendor: "FlashForge"
+            vendor: null
           };
           conn.data.filaments = fils;
           ffgNotifyChange(conn, false);
@@ -10517,6 +11065,48 @@
 
   // Render the slide-in panel listing all the user's scales with their state
   // and their last-seen spool (matched against current inventory).
+  // ── Scale card helpers ─────────────────────────────────────────────
+  // Signature of the last-rendered scale set. Used by renderScalesPanel
+  // to decide between a full rebuild (MAC set changed — add/remove) vs
+  // an in-place patch of every existing card (data-only update — the
+  // common heartbeat case). Stable in-place patching keeps the <details>
+  // element instances alive, so any user-expanded "Raw JSON" section
+  // survives heartbeats natively without needing to track open state.
+  let _lastRenderedScalesSig = null;
+  // Open-state tracker — used ONLY by the rare full-rebuild path
+  // (scale added or removed) so the user's expanded JSON section
+  // doesn't collapse when the surrounding cards get torn down.
+  const _scalesDebugOpen = new Set();
+
+
+  // Format a raw MAC address (lower-case, no separator) to the canonical
+  // colon-separated upper-case form. Tolerant of inputs that already
+  // carry separators or mixed case.
+  //   "34987ab31f94"     → "34:98:7A:B3:1F:94"
+  //   "34:98:7a:b3:1f:94"→ "34:98:7A:B3:1F:94"   (idempotent)
+  //   "ABCD"             → "AB:CD"               (still works on shorter)
+  function formatMacAddress(raw) {
+    if (typeof raw !== "string" || raw.length === 0) return "";
+    const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+    if (clean.length === 0) return raw;
+    return clean.match(/.{1,2}/g).join(":");
+  }
+
+  // Map a Wi-Fi RSSI value (negative dBm) to a human-readable quality
+  // label and a CSS class suffix used by .scale-chip--wifi-<cls> for
+  // colour coding. The colour of the SVG wifi icon carries the level
+  // (green = strong → red = weak); no Unicode bars or emojis.
+  //   ≥ -50 dBm  → "Excellent"   cls "excellent"
+  //   ≥ -60 dBm  → "Good"        cls "good"
+  //   ≥ -70 dBm  → "Fair"        cls "fair"
+  //   < -70 dBm  → "Weak"        cls "weak"
+  function wifiQualityLevel(dbm) {
+    if (dbm >= -50) return { cls: "excellent", label: t("scaleChipWifiQualityExcellent") };
+    if (dbm >= -60) return { cls: "good",      label: t("scaleChipWifiQualityGood") };
+    if (dbm >= -70) return { cls: "fair",      label: t("scaleChipWifiQualityFair") };
+    return            { cls: "weak",      label: t("scaleChipWifiQualityWeak") };
+  }
+
   function renderScalesPanel() {
     const body = $("scalesPanelBody");
     if (!body) return;
@@ -10547,86 +11137,255 @@
       });
       return;
     }
-    body.innerHTML = state.scales.map(s => {
-      const online = isScaleOnline(s);
-      const lastSeenMs = scaleTsToMs(scaleHeartbeatAt(s));
-      const lastSeenStr = lastSeenMs ? agoString(lastSeenMs) : "—";
-      // v2 schema: current_spool_uid_1 / _2 are plain UID strings (the
-      // ids of the inventory docs the firmware just detected on the
-      // platform). We cross-reference against state.rows to render the
-      // friendly title / colour / brand / live remaining weight.
-      const uid1 = scaleCurrentSpoolUid1(s);
-      const uid2 = scaleCurrentSpoolUid2(s);
-      const findRowByUid = uid => state.rows.find(x =>
-        String(x.uid) === String(uid) || String(x.spoolId) === String(uid));
-      const renderSpool = (uid) => {
-        if (!uid) return "";
-        const r = findRowByUid(uid);
-        const fillBg   = r ? colorBg(r) : "rgba(150,150,150,.2)";
-        const fillHtml = r ? slotFillInnerHTML(r) : "";
-        const titleLn  = r?.colorName && r.colorName !== "-" ? r.colorName : (r?.material || uid);
-        const subLn    = r ? [r.brand, r.material].filter(Boolean).join(" · ") : `uid=${uid}`;
-        const wAvail   = r?.weightAvailable ?? "—";
-        return `
-          <div class="scale-last-spool">
-            <div class="scale-last-puck" style="background:${fillBg}">${fillHtml}</div>
-            <div class="scale-last-meta">
-              <div class="scale-last-name">${esc(String(titleLn))}</div>
-              <div class="scale-last-sub">${esc(subLn)}</div>
-            </div>
-            <div class="scale-last-w">${esc(String(wAvail))}<span class="scale-last-w-unit">g</span></div>
-          </div>`;
-      };
-      // If both UIDs reference the same physical spool (twin tags),
-      // render one card; otherwise render both. We detect twin pairs
-      // by checking whether one row's twin_tag_uid points at the
-      // other UID.
-      let lastBlock;
-      if (!uid1 && !uid2) {
-        lastBlock = `<div class="scale-last-empty">${esc(t("scaleNoActivity"))}</div>`;
-      } else if (uid1 && uid2) {
-        const r1 = findRowByUid(uid1);
-        const r2 = findRowByUid(uid2);
-        const isTwinPair = r1?.twinUid && (String(r1.twinUid) === String(uid2)) ||
-                           r2?.twinUid && (String(r2.twinUid) === String(uid1));
-        lastBlock = isTwinPair ? renderSpool(uid1) : (renderSpool(uid1) + renderSpool(uid2));
-      } else {
-        lastBlock = renderSpool(uid1 || uid2);
-      }
-      const dispName = scaleDisplayName(s) || "TigerScale";
-      const battery  = scaleBatteryPercent(s);
-      return `<div class="scale-card${online ? " is-online" : ""}" data-scale-mac="${esc(s.mac)}">
-        <div class="scale-card-head">
-          <span class="scale-card-status" title="${online ? "online" : "offline"}"></span>
-          <div class="scale-card-info">
-            <div class="scale-card-name">${esc(dispName)}</div>
-            <div class="scale-card-meta">${esc(s.mac)} · ${online ? t("scaleStatusOnline") : `${t("scaleStatusOffline")} · ${esc(lastSeenStr)}`}</div>
-          </div>
-          <div class="scale-card-actions">
-            <button class="scale-card-btn" data-action="delete" title="${t("scaleRemove")}"><span class="icon icon-trash icon-13"></span></button>
-          </div>
-        </div>
-        ${lastBlock}
-        <div class="scale-card-fw">
-          ${s.fw_version ? `fw ${esc(s.fw_version)}` : ""}
-          ${battery != null ? `· ${esc(String(battery))}% battery` : ""}
-        </div>
-      </div>`;
-    }).join("");
+    // Two-path render strategy:
+    //   1. MAC set unchanged (typical heartbeat case) → patch each
+    //      existing card in place, leaving the <details> element
+    //      instances alive so any user-expanded JSON section stays
+    //      open across heartbeats.
+    //   2. MAC set changed (scale added or removed) → full rebuild
+    //      and wire fresh event listeners. The _scalesDebugOpen set
+    //      restores any user-expanded sections in this rare path.
+    const sig = state.scales.map(s => s.mac).sort().join("|");
+    const macSetChanged = sig !== _lastRenderedScalesSig;
 
-    // Wire delete buttons
+    if (macSetChanged) {
+      body.innerHTML = state.scales.map(_buildScaleCardHtml).join("");
+      _wireScaleCardEvents(body);
+    } else {
+      state.scales.forEach(s => {
+        const card = body.querySelector(
+          `.scale-card[data-scale-mac="${cssEscape(s.mac)}"]`
+        );
+        if (card) _patchScaleCardInPlace(card, s);
+      });
+    }
+    _lastRenderedScalesSig = sig;
+  }
+
+  // ── Scale card builders & patcher ──────────────────────────────────
+  //
+  // Three pure-ish helpers split the card render into:
+  //   • _buildScaleCardHtml(s)        — full HTML string (used on full rebuild)
+  //   • _buildScaleChipsHtml(s)       — chips row inner HTML (used by patch)
+  //   • _buildScaleSpoolBlockHtml(s)  — current-spool block inner HTML (used by patch)
+  //   • _patchScaleCardInPlace(card,s)— mutates an existing card with new data
+  //                                     without recreating the <details> element
+  //
+  // The card structure has stable host wrappers (.scale-card-chips,
+  // .scale-card-spool-host) whose innerHTML the patch can replace
+  // freely, while the surrounding shell (head, photo, <details>)
+  // stays intact across heartbeats.
+
+  function _buildScaleCardHtml(s) {
+    const online = isScaleOnline(s);
+    const dispName = scaleDisplayName(s) || "TigerScale";
+    const macFmt = formatMacAddress(s.mac);
+    const debugOpen = _scalesDebugOpen.has(s.mac) ? " open" : "";
+    const debugJson = state.debugEnabled
+      ? `<details class="scale-debug" data-debug-mac="${esc(s.mac)}"${debugOpen}>
+           <summary class="scale-debug-summary">Raw JSON (debug)</summary>
+           <pre class="json scale-debug-pre">${highlight(JSON.stringify(s, null, 2))}</pre>
+         </details>`
+      : "";
+
+    return `<div class="scale-card${online ? " is-online" : ""}" data-scale-mac="${esc(s.mac)}">
+      <div class="scale-card-head">
+        <img class="scale-card-photo" src="../assets/img/TigerScale_Photo.png" alt="" draggable="false" />
+        <div class="scale-card-id">
+          <div class="scale-card-name-row">
+            <span class="scale-card-name">${esc(dispName)}</span>
+            <span class="scale-card-status-pill ${online ? "is-online" : "is-offline"}">
+              <span class="scale-card-status-dot"></span>
+              <span class="scale-card-status-pill-text">${online ? t("scaleStatusOnline") : t("scaleStatusOffline")}</span>
+            </span>
+          </div>
+          <div class="scale-card-mac">${esc(macFmt)}</div>
+        </div>
+        <div class="scale-card-actions">
+          <button class="scale-card-btn" data-action="delete" title="${t("scaleRemove")}">
+            <span class="hold-progress"></span>
+            <span class="icon icon-trash icon-13"></span>
+          </button>
+        </div>
+      </div>
+      <div class="scale-card-chips">${_buildScaleChipsHtml(s)}</div>
+      <div class="scale-card-spool-host">${_buildScaleSpoolBlockHtml(s)}</div>
+      ${debugJson}
+    </div>`;
+  }
+
+  // Build the chips strip inner HTML (without the wrapper). Each chip
+  // appears only when its source field is present, so an offline /
+  // sparse doc doesn't render empty pills.
+  function _buildScaleChipsHtml(s) {
+    const online = isScaleOnline(s);
+    const lastSeenMs = scaleTsToMs(scaleHeartbeatAt(s));
+    const lastSeenStr = lastSeenMs ? agoString(lastSeenMs) : "—";
+    const battery = scaleBatteryPercent(s);
+    const charging = scaleIsCharging(s);
+    const power = scalePowerSource(s);
+    const wifiDbm = scaleWifiSignalDbm(s);
+    const fw = s.fw_version;
+
+    const chips = [];
+
+    if (typeof wifiDbm === "number" && isFinite(wifiDbm)) {
+      const q = wifiQualityLevel(wifiDbm);
+      chips.push(`<span class="scale-chip scale-chip--wifi scale-chip--wifi-${q.cls}" title="${esc(q.label)}">
+        <span class="icon icon-wifi icon-12"></span>
+        <span class="scale-chip-text">${esc(String(wifiDbm))} dBm</span>
+      </span>`);
+    }
+
+    if (power) {
+      const isUsb = String(power).toLowerCase() === "usb";
+      const lbl = isUsb ? t("scaleChipPowerUsb") : t("scaleChipPowerBattery");
+      const iconCls = isUsb ? "icon-plug" : "icon-battery";
+      const boltHtml = (charging === true)
+        ? `<span class="icon icon-bolt icon-10 scale-chip-bolt"></span>`
+        : "";
+      chips.push(`<span class="scale-chip scale-chip--power" title="${esc(t("scaleChipPower"))}">
+        <span class="icon ${iconCls} icon-12"></span>
+        <span class="scale-chip-text">${esc(lbl)}</span>
+        ${boltHtml}
+      </span>`);
+    }
+    if (typeof battery === "number" && isFinite(battery)) {
+      const lvl = battery >= 60 ? "high" : battery >= 25 ? "mid" : "low";
+      chips.push(`<span class="scale-chip scale-chip--battery scale-chip--bat-${lvl}" title="${esc(t("scaleChipPowerBattery"))}">
+        <span class="icon icon-battery icon-12"></span>
+        <span class="scale-chip-text">${esc(String(battery))}%</span>
+      </span>`);
+    }
+
+    if (fw) {
+      chips.push(`<span class="scale-chip scale-chip--fw" title="${esc(t("scaleChipFwTooltip"))}">
+        <span class="icon icon-settings icon-12"></span>
+        <span class="scale-chip-text">v${esc(String(fw))}</span>
+      </span>`);
+    }
+
+    if (!online && lastSeenMs) {
+      chips.push(`<span class="scale-chip scale-chip--seen" title="${esc(t("scaleChipLastSeen"))}">
+        <span class="icon icon-clock icon-12"></span>
+        <span class="scale-chip-text">${esc(lastSeenStr)}</span>
+      </span>`);
+    }
+
+    return chips.join("");
+  }
+
+  // Build the current-spool block inner HTML. v2 schema:
+  // current_spool_uid_1 / _2 are plain UID strings — we cross-reference
+  // against state.rows for the friendly label / colour / weight.
+  function _buildScaleSpoolBlockHtml(s) {
+    const uid1 = scaleCurrentSpoolUid1(s);
+    const uid2 = scaleCurrentSpoolUid2(s);
+    const findRowByUid = uid => state.rows.find(x =>
+      String(x.uid) === String(uid) || String(x.spoolId) === String(uid));
+    const renderSpool = (uid) => {
+      if (!uid) return "";
+      const r = findRowByUid(uid);
+      const fillBg = r ? colorBg(r) : "rgba(150,150,150,.2)";
+      const fillHtml = r ? slotFillInnerHTML(r) : "";
+      const titleLn = r?.colorName && r.colorName !== "-" ? r.colorName : (r?.material || uid);
+      const subLn = r ? [r.brand, r.material].filter(Boolean).join(" · ") : `uid=${uid}`;
+      const wAvail = r?.weightAvailable ?? "—";
+      return `
+        <div class="scale-last-spool">
+          <div class="scale-last-puck" style="background:${fillBg}">${fillHtml}</div>
+          <div class="scale-last-meta">
+            <div class="scale-last-name">${esc(String(titleLn))}</div>
+            <div class="scale-last-sub">${esc(subLn)}</div>
+          </div>
+          <div class="scale-last-w">${esc(String(wAvail))}<span class="scale-last-w-unit">g</span></div>
+        </div>`;
+    };
+    if (!uid1 && !uid2) {
+      return `<div class="scale-last-empty">${esc(t("scaleNoActivity"))}</div>`;
+    }
+    if (uid1 && uid2) {
+      const r1 = findRowByUid(uid1);
+      const r2 = findRowByUid(uid2);
+      const isTwinPair = r1?.twinUid && (String(r1.twinUid) === String(uid2)) ||
+                         r2?.twinUid && (String(r2.twinUid) === String(uid1));
+      return isTwinPair ? renderSpool(uid1) : (renderSpool(uid1) + renderSpool(uid2));
+    }
+    return renderSpool(uid1 || uid2);
+  }
+
+  // In-place patch — updates a card's dynamic parts WITHOUT recreating
+  // its <details> element instance. This is the path used at every
+  // Firestore heartbeat (most common). Preserves the user's expanded
+  // Raw JSON section natively because the <details> isn't torn down.
+  function _patchScaleCardInPlace(card, s) {
+    const online = isScaleOnline(s);
+    card.classList.toggle("is-online", online);
+
+    // Status pill
+    const pill = card.querySelector(".scale-card-status-pill");
+    if (pill) {
+      pill.classList.toggle("is-online", online);
+      pill.classList.toggle("is-offline", !online);
+      const txt = pill.querySelector(".scale-card-status-pill-text");
+      if (txt) txt.textContent = online ? t("scaleStatusOnline") : t("scaleStatusOffline");
+    }
+
+    // Display name (rarely changes, but still)
+    const nameEl = card.querySelector(".scale-card-name");
+    if (nameEl) {
+      const dispName = scaleDisplayName(s) || "TigerScale";
+      if (nameEl.textContent !== dispName) nameEl.textContent = dispName;
+    }
+
+    // Chips strip — replace inner HTML of the stable wrapper
+    const chipsHost = card.querySelector(".scale-card-chips");
+    if (chipsHost) chipsHost.innerHTML = _buildScaleChipsHtml(s);
+
+    // Current-spool block — replace inner HTML of the stable wrapper
+    const spoolHost = card.querySelector(".scale-card-spool-host");
+    if (spoolHost) spoolHost.innerHTML = _buildScaleSpoolBlockHtml(s);
+
+    // Debug JSON — update only the <pre> content, NOT the <details>
+    // wrapper, so the user's expanded state survives the heartbeat.
+    if (state.debugEnabled) {
+      const debugPre = card.querySelector(".scale-debug-pre");
+      if (debugPre) debugPre.innerHTML = highlight(JSON.stringify(s, null, 2));
+    }
+  }
+
+  // CSS.escape polyfill for older Electron — ensures we can safely
+  // interpolate a MAC into a CSS attribute selector even if the value
+  // ever contains weird chars. Safe no-op in modern engines.
+  function cssEscape(s) {
+    if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(s);
+    return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+  }
+
+  // Wire delete buttons + Raw JSON toggle listeners. Called once per
+  // full rebuild (i.e. when MAC set changes). Patch-in-place renders
+  // do NOT need re-wiring since the existing element instances are
+  // preserved.
+  function _wireScaleCardEvents(body) {
     body.querySelectorAll(".scale-card-btn[data-action='delete']").forEach(btn => {
-      btn.addEventListener("click", async () => {
+      setupHoldToConfirm(btn, 1500, async () => {
         const card = btn.closest("[data-scale-mac]");
         const mac = card?.dataset.scaleMac;
         if (!mac) return;
-        const s = state.scales.find(x => x.mac === mac);
-        if (!s) return;
-        if (!confirm(t("scaleRemoveConfirm", { name: scaleDisplayName(s) || mac }))) return;
         try {
           const uid = state.activeAccountId;
           await fbDb(uid).collection("users").doc(uid).collection("scales").doc(mac).delete();
+          _scalesDebugOpen.delete(mac);
         } catch (e) { reportError("scale.delete", e); }
+      });
+    });
+
+    body.querySelectorAll("details.scale-debug[data-debug-mac]").forEach(det => {
+      det.addEventListener("toggle", () => {
+        const mac = det.getAttribute("data-debug-mac");
+        if (!mac) return;
+        if (det.open) _scalesDebugOpen.add(mac);
+        else _scalesDebugOpen.delete(mac);
       });
     });
   }
