@@ -5300,7 +5300,11 @@
       // Trigger an HTTP ping for Snapmaker printers so the online dot
       // becomes accurate within ~2s of opening the printer view.
       if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
-      const onlineBadge = renderSnapOnlineBadge(p, "card");
+      // Same for FlashForge — fires a 2.5s POST /detail probe.
+      if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
+      const onlineBadge = p.brand === "flashforge"
+        ? renderFfgOnlineBadge(p, "card")
+        : renderSnapOnlineBadge(p, "card");
       return `
         <div class="printer-card${p.isActive ? " printer-card--active" : ""}"
              data-brand="${esc(p.brand)}" data-id="${esc(p.id)}"
@@ -5481,6 +5485,11 @@
     if (printer.brand === "snapmaker" && printer.ip) {
       snapConnect(printer);
     }
+    // FlashForge — open the 2s HTTP polling loop on side-card open. The
+    // poller stays alive until the side-card closes (closePrinterDetail).
+    if (printer.brand === "flashforge" && printer.ip) {
+      ffgConnect(printer);
+    }
   }
   function closePrinterDetail() {
     // If the filament-edit bottom-sheet is open over this side-panel,
@@ -5499,6 +5508,10 @@
     // closes or when the user switches printers.
     if (_activePrinter?.brand === "snapmaker") {
       snapDisconnect(snapKey(_activePrinter));
+    }
+    // FlashForge — same lifecycle: stop the polling loop on close.
+    if (_activePrinter?.brand === "flashforge") {
+      ffgDisconnect(ffgKey(_activePrinter));
     }
     _activePrinter = null;
   }
@@ -6909,16 +6922,21 @@
       ${modelName && modelName !== "—" ? `<span class="pp-model-pill pp-model-pill--sm">${esc(modelName)}</span>` : ""}
     `;
     $("printerPanelPills").innerHTML = titlePillsHtml;
-    // Status row UNDER the title — currently Snapmaker-only (driven by
-    // the WebSocket / HTTP ping reachability). Empty for other brands
-    // so the status row collapses to zero height.
+    // Status row UNDER the title — Snapmaker (WebSocket) + FlashForge (HTTP
+    // poll) both provide reachability info. Other brands fall through to
+    // an empty string so the row collapses to zero height.
     const statusEl = $("printerPanelStatus");
-    if (statusEl) statusEl.innerHTML = renderSnapOnlineBadge(p, "side");
+    if (statusEl) {
+      statusEl.innerHTML = (p.brand === "flashforge")
+        ? renderFfgOnlineBadge(p, "side")
+        : renderSnapOnlineBadge(p, "side");
+    }
 
     // Online status now lives in the panel header (next to the pills),
     // not under the camera. Trigger a fresh ping anyway so the badge
     // updates as soon as the side card opens.
     if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
+    if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
 
     $("printerPanelBody").innerHTML = `
       ${camBannerHtml}
@@ -7213,6 +7231,306 @@
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     FlashForge HTTP integration (cleartext POST polling)
+     ══════════════════════════════════════════════════════════════════════
+     Ported from the Flutter `FlashforgeHttpPage`. FlashForge AD5X / 5M
+     and similar models expose an HTTP endpoint on port 8898:
+       POST http://<ip>:8898/detail   → live status (read)
+       POST http://<ip>:8898/control  → commands (write — filament change)
+     Both calls take the same auth body { serialNumber, checkCode } where
+     `checkCode` is the network-access password configured on the printer.
+     Polling cadence: every 2s (matches the mobile companion app).
+     Error contract:
+       code === -2 OR message contains "network error"           → offline
+       code ===  1 AND message contains "sn is different"        → bad SN (toast)
+       code ===  1 AND message contains "access code is different" → bad password (toast)
+     The integration mirrors the Snapmaker pattern (snap*) — same shape,
+     same UI conventions, but HTTP-polled instead of WebSocket-streamed.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  // Per-printer live state, keyed by `${brand}:${id}` (parallels _snapConns).
+  // Module-scope (not in `state`) since it's transient — never persisted.
+  const _ffgConns = new Map();
+  // Reachability cache for the Online/Offline badge on the printer grid card,
+  // refreshed every 30s (mirror _snapPings).
+  const _ffgPings = new Map(); // key -> { online: bool|null, lastChecked: number }
+
+  function ffgKey(p) { return `${p.brand}:${p.id}`; }
+
+  // Authoritative "is this FlashForge reachable?" reading.
+  // 1. Active poller status wins.  2. HTTP ping cache as fallback.
+  // 3. Returns null when no signal yet (renders as "checking" dot).
+  function ffgIsOnline(printer) {
+    if (printer?.brand !== "flashforge") return null;
+    const k = ffgKey(printer);
+    const conn = _ffgConns.get(k);
+    if (conn) return conn.status === "connected";
+    const ping = _ffgPings.get(k);
+    return ping ? ping.online : null;
+  }
+
+  // The Flutter UI accepts both bare IPs ("192.168.1.52") and full URLs
+  // ("http://192.168.1.52:8898" / with custom port). We mirror that here so
+  // power users can override the default 8898 port via the printer's IP field.
+  function ffgBaseUrl(ipField) {
+    const raw = String(ipField || "").trim();
+    if (!raw) return null;
+    if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, "");
+    return `http://${raw}:8898`;
+  }
+
+  function ffgAuthBody(printer) {
+    // Both fields land on the printer doc when the user adds a FlashForge
+    // (see PRINTER_ADD_SCHEMA.flashforge above). Falsy values still get
+    // sent — the printer answers with the helpful "sn is different" /
+    // "access code is different" payloads we surface as toasts.
+    return {
+      serialNumber: String(printer.serialNumber || "").trim(),
+      checkCode:    String(printer.password || "").trim()
+    };
+  }
+
+  // Quick reachability check used to drive the Online/Offline badge on the
+  // printer grid card BEFORE the full polling loop opens. Cached for 30s.
+  async function ffgPingPrinter(printer) {
+    if (!printer || printer.brand !== "flashforge") return;
+    const base = ffgBaseUrl(printer.ip);
+    if (!base) return;
+    const k = ffgKey(printer);
+    const cached = _ffgPings.get(k);
+    const now = Date.now();
+    if (cached && now - cached.lastChecked < 30_000) return;
+    _ffgPings.set(k, { online: cached?.online ?? null, lastChecked: now });
+    try {
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 2500);
+      const res = await fetch(`${base}/detail`, {
+        method: "POST",
+        signal: ctrl.signal,
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Accept": "*/*" },
+        body: JSON.stringify(ffgAuthBody(printer))
+      });
+      clearTimeout(tm);
+      // Even an authentication failure (code:1, "sn is different") implies
+      // the printer is reachable — only network errors / non-OK status
+      // count as "offline".
+      let online = res.ok;
+      if (online) {
+        try {
+          const j = await res.json();
+          if (j && (j.code === -2 || /network error/i.test(String(j.message || "")))) {
+            online = false;
+          }
+        } catch (_) { /* non-JSON → still treat as reachable since status was ok */ }
+      }
+      _ffgPings.set(k, { online, lastChecked: now });
+    } catch (_) {
+      _ffgPings.set(k, { online: false, lastChecked: now });
+    }
+    ffgRefreshOnlineUI(k);
+  }
+
+  function ffgPingAllPrinters() {
+    for (const p of state.printers) {
+      if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
+    }
+  }
+  setInterval(ffgPingAllPrinters, 30_000);
+
+  // Surgical DOM update — replaces just the status dot/label in the grid
+  // card and (if open) the side-card hero. Mirrors snapRefreshOnlineUI.
+  function ffgRefreshOnlineUI(key) {
+    document.querySelectorAll(`[data-printer-key="${key}"] .printer-online`).forEach(el => {
+      const p = state.printers.find(x => ffgKey(x) === key);
+      el.outerHTML = renderFfgOnlineBadge(p, "card");
+    });
+    if (_activePrinter && ffgKey(_activePrinter) === key) {
+      const host = $("ppOnlineRow");
+      if (host) host.outerHTML = renderFfgOnlineBadge(_activePrinter, "side");
+    }
+  }
+
+  // Single source of truth for the FlashForge online badge HTML — used in
+  // both the grid card and the side-card. Reuses the same `.printer-online`
+  // classes as Snapmaker so styling stays consistent.
+  function renderFfgOnlineBadge(printer, where) {
+    if (!printer || printer.brand !== "flashforge") return "";
+    const online = ffgIsOnline(printer);
+    const cls = online === true ? "is-online" : (online === false ? "is-offline" : "is-checking");
+    const lbl = online === true ? t("snapStatusOnline")
+              : online === false ? t("snapStatusOffline")
+              : t("snapStatusConnecting");
+    const id  = where === "side" ? ` id="ppOnlineRow"` : "";
+    return `<span class="printer-online printer-online--${esc(where)} ${cls}"${id}>
+              <span class="printer-online-dot"></span>
+              <span class="printer-online-lbl">${esc(lbl)}</span>
+            </span>`;
+  }
+
+  // Open or refresh the polling loop for a printer. Idempotent — calling
+  // again on the same printer with the same IP is a no-op.
+  function ffgConnect(printer) {
+    const key = ffgKey(printer);
+    const existing = _ffgConns.get(key);
+    if (existing && existing.intervalId && existing.ip === printer.ip) {
+      // Already polling the same target — refresh the printer ref so
+      // renames / credential edits reach the next poll without a tear-down.
+      existing.printer = printer;
+      return;
+    }
+    if (existing) ffgDisconnect(key);
+    const conn = {
+      key,
+      ip: printer.ip,
+      printer,                  // kept in sync with the live Firestore doc
+      status: "connecting",     // "connecting" | "connected" | "offline" | "error"
+      lastError: null,
+      lastPollAt: 0,
+      retry: 0,
+      retryTimer: null,
+      intervalId: null,
+      // Flat shape — same field structure as the Snapmaker conn so the
+      // renderer can reuse format helpers across both brands.
+      data: {
+        temps: {},              // { e1_temp, e1_target, bed_temp, bed_target, chamber_temp }
+        filaments: [],          // up to 4 entries: { color, vendor, type, subType, official, slotId }
+        printState: null,       // "printing" | "idle" | "ready" | "complete" | …
+        printFilename: null,
+        printDuration: 0,
+        progress: 0,             // 0..1 (normalised from 0..100 if needed)
+        currentLayer: 0,
+        totalLayer: 0,
+        printPreviewUrl: null,
+        printEstimated: null,    // estimated time remaining, seconds
+        camera: { url: null, enabled: false },
+        snMismatch: false,
+        // Last raw /detail response — used by the request log (when added).
+        lastDetail: null
+      },
+      log: []
+    };
+    _ffgConns.set(key, conn);
+    // First poll right away so the side-card lights up without waiting 2s.
+    ffgPollOnce(conn);
+    conn.intervalId = setInterval(() => ffgPollOnce(conn), 2000);
+    ffgNotifyChange(conn, /*statusChanged*/ true);
+  }
+
+  function ffgDisconnect(key) {
+    const conn = _ffgConns.get(key);
+    if (!conn) return;
+    if (conn.intervalId) { clearInterval(conn.intervalId); conn.intervalId = null; }
+    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = null; }
+    _ffgConns.delete(key);
+  }
+
+  // Capped exponential backoff — used when the printer becomes unreachable
+  // mid-session. We pause the steady 2s polling loop and retry on growing
+  // delays (2s → 4s → 8s → 16s → 30s) until a poll succeeds, at which
+  // point ffgPollOnce restores the steady cadence.
+  function ffgScheduleReconnect(conn) {
+    if (conn.retryTimer) return;
+    if (!_ffgConns.has(conn.key)) return; // disposed
+    if (conn.intervalId) { clearInterval(conn.intervalId); conn.intervalId = null; }
+    conn.retry = Math.min(conn.retry + 1, 5);
+    const delay = Math.min(2000 * (1 << (conn.retry - 1)), 30000);
+    conn.retryTimer = setTimeout(() => {
+      conn.retryTimer = null;
+      if (!_ffgConns.has(conn.key)) return;
+      ffgPollOnce(conn);
+      // Restore steady polling — ffgPollOnce will move us back into
+      // backoff if the next call also fails.
+      if (!conn.intervalId && _ffgConns.has(conn.key)) {
+        conn.intervalId = setInterval(() => ffgPollOnce(conn), 2000);
+      }
+    }, delay);
+  }
+
+  async function ffgPollOnce(conn) {
+    if (!conn || !_ffgConns.has(conn.key)) return;
+    const printer = conn.printer;
+    const base = ffgBaseUrl(printer?.ip);
+    if (!base) {
+      conn.status = "error";
+      conn.lastError = "no IP";
+      ffgNotifyChange(conn, true);
+      return;
+    }
+    conn.lastPollAt = Date.now();
+    let resp;
+    try {
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 4000);
+      const res = await fetch(`${base}/detail`, {
+        method: "POST",
+        signal: ctrl.signal,
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Accept": "*/*" },
+        body: JSON.stringify(ffgAuthBody(printer))
+      });
+      clearTimeout(tm);
+      // Non-JSON / non-200 → treat as offline (mirrors the Flutter
+      // catch-all branch that returns code:-1 + "Invalid JSON").
+      try { resp = await res.json(); }
+      catch (_) {
+        resp = { code: -1, message: "Invalid JSON", httpStatus: res.status };
+      }
+    } catch (e) {
+      resp = { code: -2, message: `Network error: ${e?.message || e}` };
+    }
+    // Stash for the request log + debug overlay.
+    conn.data.lastDetail = resp;
+    ffgMergeStatus(conn, resp);
+  }
+
+  // Stub — full implementation lands in F2 (status parser).
+  // Phase 1 only flips connected/offline so the badge reflects reachability.
+  function ffgMergeStatus(conn, resp) {
+    if (!conn) return;
+    const code = resp?.code;
+    const msg  = String(resp?.message || "").toLowerCase();
+    if (code === -2 || /network error/.test(msg)) {
+      conn.status = "offline";
+      ffgNotifyChange(conn, true);
+      ffgScheduleReconnect(conn);
+      return;
+    }
+    if (code === 0 || resp?.detail) {
+      conn.status = "connected";
+      conn.retry = 0;
+      ffgNotifyChange(conn, true);
+    }
+  }
+
+  // Coalesce burst of poll-driven updates into a single rAF re-render.
+  // Mirror of snapNotifyChange — full re-render on status change so the
+  // hero camera + badge can swap, otherwise just the data block.
+  let _ffgRenderRaf = null;
+  let _ffgRenderStatusFlag = false;
+  function ffgNotifyChange(conn, statusChanged = false) {
+    if (!_activePrinter) return;
+    if (ffgKey(_activePrinter) !== conn.key) return;
+    if (statusChanged) _ffgRenderStatusFlag = true;
+    if (_ffgRenderRaf) return;
+    _ffgRenderRaf = requestAnimationFrame(() => {
+      _ffgRenderRaf = null;
+      const fullRerender = _ffgRenderStatusFlag;
+      _ffgRenderStatusFlag = false;
+      if (fullRerender) {
+        renderPrinterDetail();
+      } else {
+        const liveHost = $("ffgLive");
+        if (liveHost && typeof renderFlashforgeLiveInner === "function") {
+          liveHost.innerHTML = renderFlashforgeLiveInner(_activePrinter);
+        }
+      }
+    });
+  }
+
+  /* ── End FlashForge HTTP integration ─────────────────────────── */
 
   /* ── Add a printer — two-step flow ─────────────────────────────────────
      Step 1 — brand picker: a small modal listing the 5 supported brands
