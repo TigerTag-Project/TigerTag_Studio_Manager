@@ -581,5 +581,9 @@
   "migrationProgressMsg": "Deine Daten werden aufgeräumt — bitte schließe die App nicht. Jedes Element dauert nur Bruchteile einer Sekunde.",
   "migrationProgressWarn": "⚠ Wenn du jetzt schließt, wird beim nächsten Start fortgesetzt — aber für die beste Erfahrung lass es zu Ende laufen.",
   "ffgErrSnMismatch": "Falsche Seriennummer — bitte Druckereinstellungen prüfen",
-  "ffgErrBadPassword": "Falsches Passwort — bitte Druckereinstellungen prüfen"
+  "ffgErrBadPassword": "Falsches Passwort — bitte Druckereinstellungen prüfen",
+  "ffgState_ready": "Bereit",
+  "ffgState_preparing": "Vorbereiten",
+  "ffgState_heating": "Aufheizen",
+  "ffgState_busy": "Beschäftigt"
 }

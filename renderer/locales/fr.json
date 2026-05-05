@@ -581,5 +581,9 @@
   "migrationProgressMsg": "Mise à jour de tes données — ne ferme pas l'application. Chaque élément ne prend qu'une fraction de seconde.",
   "migrationProgressWarn": "⚠ Fermer maintenant reprendrait au prochain démarrage — mais pour une expérience optimale, laisse-la terminer.",
   "ffgErrSnMismatch": "Numéro de série invalide — vérifiez les réglages de l'imprimante",
-  "ffgErrBadPassword": "Mot de passe incorrect — vérifiez les réglages de l'imprimante"
+  "ffgErrBadPassword": "Mot de passe incorrect — vérifiez les réglages de l'imprimante",
+  "ffgState_ready": "Prête",
+  "ffgState_preparing": "Préparation",
+  "ffgState_heating": "Chauffage",
+  "ffgState_busy": "Occupée"
 }

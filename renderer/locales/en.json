@@ -578,5 +578,9 @@
   "migrationProgressMsg": "Tidying up your data — please don't close the app. Each item only takes a fraction of a second.",
   "migrationProgressWarn": "⚠ Closing now would just resume on next launch — but for the cleanest experience, let it finish.",
   "ffgErrSnMismatch": "Bad serial number — please check printer settings",
-  "ffgErrBadPassword": "Bad password — please check printer settings"
+  "ffgErrBadPassword": "Bad password — please check printer settings",
+  "ffgState_ready": "Ready",
+  "ffgState_preparing": "Preparing",
+  "ffgState_heating": "Heating",
+  "ffgState_busy": "Busy"
 }

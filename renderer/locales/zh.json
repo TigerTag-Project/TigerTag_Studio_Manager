@@ -581,5 +581,9 @@
   "migrationProgressMsg": "正在整理您的数据 — 请不要关闭应用。每个项目只需几分之一秒。",
   "migrationProgressWarn": "⚠ 现在关闭只会在下次启动时恢复 — 但为了获得最佳体验，请让它完成。",
   "ffgErrSnMismatch": "序列号错误 — 请检查打印机设置",
-  "ffgErrBadPassword": "密码错误 — 请检查打印机设置"
+  "ffgErrBadPassword": "密码错误 — 请检查打印机设置",
+  "ffgState_ready": "就绪",
+  "ffgState_preparing": "准备中",
+  "ffgState_heating": "加热中",
+  "ffgState_busy": "繁忙"
 }

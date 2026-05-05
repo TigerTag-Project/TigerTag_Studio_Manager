@@ -581,5 +581,9 @@
   "migrationProgressMsg": "I tuoi dati vengono sistemati — non chiudere l'app. Ogni elemento richiede solo una frazione di secondo.",
   "migrationProgressWarn": "⚠ Chiudere ora riprenderebbe al prossimo avvio — ma per un'esperienza ottimale, lasciala finire.",
   "ffgErrSnMismatch": "Numero di serie errato — controlla le impostazioni della stampante",
-  "ffgErrBadPassword": "Password errata — controlla le impostazioni della stampante"
+  "ffgErrBadPassword": "Password errata — controlla le impostazioni della stampante",
+  "ffgState_ready": "Pronta",
+  "ffgState_preparing": "In preparazione",
+  "ffgState_heating": "Riscaldamento",
+  "ffgState_busy": "Occupata"
 }

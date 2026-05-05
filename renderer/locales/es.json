@@ -581,5 +581,9 @@
   "migrationProgressMsg": "Organizando tus datos — no cierres la aplicación. Cada elemento solo tarda una fracción de segundo.",
   "migrationProgressWarn": "⚠ Cerrar ahora simplemente reanudaría en el próximo inicio — pero para la mejor experiencia, déjala terminar.",
   "ffgErrSnMismatch": "Número de serie incorrecto — comprueba los ajustes de la impresora",
-  "ffgErrBadPassword": "Contraseña incorrecta — comprueba los ajustes de la impresora"
+  "ffgErrBadPassword": "Contraseña incorrecta — comprueba los ajustes de la impresora",
+  "ffgState_ready": "Lista",
+  "ffgState_preparing": "Preparando",
+  "ffgState_heating": "Calentando",
+  "ffgState_busy": "Ocupada"
 }

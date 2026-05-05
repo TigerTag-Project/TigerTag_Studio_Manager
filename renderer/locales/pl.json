@@ -592,5 +592,9 @@
   "migrationProgressMsg": "Porządkowanie twoich danych — nie zamykaj aplikacji. Każdy element trwa tylko ułamek sekundy.",
   "migrationProgressWarn": "⚠ Zamknięcie teraz wznowiłoby przy następnym uruchomieniu — ale dla najlepszego doświadczenia pozwól zakończyć.",
   "ffgErrSnMismatch": "Nieprawidłowy numer seryjny — sprawdź ustawienia drukarki",
-  "ffgErrBadPassword": "Nieprawidłowe hasło — sprawdź ustawienia drukarki"
+  "ffgErrBadPassword": "Nieprawidłowe hasło — sprawdź ustawienia drukarki",
+  "ffgState_ready": "Gotowa",
+  "ffgState_preparing": "Przygotowywanie",
+  "ffgState_heating": "Nagrzewanie",
+  "ffgState_busy": "Zajęta"
 }

@@ -6863,6 +6863,15 @@
       ? `<div id="snapLive" class="snap-live-host">${renderSnapmakerLiveInner(p)}</div>`
       : "";
 
+    // FlashForge live data block — same visual layout as Snapmaker (we
+    // reuse the .snap-* CSS classes inside the inner HTML), but the
+    // host id is `ffgLive` so the rAF-coalesced re-renders in
+    // ffgNotifyChange land on the right node without crossing wires
+    // with the Snapmaker dispatch above.
+    const ffgLiveHtml = (p.brand === "flashforge")
+      ? `<div id="ffgLive" class="snap-live-host">${renderFlashforgeLiveInner(p)}</div>`
+      : "";
+
     // Snapmaker WS request log — sibling collapsible section at the
     // bottom, same visual style as the Raw data section. Re-rendered
     // partially via #snapLog on every WS frame.
@@ -6946,6 +6955,7 @@
       </div>
 
       ${snapLiveHtml}
+      ${ffgLiveHtml}
 
       ${state.debugEnabled ? `
       <section class="pp-section pp-section--collapsible" data-collapsed="true">
@@ -7734,6 +7744,204 @@
         }
       }
     });
+  }
+
+  /* ── Live block render ─────────────────────────────────────────────
+     Returns the inner HTML for the FlashForge live container. Layout
+     follows the Snapmaker live block exactly so the user sees the same
+     visual rhythm regardless of brand. Reuses the .snap-* CSS classes
+     since they're already brand-agnostic by name. */
+
+  // FlashForge does not expose target temperatures in the /detail
+  // response, so we render just the current value (e.g. "26°C") instead
+  // of the Snapmaker "26/0°C" pair. The trailing °C suffix matches.
+  function ffgFmtTempSolo(v) {
+    return (typeof v === "number" && isFinite(v)) ? `${Math.round(v)}°C` : "—";
+  }
+
+  // Print state mapping — FlashForge ships its own vocabulary that we
+  // surface with our own (i18n-able) labels. Active = the print-job
+  // card should render and progress / layer counters are meaningful.
+  const FFG_ACTIVE_STATES = new Set([
+    "printing", "preparing", "heating", "busy", "paused"
+  ]);
+  function ffgIsActiveState(s) {
+    return FFG_ACTIVE_STATES.has(String(s || "").toLowerCase().trim());
+  }
+  function ffgStateLabel(s) {
+    const norm = String(s || "").toLowerCase().trim();
+    // We deliberately reuse the snapState_* keys for shared states so the
+    // user reads the same label across brands. FlashForge introduces a
+    // few extras (preparing, heating, busy, ready) we map to bespoke
+    // ffgState_* keys.
+    const aliases = {
+      "printing":  "snapState_printing",
+      "paused":    "snapState_paused",
+      "complete":  "snapState_complete",
+      "completed": "snapState_complete",
+      "cancelled": "snapState_cancelled",
+      "canceled":  "snapState_cancelled",
+      "error":     "snapState_error",
+      "standby":   "snapState_standby",
+      "idle":      "snapState_standby",
+      "ready":     "ffgState_ready",
+      "preparing": "ffgState_preparing",
+      "heating":   "ffgState_heating",
+      "busy":      "ffgState_busy"
+    };
+    const key = aliases[norm];
+    if (!key) return norm || "—";
+    const lbl = t(key);
+    return lbl && lbl !== key ? lbl : (norm || "—");
+  }
+
+  // Format an estimated-time-remaining count (seconds) into "Hh MMm".
+  // Same shape as snapFmtDuration so both renderers feel identical.
+  function ffgFmtDuration(seconds) {
+    const s = Math.max(0, Math.floor(seconds || 0));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m.toString().padStart(2, "0")}m` : `${m}m`;
+  }
+
+  function renderFlashforgeLiveInner(p) {
+    const conn = _ffgConns.get(ffgKey(p));
+    if (!conn) {
+      return `
+        <div class="snap-empty">
+          <span class="icon icon-cloud icon-18"></span>
+          <span>${esc(t("snapNoConnection"))}</span>
+        </div>`;
+    }
+    const d = conn.data;
+    const isConnected = conn.status === "connected";
+
+    // Camera lives in the side-card hero — see F4 wiring in
+    // renderPrinterDetail. The live block proper starts at the print job.
+
+    // ── Print-job card — only rendered when actively printing. ──────
+    let jobHtml = "";
+    if (isConnected) {
+      const jobState  = d.printState || "idle";
+      const isActive  = ffgIsActiveState(jobState);
+      const pct       = isActive ? Math.round((d.progress || 0) * 100) : 0;
+      const leafName  = isActive && d.printFilename
+                      ? String(d.printFilename).split("/").pop()
+                      : "";
+      const fallbackImg = printerImageUrlFor(p.brand, p.printerModelId)
+                       || printerImageUrl(findPrinterModel(p.brand, "0"));
+      const thumbUrl  = (isActive && d.printPreviewUrl) ? d.printPreviewUrl : (fallbackImg || "");
+      const layerText = isActive && (d.currentLayer || d.totalLayer)
+                      ? `${d.currentLayer || 0}/${d.totalLayer || 0}` : "";
+      // FlashForge's `estimatedTime` is the time REMAINING (not elapsed),
+      // so we show it as a countdown on the right of the time row.
+      const timeText = isActive
+                     ? (d.printEstimated ? ffgFmtDuration(d.printEstimated) : "—")
+                     : "0m";
+      const stateLabel = ffgStateLabel(jobState);
+      const nameLine = leafName
+        ? `<div class="snap-job-name" title="${esc(leafName)}">${esc(leafName)}</div>`
+        : `<div class="snap-job-name snap-job-name--idle">${esc(t("snapJobNoActive") || "—")}</div>`;
+      jobHtml = `
+        <div class="snap-job snap-job--${esc(jobState)}">
+          <div class="snap-job-thumb"${thumbUrl ? ` style="background-image:url('${esc(thumbUrl)}')"` : ""}></div>
+          <div class="snap-job-info">
+            ${nameLine}
+            <div class="snap-job-stats">
+              <span class="snap-job-pct">${pct}%</span>
+              <span class="snap-job-time">${SNAP_ICON_CLOCK} <span>${esc(timeText)}</span></span>
+            </div>
+            <div class="snap-job-bar"><span style="width:${pct}%"></span></div>
+            <div class="snap-job-foot">
+              <span class="snap-job-state snap-job-state--${esc(jobState)}">${esc(stateLabel)}</span>
+              ${layerText ? `<span class="snap-job-layers">${esc(layerText)}</span>` : ""}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ── Temperature row ──────────────────────────────────────────────
+    // FlashForge reports current values only — no target. We render a
+    // solo pill ("26°C") with the same icon + class as the Snapmaker
+    // pair pill so styling stays consistent.
+    const tempPills = [];
+    if (typeof d.temps.e1_temp === "number") {
+      tempPills.push(`
+        <div class="snap-temp">
+          ${SNAP_ICON_NOZZLE}
+          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.e1_temp))}</span>
+        </div>`);
+    }
+    if (typeof d.temps.bed_temp === "number") {
+      tempPills.push(`
+        <div class="snap-temp snap-temp--bed">
+          ${SNAP_ICON_BED}
+          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.bed_temp))}</span>
+        </div>`);
+    }
+    if (typeof d.temps.chamber_temp === "number") {
+      // No dedicated chamber icon yet — reuse the bed icon, distinguish
+      // via a different class so CSS can style it later if needed.
+      tempPills.push(`
+        <div class="snap-temp snap-temp--chamber">
+          ${SNAP_ICON_BED}
+          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.chamber_temp))}</span>
+        </div>`);
+    }
+    const tempsHtml = tempPills.length
+      ? `<section class="snap-block">
+           <h4 class="snap-block-title">${esc(t("snapTemperatureTitle"))}</h4>
+           <div class="snap-temps">${tempPills.join("")}</div>
+         </section>`
+      : "";
+
+    // ── Filament grid — colored squares with material centred ────────
+    // 1 to N slots. matlStation models always emit a 4-element array,
+    // single-extruder models emit just one.
+    const filCards = [];
+    const fils = Array.isArray(d.filaments) ? d.filaments : [];
+    for (let i = 0; i < fils.length; i++) {
+      const fil  = fils[i] || {};
+      const has  = !!(fil.color || fil.type || fil.vendor);
+      // For matlStation we always render the slot tile (even when empty)
+      // so the user sees the full 4-bay layout and can edit each one;
+      // for single-extruder we only render when there's something.
+      const isMs = fils.length === 4;
+      if (!has && !isMs) continue;
+      const color = fil.color || null;
+      const fg    = color ? snapTextColor(color) : "var(--text)";
+      const slotId = fil.slotId || (i + 1);
+      const squareLabel = fil.type || t("snapNoFilament");
+      const typeAndSub = fil.type || "—";
+      filCards.push(`
+        <div class="snap-fil snap-fil--editable${fil.isActive ? " snap-fil--active" : ""}"
+             data-ffg-fil-edit="1"
+             data-extruder-idx="${i}"
+             data-slot-id="${slotId}"
+             title="${esc(t("snapFilEditableTip"))}">
+          <div class="snap-fil-tag">${esc(isMs ? `S${slotId}` : "E1")}</div>
+          <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
+               style="${color ? `background:${esc(color)};color:${esc(fg)};border-color:${esc(color)};` : ""}">
+            <span class="snap-fil-main">${esc(squareLabel)}</span>
+          </div>
+          <div class="snap-fil-meta">
+            <span class="snap-fil-status icon icon-edit icon-13" aria-hidden="true"></span>
+            <div class="snap-fil-vendor">${esc(fil.vendor || "—")}</div>
+            <div class="snap-fil-sub">${esc(typeAndSub)}</div>
+          </div>
+        </div>`);
+    }
+    const filamentsHtml = filCards.length
+      ? `<section class="snap-block">
+           <h4 class="snap-block-title">${esc(t("snapFilamentTitle"))}</h4>
+           <div class="snap-fil-grid">${filCards.join("")}</div>
+         </section>`
+      : "";
+
+    return `
+      ${jobHtml}
+      ${tempsHtml}
+      ${filamentsHtml}`;
   }
 
   /* ── End FlashForge HTTP integration ─────────────────────────── */

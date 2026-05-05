@@ -593,5 +593,9 @@
   "migrationProgressMsg": "A organizar os teus dados — não feches a aplicação. Cada item demora apenas uma fração de segundo.",
   "migrationProgressWarn": "⚠ Fechar agora apenas retomaria no próximo arranque — mas para a melhor experiência, deixa-a terminar.",
   "ffgErrSnMismatch": "Número de série incorreto — verifique as definições da impressora",
-  "ffgErrBadPassword": "Palavra-passe incorreta — verifique as definições da impressora"
+  "ffgErrBadPassword": "Palavra-passe incorreta — verifique as definições da impressora",
+  "ffgState_ready": "Pronta",
+  "ffgState_preparing": "A preparar",
+  "ffgState_heating": "A aquecer",
+  "ffgState_busy": "Ocupada"
 }
