@@ -589,5 +589,9 @@
   "ffgCameraAlt": "Stream camera FlashForge",
   "ffgFilEditTitle": "Cambia filamento",
   "ffgFilEditApply": "Applica",
-  "ffgErrNetwork": "Impossibile raggiungere la stampante — controlla IP e rete."
+  "ffgErrNetwork": "Impossibile raggiungere la stampante — controlla IP e rete.",
+  "ffgConnConnecting": "Connessione…",
+  "ffgConnConnected": "Connessa",
+  "ffgConnOffline": "Offline",
+  "ffgConnReconnecting": "Riconnessione…"
 }

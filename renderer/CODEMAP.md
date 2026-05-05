@@ -20,13 +20,14 @@ L2918-4283    Spool detail panel + per-spool modals
 L4284-5072    App-level UI (resize, debug, settings, language, friends, …)
 L5073-5532    Storage / scales / 3D printers (subscribe + render printers grid)
 L5533-7216    Snapmaker Live integration (Moonraker WebSocket)
-L7217-9344    Add-printer flow (mDNS → port-scan → Add by IP → manual probe)
-L9345-11327   Storage view (rack rendering, drag-drop, masonry, rack-edit modal)
-L11328-11765  Friend view (friend's inventory in main interface)
-L11766-12027  Display-name setup + Friends system (requests, accept, blacklist)
-L12028-12204  Public/private key helpers + late utilities
-L12205-12389  Init bootstrap (loadLocales → loadLookups → wire DOM → start)
-L12389        })();                                           // IIFE closes
+L7288-8345    FlashForge Live integration (HTTP polling + filament edit)
+L8347-…       Add-printer flow (mDNS → port-scan → Add by IP → manual probe)
+…             Storage view (rack rendering, drag-drop, masonry, rack-edit modal)
+…             Friend view (friend's inventory in main interface)
+…             Display-name setup + Friends system (requests, accept, blacklist)
+…             Public/private key helpers + late utilities
+…             Init bootstrap (loadLocales → loadLookups → wire DOM → start)
+}             })();                                           // IIFE closes
 ```
 
 ---
@@ -161,7 +162,38 @@ Big section divider at L5533. Ported from the Flutter `SnapmakerWebSocketPage`. 
 
 ---
 
-## Add-printer flow (L7217-9344)
+## FlashForge Live (HTTP polling) (L7288-8345)
+
+Big section divider at L7288. Mirrors the Snapmaker block (`snap*` →
+`ffg*` prefix). Polls `POST http://<ip>:8898/detail` every 2 s with
+`{ serialNumber, checkCode }` body. Filament changes go to
+`POST http://<ip>:8898/control` with `cmd: "msConfig_cmd"` (matlStation)
+or `cmd: "ipdMsConfig_cmd"` (independent extruder).
+
+| L | What | Anchors |
+|---|---|---|
+| 7288-7320 | Per-printer state map (`_ffgConns`, `_ffgPings`); `ffgKey`, `ffgIsOnline`, `ffgBaseUrl`, `ffgAuthBody` | |
+| 7321-7370 | **`ffgPingPrinter`** — 2.5 s POST probe used for the printer-grid online dot. 30 s cache. | `ffgPingPrinter`, `ffgPingAllPrinters` |
+| 7371-7385 | Surgical DOM update of online badges (grid card + side card) | `ffgRefreshOnlineUI`, `renderFfgOnlineBadge` |
+| 7386-7450 | **Polling lifecycle** — `ffgConnect` opens a 2 s `setInterval`, `ffgDisconnect` tears it down. Capped exponential backoff on offline. | `ffgConnect`, `ffgDisconnect`, `ffgScheduleReconnect` |
+| 7451-7510 | **`ffgPollOnce`** — single `fetch` POST `/detail`, parses JSON, dispatches to `ffgMergeStatus` | `ffgPollOnce` |
+| 7511-7650 | **`ffgMergeStatus`** — full `/detail` parser. Error contract (-2 / sn / pwd), then field extraction (temps, filament matlStation vs indep, print job, camera). Throttles SN/password toasts to one per session per printer. | `ffgMergeStatus`, `ffgWarnOnce` |
+| 7651-7670 | rAF-coalesced re-renders. Full re-render on status change (camera swap), live-only on data change. | `ffgNotifyChange` |
+| 7671-7820 | **Live block render** — `renderFlashforgeLiveInner()` returns the side-card inner HTML. Reuses `.snap-*` CSS classes for visual parity. | `renderFlashforgeLiveInner`, `ffgFmtTempSolo`, `ffgIsActiveState`, `ffgStateLabel`, `ffgFmtDuration` |
+| 7821-7880 | **Filament-edit catalogue** — vendor → materials map, color presets aliased to `SNAP_FIL_COLOR_PRESETS` | `FFG_FIL_VENDOR_MATERIALS`, `ffgSortMaterials` |
+| 7881-7960 | Bottom-sheet open/close + sub-pickers (filament, colour). Mirrors Snapmaker's `sfe*` flow with `ffe*` prefix. | `openFlashforgeFilamentEdit`, `closeFlashforgeFilamentEdit`, `ffeOpenFilamentSheet`, `ffeOpenColorSheet`, `ffeUpdateSummary`, `ffeRenderColorGrid` |
+| 7961-8050 | Click delegation on vendor / material lists + colour grid + native colour picker overlay | |
+| 8051-8345 | **Apply (`POST /control`)** — branches on matlStation vs independent extruder. Optimistic local patch of `conn.data.filaments` so the colour square updates immediately. | `$("ffgFilEditSave") click` |
+
+Wiring (cross-cutting with Snapmaker):
+- `renderPrintersView` (L5300+) emits `renderFfgOnlineBadge` and triggers `ffgPingPrinter` for FlashForge cards.
+- `openPrinterDetail` / `closePrinterDetail` (L5475+) call `ffgConnect` / `ffgDisconnect`.
+- `renderPrinterDetail` (L6800+) builds `#ffgLive`, swaps the side-card hero camera for an MJPEG `<img>` when `ffgConn.data.camera.url` is non-empty.
+- HTML parallel sheets at `inventory.html` L460+ (`#ffgFilEditSheet`, `#ffgFilamentSheet`, `#ffgColorSheet`).
+
+---
+
+## Add-printer flow (L8347+)
 
 | L | What | Anchors |
 |---|---|---|
@@ -271,6 +303,9 @@ Most common navigation tasks → start here:
 | Touch the printer detail card | `renderPrinterDetail` L6798 |
 | Touch the Snapmaker WS layer | `snapConnect` L5640, `snapMergeStatus` L5793 |
 | Touch the Snapmaker live block UI | `renderSnapmakerLiveInner` L6520 |
+| Touch the FlashForge HTTP polling | `ffgConnect` L7390, `ffgPollOnce` L7460, `ffgMergeStatus` L7515 |
+| Touch the FlashForge live block UI | `renderFlashforgeLiveInner` L7700 |
+| Touch the FlashForge filament edit sheet | `openFlashforgeFilamentEdit` L7900, Apply at `$("ffgFilEditSave")` L8060 |
 | Touch the bottom-sheet filament edit | `openSnapFilamentEdit` L5971, color grid L6244 |
 | Touch the Add-printer scan flow | mDNS L8030, port-scan L8131, one-click add L8241 |
 | Touch the Add by IP widget | L8634 |

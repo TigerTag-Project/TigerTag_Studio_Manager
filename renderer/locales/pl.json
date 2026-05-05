@@ -600,5 +600,9 @@
   "ffgCameraAlt": "Strumień kamery FlashForge",
   "ffgFilEditTitle": "Zmień filament",
   "ffgFilEditApply": "Zastosuj",
-  "ffgErrNetwork": "Nie można połączyć się z drukarką — sprawdź IP i sieć."
+  "ffgErrNetwork": "Nie można połączyć się z drukarką — sprawdź IP i sieć.",
+  "ffgConnConnecting": "Łączenie…",
+  "ffgConnConnected": "Połączona",
+  "ffgConnOffline": "Offline",
+  "ffgConnReconnecting": "Ponowne łączenie…"
 }

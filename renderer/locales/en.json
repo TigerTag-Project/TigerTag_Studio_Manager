@@ -586,5 +586,9 @@
   "ffgCameraAlt": "FlashForge camera stream",
   "ffgFilEditTitle": "Change filament",
   "ffgFilEditApply": "Apply",
-  "ffgErrNetwork": "Cannot reach the printer — check IP and network."
+  "ffgErrNetwork": "Cannot reach the printer — check IP and network.",
+  "ffgConnConnecting": "Connecting…",
+  "ffgConnConnected": "Connected",
+  "ffgConnOffline": "Offline",
+  "ffgConnReconnecting": "Reconnecting…"
 }

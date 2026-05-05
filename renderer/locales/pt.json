@@ -601,5 +601,9 @@
   "ffgCameraAlt": "Transmissão da câmera FlashForge",
   "ffgFilEditTitle": "Trocar filamento",
   "ffgFilEditApply": "Aplicar",
-  "ffgErrNetwork": "Não foi possível alcançar a impressora — verifique o IP e a rede."
+  "ffgErrNetwork": "Não foi possível alcançar a impressora — verifique o IP e a rede.",
+  "ffgConnConnecting": "Conectando…",
+  "ffgConnConnected": "Conectada",
+  "ffgConnOffline": "Offline",
+  "ffgConnReconnecting": "Reconectando…"
 }

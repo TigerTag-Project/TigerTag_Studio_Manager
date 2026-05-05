@@ -589,5 +589,9 @@
   "ffgCameraAlt": "FlashForge-Kamerastream",
   "ffgFilEditTitle": "Filament wechseln",
   "ffgFilEditApply": "Anwenden",
-  "ffgErrNetwork": "Drucker nicht erreichbar — IP und Netzwerk prüfen."
+  "ffgErrNetwork": "Drucker nicht erreichbar — IP und Netzwerk prüfen.",
+  "ffgConnConnecting": "Verbindung…",
+  "ffgConnConnected": "Verbunden",
+  "ffgConnOffline": "Offline",
+  "ffgConnReconnecting": "Erneut verbinden…"
 }

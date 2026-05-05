@@ -589,5 +589,9 @@
   "ffgCameraAlt": "Flux caméra FlashForge",
   "ffgFilEditTitle": "Changer le filament",
   "ffgFilEditApply": "Appliquer",
-  "ffgErrNetwork": "Imprimante injoignable — vérifiez l'IP et le réseau."
+  "ffgErrNetwork": "Imprimante injoignable — vérifiez l'IP et le réseau.",
+  "ffgConnConnecting": "Connexion…",
+  "ffgConnConnected": "Connectée",
+  "ffgConnOffline": "Hors ligne",
+  "ffgConnReconnecting": "Reconnexion…"
 }
