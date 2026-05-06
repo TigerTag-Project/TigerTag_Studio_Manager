@@ -179,6 +179,9 @@
   "sectionPrint": "Print settings",
   "sectionWeight": "Weight",
   "sectionLinks": "Documents & links",
+  "customImgUrl": "Product image URL",
+  "customImgUrlPlaceholder": "https://…",
+  "customImgUrlSave": "Save",
   "sectionContainer": "Container / Spool",
   "sectionDetails": "Details",
   "sectionRaw": "Raw JSON — spool data",
@@ -243,6 +246,7 @@
   "toolboxTitle": "Toolbox",
   "toolMeasureColor": "Scan colour",
   "toolMeasureTd": "Scan TD",
+  "toolClearTd": "Clear TD value",
   "toolRemoveFromRack": "Remove from rack",
   "agoNow": "just now",
   "agoMin": {"one":"{{n}}m ago","other":"{{n}}m ago"},
@@ -662,5 +666,7 @@
   "ffgConnConnecting": "Connecting…",
   "ffgConnConnected": "Connected",
   "ffgConnOffline": "Offline",
-  "ffgConnReconnecting": "Reconnecting…"
+  "ffgConnReconnecting": "Reconnecting…",
+  "statCloud": "TigerTag Cloud",
+  "statCloudMini": "Cloud"
 }

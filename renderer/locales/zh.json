@@ -179,6 +179,9 @@
   "sectionPrint": "打印设置",
   "sectionWeight": "重量",
   "sectionLinks": "文档 & 链接",
+  "customImgUrl": "产品图片链接",
+  "customImgUrlPlaceholder": "https://…",
+  "customImgUrlSave": "保存",
   "sectionContainer": "容器 / 卷轴",
   "sectionDetails": "详情",
   "sectionRaw": "原始 JSON — 卷轴数据",
@@ -243,6 +246,7 @@
   "toolboxTitle": "工具箱",
   "toolMeasureColor": "扫描颜色",
   "toolMeasureTd": "扫描 TD",
+  "toolClearTd": "清除TD值",
   "toolRemoveFromRack": "从架子移除",
   "agoNow": "刚刚",
   "agoMin": {"one":"{{n}} 分钟前","other":"{{n}} 分钟前"},
@@ -665,5 +669,7 @@
   "ffgConnConnecting": "连接中…",
   "ffgConnConnected": "已连接",
   "ffgConnOffline": "离线",
-  "ffgConnReconnecting": "重新连接中…"
+  "ffgConnReconnecting": "重新连接中…",
+  "statCloud": "TigerTag Cloud",
+  "statCloudMini": "云"
 }

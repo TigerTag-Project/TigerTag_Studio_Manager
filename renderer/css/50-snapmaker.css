@@ -690,14 +690,14 @@
     border-right: none;
     border-bottom-left-radius: 14px;
     border-top-left-radius: 18px;
-    box-shadow: -8px -4px 32px rgba(0,0,0,.18);
+    box-shadow: none;
     z-index: 103;
     transform: translateY(calc(100% + 8px));
-    transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+    transition: transform .28s cubic-bezier(.4, 0, .2, 1), box-shadow .28s;
     display: flex; flex-direction: column;
     overflow: hidden;
   }
-  .sfe-sheet.open { transform: translateY(0); }
+  .sfe-sheet.open { transform: translateY(0); box-shadow: -8px -4px 32px rgba(0,0,0,.18); }
 
   /* Sub-picker sheets (Filament + Colour) — both stack ON TOP of the
      summary sheet (higher z-index). They open taller than the summary

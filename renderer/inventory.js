@@ -504,7 +504,10 @@
     const hex  = toHex(data.color_r,  data.color_g,  data.color_b);
     const hex2 = toHex(data.color_r2, data.color_g2, data.color_b2);
     const hex3 = toHex(data.color_r3, data.color_g3, data.color_b3);
-    const isPlus = data.url_img && data.url_img !== "--" && data.url_img !== "";
+    // isPlus = true only when url_img comes from the TigerTag API (catalog
+    // product). User-provided images are flagged with url_img_user:true so
+    // they keep their DIY/Cloud tier and the edit row stays visible.
+    const isPlus = data.url_img && data.url_img !== "--" && data.url_img !== "" && !data.url_img_user;
     // Cloud-only entry: doc id starts with `CLOUD_` (the prefix written by
     // _adpCloudId() in the Add Product flow). When the user later programs
     // a physical chip, the doc gets renamed to a real 7-byte hex UID and
@@ -530,7 +533,8 @@
       weightAvailable: data.weight_available,
       containerWeight: data.container_weight,
       capacity: data.measure_gr || data.measure,
-      imgUrl: isPlus ? data.url_img : null,
+      imgUrl: data.url_img && data.url_img !== "--" && data.url_img !== "" ? data.url_img : null,
+      userImg: !!data.url_img_user,
       isPlus,
       isCloud,
       series: data.series || null,
@@ -1669,6 +1673,7 @@
     $("adpColorName") && ($("adpColorName").value = "");
     $("adpWeight")    && ($("adpWeight").value    = "1000");
     $("adpTd")        && ($("adpTd").value        = "");
+    $("adpImgUrl")    && ($("adpImgUrl").value    = "");
     $("adpMessage")   && ($("adpMessage").value   = "");
     _adpRefreshColorNameCounter();
     // Reset user-edited flags so material defaults seed the temps.
@@ -1729,6 +1734,9 @@
       else                    rfidSection.setAttribute("hidden", "");
     }
 
+    // Sync TD1S button state at open time so the icon reflects the
+    // current connection without waiting for the next onStatus event.
+    $("adpTd1sBtn")?.classList.toggle("td1s-connected", !!state.td1sConnected);
     $("addProductPanel")?.classList.add("open");
     $("addProductOverlay")?.classList.add("open");
     setTimeout(() => $("adpBrand")?.focus(), 80);
@@ -1907,6 +1915,13 @@
       deleted:     null,
       deleted_at:  null
     };
+    // User-provided product image URL — optional. When set, also writes
+    // url_img_user:true so normalizeRow keeps isPlus=false for DIY/Cloud.
+    const imgUrlRaw = String(get("adpImgUrl") || "").trim();
+    if (imgUrlRaw) {
+      data.url_img      = imgUrlRaw;
+      data.url_img_user = true;
+    }
     // Colours 2 / 3 — only present when the chosen aspect declares
     // multi-colour content. id_aspect2 mapping (per the spec):
     //   - mono     → 255 (no extra colours written)
@@ -2042,6 +2057,12 @@
 
   $("btnAddProduct")?.addEventListener("click", openAddProductPanel);
   $("addProductClose")?.addEventListener("click", _adpCloseAllSheetsAndPanel);
+  // TD1S button in ADP header: open connect modal if not detected,
+  // open tester if already connected.
+  $("adpTd1sBtn")?.addEventListener("click", () => {
+    if (state.td1sConnected) { openTd1sTesterModal(); return; }
+    openTd1sConnectModal();
+  });
   $("adpCancel")?.addEventListener("click", _adpCloseAllSheetsAndPanel);
   $("adpSave")?.addEventListener("click", saveAddProduct);
   // Panel-overlay click — outside-the-card region. Closes any open
@@ -3903,18 +3924,23 @@
   /* ── stats ── */
   function renderStats() {
     const all = deduplicateTwins(state.rows.slice()); const active = all.filter(r => !r.deleted);
-    const plus = active.filter(r => r.isPlus);
+    const plus  = active.filter(r => r.isPlus);
+    const cloud = active.filter(r => r.isCloud);
+    const diy   = active.length - plus.length - cloud.length;
     const totalW = active.reduce((s, r) => s + (Number(r.weightAvailable)||0), 0);
     const el = $("sbStats");
     if (!all.length) { el.classList.add("hidden"); return; }
     const kgFull = `${Math.round(totalW / 1000)} kg`;
     const kgMini = kgFull;
     el.innerHTML = [
-      { label: t("statActive"), mini: t("statActiveMini"), value: active.length,            miniVal: active.length },
-      { label: t("statTotal"),  mini: t("statTotalMini"),  value: kgFull,                    miniVal: kgMini },
-      { label: t("statDiy"),    mini: t("statDiyMini"),    value: active.length-plus.length, miniVal: active.length-plus.length },
-      { label: t("statPlus"),   mini: t("statPlusMini"),   value: plus.length,               miniVal: plus.length },
-    ].map(s => `<div class="sb-stat" data-mini="${s.mini}" data-mini-val="${s.miniVal}"><div class="value">${s.value}</div><div class="label">${s.label}</div></div>`).join("");
+      { label: t("statActive"), mini: t("statActiveMini"), value: active.length, miniVal: active.length },
+      { label: t("statTotal"),  mini: t("statTotalMini"),  value: kgFull,         miniVal: kgMini },
+      { label: t("statDiy"),    mini: t("statDiyMini"),    value: diy,            miniVal: diy },
+      { label: t("statPlus"),   mini: t("statPlusMini"),   value: plus.length,    miniVal: plus.length },
+      { label: t("statCloud"),  mini: t("statCloudMini"),  value: cloud.length,   miniVal: cloud.length, cloud: true },
+    ].map(s =>
+      `<div class="sb-stat${s.cloud ? " sb-stat--cloud" : ""}" data-mini="${s.mini}" data-mini-val="${s.miniVal}"><div class="value">${s.value}</div><div class="label">${s.label}</div></div>`
+    ).join("");
     el.classList.remove("hidden");
   }
 
@@ -4680,6 +4706,19 @@
       if (!state.td1sConnected) { openTd1sConnectModal(); return; }
       openTdEditModal(r);
     });
+    // Clear TD value — hold-to-confirm trash button on the Scan TD row.
+    // Deletes the `TD` field from Firestore and lets the snapshot listener
+    // re-render the panel (the badge + tc-value row update automatically).
+    setupHoldToConfirm($("btnToolClearTd"), 1200, async () => {
+      try {
+        const user = fbAuth().currentUser;
+        if (!user) return;
+        await fbDb(user.uid)
+          .collection("users").doc(user.uid)
+          .collection("inventory").doc(r.spoolId)
+          .update({ TD: firebase.firestore.FieldValue.delete(), last_update: Date.now() });
+      } catch (e) { reportError("spool.clearTd", e); }
+    });
     // Remove from rack — hold-to-confirm so an accidental tap doesn't
     // unrank a placed spool. Reuses the eject animation that void-drop
     // fires so the visual language stays consistent.
@@ -4750,6 +4789,43 @@
         localStorage.setItem("tigertag.detailsExpanded", open ? "1" : "0");
       });
     }
+    // Custom image URL — inline edit for DIY / Cloud spools.
+    // The Edit button lives in the colour square (no image) or in the
+    // toolbox (btnToolEditImg, valid user image already set). Both open
+    // the same #customImgForm bar (inside panel-img-wrap).
+    const openCustomImgForm = () => {
+      const form = $("customImgForm");
+      if (!form) return;
+      form.classList.add("open");
+      $("customImgInput")?.focus();
+    };
+    const closeCustomImgForm = () => $("customImgForm")?.classList.remove("open");
+    $("btnCustomImgEdit")?.addEventListener("click", e => {
+      const form = $("customImgForm");
+      if (form?.classList.contains("open")) { closeCustomImgForm(); e.stopPropagation(); }
+      else openCustomImgForm();
+    });
+    $("btnToolEditImg")?.addEventListener("click", openCustomImgForm);
+    $("customImgInput")?.addEventListener("keydown", e => {
+      if (e.key === "Enter") $("btnCustomImgSave")?.click();
+      if (e.key === "Escape") closeCustomImgForm();
+    });
+    $("btnCustomImgSave")?.addEventListener("click", async () => {
+      const val = ($("customImgInput")?.value || "").trim();
+      try {
+        const user = fbAuth().currentUser;
+        if (!user) return;
+        const del = firebase.firestore.FieldValue.delete();
+        const update = val
+          ? { url_img: val, url_img_user: true, last_update: Date.now() }
+          : { url_img: del, url_img_user: del, last_update: Date.now() };
+        await fbDb(user.uid)
+          .collection("users").doc(user.uid)
+          .collection("inventory").doc(r.spoolId)
+          .update(update);
+        // onSnapshot re-renders the panel automatically
+      } catch (e) { reportError("spool.customImgUrl", e); }
+    });
     // copy raw JSON button
     const btnCopyRaw = $("btnCopyRaw");
     if (btnCopyRaw) {
@@ -5433,12 +5509,33 @@
       ? `<div class="panel-img-badge panel-img-badge--tr panel-img-badge-tr-group">${badgeTwin}${badgeChip}</div>`
       : "";
     const overlays = badgeLeft + badgeTrGroup + badgeTd;
+    // The edit bar lives inside panel-img-wrap at the bottom.
+    // The trigger (Edit icon) IS the left anchor of the bar — clicking it
+    // expands the bar rightward to reveal the input + confirm button.
+    // Only for DIY/Cloud, not for friend view.
+    const canEditImg = (!r.isPlus || r.userImg) && !state.friendView;
+    // Bar always rendered; starts collapsed (trigger only), opens on click.
+    const customImgBar = canEditImg ? `
+      <div class="custom-img-bar" id="customImgForm">
+        <button class="custom-img-trigger" id="btnCustomImgEdit" title="${esc(t("customImgUrl"))}">
+          <span class="icon icon-edit icon-13"></span>
+        </button>
+        <input type="url" class="custom-img-input" id="customImgInput"
+               placeholder="${esc(t("customImgUrlPlaceholder"))}"
+               value="${esc(r.imgUrl || "")}" />
+        <button class="custom-img-ok" id="btnCustomImgSave" title="${esc(t("customImgUrlSave"))}">
+          <span class="icon icon-check icon-14"></span>
+        </button>
+      </div>` : "";
     let imgSection = "";
     const _resolvedPanel = r.imgUrl ? resolvedImg(r.imgUrl) : null;
+    const onerrorScript = canEditImg
+      ? `this.closest('.panel-img-wrap').classList.add('img-broken');this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'`
+      : `this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'`;
     if (_resolvedPanel) {
-      imgSection = `<div class="panel-img-wrap">${overlays}<img class="panel-img" src="${esc(_resolvedPanel)}" onerror="this.outerHTML='<div class=\\'panel-img-color-placeholder\\'style=\\'background:${colorBg(r)}\\'><img src=\\'${logoSrc(colorBg(r))}\\'class=\\'panel-img-logo\\'></div>'" /></div>`;
+      imgSection = `<div class="panel-img-wrap">${overlays}<img class="panel-img" src="${esc(_resolvedPanel)}" onerror="${esc(onerrorScript)}" />${customImgBar}</div>`;
     } else {
-      imgSection = `<div class="panel-img-wrap">${overlays}<div class="panel-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" class="panel-img-logo" /></div></div>`;
+      imgSection = `<div class="panel-img-wrap">${overlays}<div class="panel-img-color-placeholder" style="background:${colorBg(r)}"><img src="${logoSrc(colorBg(r))}" class="panel-img-logo" /></div>${customImgBar}</div>`;
     }
 
     // colors — same circle design as table rows
@@ -5759,14 +5856,34 @@
         });
 
         // 2. TD1S — measure TD (transparency). Same pattern.
+        //    A trailing hold-to-confirm trash button clears the TD value
+        //    from Firestore; only shown when a TD value is actually set.
         tools.push({
           id: "btnToolMeasureTd",
           icon: "icon-search",
           label: t("toolMeasureTd"),
           variant: "default",
+          type: "split",
+          trailing: r.td != null ? `
+            <button type="button" class="toolbox-row-trailing toolbox-row--hold toolbox-row--danger-soft" id="btnToolClearTd" title="${esc(t("toolClearTd"))}">
+              <span class="hold-progress"></span>
+              <span class="icon icon-trash icon-14 toolbox-row-icon"></span>
+            </button>` : "",
         });
 
-        // 3. Twin pairing — three possible visibilities:
+        // 3. Edit image URL — only when a user-set image is already loaded
+        //    (i.e. the Edit button has moved out of the colour square into
+        //    the toolbox). Not shown for API-sourced TigerTag+ images.
+        if (r.userImg && r.imgUrl) {
+          tools.push({
+            id: "btnToolEditImg",
+            icon: "icon-edit",
+            label: t("customImgUrl"),
+            variant: "default",
+          });
+        }
+
+        // 4. Twin pairing — three possible visibilities:
         //    - paired (normal user)        → row hidden (the twin
         //      badge on the photo + the raw-data tab already convey
         //      the paired state; an extra info row would just take
@@ -5830,6 +5947,20 @@
           const cls = `toolbox-row toolbox-row--${tool.variant}${tool.holdConfirm ? " toolbox-row--hold" : ""}${tool.inert ? " toolbox-row--inert" : ""}`;
           const titleAttr = tool.title ? ` title="${esc(tool.title)}"` : "";
           const dataAttrs = tool.dataAttrs || "";
+          // Split rows: main clickable button on the left + trailing
+          // secondary button (e.g. trash) on the right, both inside a
+          // flex wrapper. Needed when two independent actions share a row.
+          if (tool.type === "split") {
+            return `
+              <div class="toolbox-row toolbox-row--split toolbox-row--${tool.variant}">
+                <button type="button" class="toolbox-row-main" id="${esc(tool.id)}">
+                  <span class="icon ${esc(tool.icon)} icon-14 toolbox-row-icon"></span>
+                  <span class="toolbox-row-label">${esc(tool.label)}</span>
+                  <span class="icon icon-chevron-r icon-13 toolbox-row-chev"></span>
+                </button>
+                ${tool.trailing || ""}
+              </div>`;
+          }
           // Inert rows render as a <div> with a trailing <button> for the
           // action; clickable rows render as a <button> directly.
           if (tool.inert) {
@@ -15758,18 +15889,31 @@
       const banner = $("updateBanner");
       const msg    = $("updateMsg");
       const btn    = $("btnInstallUpdate");
+      const icon   = $("updateStatusIcon");
       if (status === 'available') {
         msg.innerHTML = t("updateDownloading");
         btn.classList.add("hidden");
         banner.classList.remove("hidden");
+        // header icon: orange spinner
+        icon?.classList.remove("hidden", "ready");
+        icon?.classList.add("downloading");
+        icon?.setAttribute("data-tooltip", t("updateDownloading"));
       } else if (status === 'ready') {
         msg.innerHTML = t("updateReady");
         btn.textContent = t("btnRestartUpdate");
         btn.classList.remove("hidden");
         banner.classList.remove("hidden");
+        // header icon: green glow
+        icon?.classList.remove("hidden", "downloading");
+        icon?.classList.add("ready");
+        icon?.setAttribute("data-tooltip", t("updateReady"));
       }
     });
     $("btnInstallUpdate").addEventListener("click", () => window.electronAPI.installUpdate());
+    $("updateStatusIcon")?.addEventListener("click", () => {
+      if ($("updateStatusIcon")?.classList.contains("ready"))
+        window.electronAPI.installUpdate();
+    });
   }
 
   // ── TD1S sensor integration ──
@@ -15799,6 +15943,7 @@
       $("btnTD1S")?.classList.toggle("td1s-connected", connected);
       $("td1sHealth")?.classList.toggle("td1s-connected", connected);
       $("td1sHealth")?.setAttribute("data-tooltip", t(connected ? "td1sDetected" : "td1sNotDetected"));
+      $("adpTd1sBtn")?.classList.toggle("td1s-connected", connected);
       state.td1sConnected = connected;
       // Auto-close connect modal when TD1S plugged in, then open viewer
       if (connected && _td1sConnectOpen) {
@@ -15849,6 +15994,24 @@
         if (circle) circle.style.background = /^[0-9A-Fa-f]{6}$/.test(hex) ? `#${hex}` : "#2a2a2a";
         if (hexIn)  hexIn.value  = hex ? `#${hex.toUpperCase()}` : "";
         if (tdIn)   tdIn.value   = data.TD != null ? data.TD : "";
+      }
+      // Feed into Add Product panel if open — auto-sets color + TD value
+      // so the user can scan a filament directly from the creator flow
+      // without having to enter values manually.
+      if ($("addProductPanel")?.classList.contains("open")) {
+        const adpHex = hex.toUpperCase();
+        if (/^[0-9A-Fa-f]{6}$/.test(adpHex)) {
+          _adpSyncColor("#" + adpHex);
+        }
+        if (data.TD != null) {
+          const tdInp = $("adpTd");
+          if (tdInp) {
+            tdInp.value = data.TD;
+            tdInp.dataset.userEdited = "1";
+            _adpUpdateBasicReadouts();
+            _adpRefreshRfidPreview();
+          }
+        }
       }
     });
 

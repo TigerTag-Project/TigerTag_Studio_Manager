@@ -331,6 +331,30 @@
     line-height: 1.2;
     margin-top: 2px;
   }
+  /* TigerTag Cloud stat — purple gradient accent */
+  .sb-stat--cloud {
+    border-color: rgba(124,77,255,.35) !important;
+    background: linear-gradient(135deg, rgba(124,77,255,.12), rgba(163,123,255,.07)) !important;
+  }
+  .sb-stat--cloud:hover {
+    border-color: rgba(124,77,255,.55) !important;
+    background: linear-gradient(135deg, rgba(124,77,255,.18), rgba(163,123,255,.12)) !important;
+  }
+  .sb-stat--cloud .value { color: #a37bff; }
+  .sb-stat--cloud .label { color: rgba(163,123,255,.7); }
+  /* collapsed sidebar: keep the purple tint on the mini tile */
+  .sidebar.collapsed .sb-stat--cloud::before { color: #a37bff; }
+  .sidebar.collapsed .sb-stat--cloud::after  { color: rgba(163,123,255,.6); }
+  /* top-stats (header) cloud variant */
+  .top-stats .sb-stat--cloud {
+    border-color: rgba(124,77,255,.35) !important;
+    background: linear-gradient(135deg, rgba(124,77,255,.08), rgba(163,123,255,.04)) !important;
+  }
+  .top-stats .sb-stat--cloud:hover {
+    border-color: rgba(124,77,255,.55) !important;
+  }
+  .top-stats .sb-stat--cloud .value { color: #7c4dff; }
+  .top-stats .sb-stat--cloud .label { color: rgba(124,77,255,.75); }
 
 
   /* Sidebar friends quick-access list — plain menu items, no card.

@@ -826,9 +826,9 @@
     z-index: 30;                   /* above content, below modals */
     transform: translateX(100%);
     transition: transform .28s cubic-bezier(.4, 0, .2, 1);
-    box-shadow: -8px 0 24px rgba(0,0,0,.12);
+    box-shadow: none;
   }
-  .rp-side.is-open { transform: translateX(0); }
+  .rp-side.is-open { transform: translateX(0); box-shadow: -8px 0 24px rgba(0,0,0,.12); }
   /* While dragging a spool out of the panel, slide it off-screen so the racks
      behind become available as drop targets. The persistent open/close state
      is left untouched — the panel slides back in on dragend. */

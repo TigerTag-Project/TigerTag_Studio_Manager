@@ -498,11 +498,11 @@
     background: var(--surface);
     border: 1px solid var(--border); border-right: none;
     border-top-left-radius: 14px; border-bottom-left-radius: 14px;
-    box-shadow: -8px 0 32px rgba(0,0,0,.12);
-    z-index: 101; transform: translateX(100%); transition: transform .25s cubic-bezier(.4,0,.2,1);
+    box-shadow: none;
+    z-index: 101; transform: translateX(100%); transition: transform .25s cubic-bezier(.4,0,.2,1), box-shadow .25s;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  .detail-panel.open { transform: translateX(0); }
+  .detail-panel.open { transform: translateX(0); box-shadow: -8px 0 32px rgba(0,0,0,.12); }
   /* resize handle — left edge of both panels */
   .panel-resize {
     position: absolute; top: 0; left: 0; bottom: 0; width: 6px;
@@ -951,6 +951,79 @@
 
   /* ── panel image overlay badges ── */
   .panel-img-wrap { position: relative; }
+
+  /* ── custom image URL bar ──
+     Lives in the BL corner of panel-img-wrap (absolute).
+     CLOSED: pill shows only the trigger icon (auto-width).
+     OPEN (.open class): expands right-to-left to full width;
+       input is visible, confirm button appears on the right edge.
+     The trigger IS the left anchor of the pill — looks like it's
+     "inside" the field, aligned to the left. */
+  .custom-img-bar {
+    position: absolute; z-index: 5;
+    bottom: 10px; left: 10px;
+    display: flex; align-items: center;
+    height: 32px;
+    background: rgba(0,0,0,.60); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 999px;
+    overflow: hidden;
+    /* closed: shrinks to trigger width only */
+    max-width: 32px;
+    transition: max-width .2s ease, right .2s ease;
+  }
+  .custom-img-bar.open {
+    /* expand to fill available width */
+    max-width: calc(100% - 20px); /* 10px each side */
+    right: 10px;
+  }
+  /* trigger — edit icon, left side of the pill */
+  .custom-img-trigger {
+    display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; flex-shrink: 0;
+    background: transparent; border: 0;
+    cursor: pointer;
+  }
+  .custom-img-trigger .icon { background: rgba(255,255,255,.75); transition: background .12s; }
+  .custom-img-trigger:hover .icon { background: #fff; }
+  /* input — transparent, fills remaining space; no border at all */
+  .custom-img-input {
+    flex: 1; min-width: 0; height: 100%;
+    padding: 0 4px 0 0;
+    background: transparent; border: 0; outline: 0;
+    box-shadow: none; -webkit-box-shadow: none;
+    -webkit-appearance: none; appearance: none;
+    color: #fff; font-size: 12px; font-family: inherit;
+    caret-color: var(--primary, #2563eb);
+    /* hidden when bar is closed */
+    opacity: 0; pointer-events: none; width: 0;
+    transition: opacity .15s .05s;
+  }
+  .custom-img-input:focus {
+    outline: 0; box-shadow: none; -webkit-box-shadow: none;
+  }
+  .custom-img-bar.open .custom-img-input {
+    opacity: 1; pointer-events: auto; width: auto;
+  }
+  .custom-img-input::placeholder { color: rgba(255,255,255,.38); }
+  /* confirm button — circle floating inside the pill on the right,
+     with margin so it never touches the pill border */
+  .custom-img-ok {
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    width: 24px; height: 24px; margin-right: 4px;
+    border-radius: 50%;
+    background: var(--primary, #2563eb); border: 0;
+    cursor: pointer;
+    /* hidden when bar is closed */
+    opacity: 0; pointer-events: none; max-width: 0; margin-right: 0;
+    transition: opacity .15s .05s, background .12s, max-width .15s, margin-right .15s;
+  }
+  .custom-img-bar.open .custom-img-ok {
+    opacity: 1; pointer-events: auto; max-width: 24px; margin-right: 4px;
+  }
+  .custom-img-ok:hover { background: #1d4ed8; }
+  .custom-img-ok .icon { background: #fff; }
   .panel-img-badge { position: absolute; z-index: 2; top: 10px; pointer-events: none; }
   .panel-img-badge--tl { left: 10px; }
   .panel-img-badge--tr { right: 10px; }
@@ -1224,14 +1297,54 @@
   }
   .toolbox-row--inert:active { transform: none; }
 
-  /* Trailing button (e.g. debug Unlink on the paired-twin row). Sits
+  /* Split rows: a flex wrapper containing a main <button> + a trailing
+     <button>. The wrapper itself is not interactive — each child handles
+     its own hover / hold state independently. */
+  .toolbox-row--split {
+    padding: 0;
+    gap: 4px;
+    background: transparent;
+    cursor: default;
+    overflow: visible;
+  }
+  .toolbox-row--split:hover { background: transparent; }
+  .toolbox-row--split:active { transform: none; }
+  /* Main clickable button inside a split row */
+  .toolbox-row-main {
+    flex: 1; min-width: 0;
+    display: flex; align-items: center; gap: 10px;
+    height: 40px; padding: 0 10px 0 14px;
+    background: var(--surface-2); border: 0; border-radius: 10px;
+    cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 500;
+    color: var(--text); text-align: left;
+    transition: background .12s ease; overflow: hidden; position: relative;
+  }
+  .toolbox-row-main .toolbox-row-icon { background: var(--muted); flex-shrink: 0; transition: background .12s; }
+  .toolbox-row-main .toolbox-row-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; z-index: 1; }
+  .toolbox-row-main .toolbox-row-chev { background: var(--border); flex-shrink: 0; position: relative; z-index: 1; transition: background .12s; }
+  .toolbox-row-main:hover { background: rgba(56, 110, 207, .08); }
+  .toolbox-row-main:hover .toolbox-row-icon { background: var(--text); }
+  .toolbox-row-main:hover .toolbox-row-chev { background: var(--muted); }
+
+  /* Trailing button (e.g. Clear TD, debug Unlink on the paired-twin row). Sits
      to the right of the label; uses its own hover styling. */
   .toolbox-row-trailing {
-    width: 28px; height: 28px;
+    width: 40px; height: 40px;
     flex-shrink: 0;
     padding: 0;
     position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-2); border: 0; border-radius: 10px;
+    cursor: pointer; overflow: hidden;
+    transition: background .12s ease;
   }
+  .toolbox-row-trailing .toolbox-row-icon { background: var(--muted); transition: background .12s; }
+  .toolbox-row-trailing:hover { background: rgba(234, 179, 8, .14); }
+  .toolbox-row-trailing:hover .toolbox-row-icon { background: #b45309; }
+  /* hold-to-confirm states on the trailing button */
+  .toolbox-row-trailing.is-holding { background: rgba(239, 68, 68, .12); }
+  .toolbox-row-trailing.is-confirming { background: rgba(239, 68, 68, .35) !important; }
+  .toolbox-row-trailing.is-confirming .toolbox-row-icon { background: #fff; }
 
   /* Hold-to-confirm fill — same width-based progress as elsewhere. */
   .toolbox-row--hold .hold-progress {

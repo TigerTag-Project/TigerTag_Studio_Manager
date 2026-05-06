@@ -1273,6 +1273,29 @@
   .health .icon { color: var(--neutral); transition: color .25s, filter .25s; }
   .health.ok  .icon { color: var(--success); filter: drop-shadow(0 0 6px var(--success)); }
   .health.bad .icon { color: var(--danger);  filter: drop-shadow(0 0 6px var(--danger)); }
+
+  /* ── update status icon ── */
+  .update-health-icon {
+    display: block; height: 18px; aspect-ratio: 1;
+    background-color: var(--neutral);
+    -webkit-mask-image: url('../../assets/svg/icons/icon_download.svg');
+    -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center;
+    transition: background-color .25s, filter .25s;
+  }
+  /* downloading: orange + spinning refresh */
+  .update-health.downloading .update-health-icon {
+    background-color: var(--primary);
+    -webkit-mask-image: url('../../assets/svg/icons/icon_refresh.svg');
+    animation: updateSpin .9s linear infinite;
+  }
+  /* ready: green glow + download arrow */
+  .update-health.ready { cursor: pointer; }
+  .update-health.ready .update-health-icon {
+    background-color: var(--success);
+    filter: drop-shadow(0 0 5px var(--success));
+  }
+  @keyframes updateSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
   .health::after {
     content: attr(data-tooltip);
     position: absolute; top: calc(100% + 7px); right: 0;
@@ -1387,6 +1410,35 @@
     align-items: flex-start !important;
   }
   .adp-head-text { flex: 1; min-width: 0; }
+  /* TD1S sensor button — sits between the title and the close button.
+     The mask-image reuses the same icon_td1s.svg asset as the sidebar
+     health icon. Green glow when the sensor is connected. */
+  .adp-td1s-btn {
+    align-self: center;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: 8px;
+    cursor: pointer; padding: 4px 6px;
+    transition: background .12s;
+  }
+  .adp-td1s-btn:hover { background: rgba(255,255,255,.08); }
+  .adp-td1s-btn::before {
+    content: "";
+    display: block;
+    /* Only height is forced — width derives from the SVG viewBox ratio
+       (52 × 22) so the icon is never distorted regardless of future
+       SVG edits. Same visual size as the sidebar td1s-health-icon. */
+    height: 18px;
+    aspect-ratio: 52 / 22;
+    background-color: rgba(255,255,255,.35);
+    -webkit-mask-image: url('../../assets/svg/icons/icon_td1s.svg');
+    -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center;
+    transition: background-color .3s, filter .3s;
+  }
+  .adp-td1s-btn.td1s-connected::before {
+    background-color: var(--success);
+    filter: drop-shadow(0 0 5px var(--success));
+  }
   .adp-head-sub {
     margin-top: 3px;
     font-size: 12px;

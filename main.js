@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, session, nativeTheme } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs   = require('fs');
@@ -106,6 +106,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'Tiger Studio Manager',
+    hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -960,6 +961,9 @@ ipcMain.handle('db:downloadAndSaveLatestData', ()         => db.downloadAndSaveL
 app.whenReady().then(async () => {
   imgCacheDir = path.join(app.getPath('userData'), 'img_cache');
   fs.mkdirSync(imgCacheDir, { recursive: true });
+
+  // Force dark window chrome (title bar, traffic lights) on all platforms
+  nativeTheme.themeSource = 'dark';
 
   // macOS native "About Tiger Studio Manager" menu (Apple menu → About)
   if (process.platform === 'darwin') {

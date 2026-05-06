@@ -1,5 +1,37 @@
 # Tiger Studio Manager — Claude reference
 
+## ⚡ Token efficiency — read this first
+
+Every file read and grep costs tokens. Follow these rules on every task to keep context lean:
+
+| Do | Don't |
+|----|-------|
+| Read `CODEMAP.md` → jump to the exact line range | Read `inventory.js` from the top |
+| `grep -n "anchorFn"` → read only that range (`offset`/`limit`) | Read an entire 1000-line file to find one function |
+| Re-use content already in context this session | Re-read a file you read 2 messages ago |
+| `Read` with `offset`+`limit` to fetch the exact slice | `Read` without limits on files > 200 lines |
+| `Edit` with the minimal `old_string` that is unique | Rewrite whole sections when only 3 lines change |
+| Run `grep` + `Read` in parallel when targets are independent | Sequential read-then-grep round-trips |
+| Check `CODEMAP.md` line ranges before any `inventory.js` read | Blind grep across the 15 000-line file |
+
+**Workflow for any `inventory.js` change:**
+1. `CODEMAP.md` → find section + anchor function name
+2. `grep -n "anchorFn"` → get exact line number
+3. `Read offset=N limit=40` → confirm context, draft edit
+4. `Edit` minimal diff
+
+**Workflow for any CSS change:**
+1. Identify the right file from the file map (00-base → 70-detail-misc)
+2. `grep -n "selector"` in that file → get line
+3. `Read offset=N limit=20` → confirm, then `Edit`
+
+> Warn the user when context is getting large (> ~60 k tokens used) so they can start a new session before quality degrades.
+
+**Model fit — signal proactively, don't wait to be asked:**
+- **Tâche simple** (CSS tweak, i18n key, valeur à changer, question courte) → suggérer de passer sur **claude-haiku** ou **claude-sonnet** pour économiser. Formulation : *"Cette tâche est simple — tu peux la faire sur Sonnet/Haiku pour économiser des tokens."*
+- **Tâche complexe** (refacto multi-fichiers, nouveau système, débogage multi-couches, architecture) → si tu sens que le raisonnement manque de profondeur ou que tu te trompes, demander de passer sur **claude-opus**. Formulation : *"Cette tâche est complexe — passer sur Opus donnera un meilleur résultat."*
+- Ne pas attendre que l'utilisateur remarque un problème : signaler dès que le mismatch est évident.
+
 ## Stack
 Electron (no bundler) + vanilla HTML/CSS/JS. Entry: `main.js`. Renderer: `renderer/inventory.html` + modular CSS in `renderer/css/` + `renderer/inventory.js`. Preload bridge: `preload.js`.
 
@@ -525,3 +557,36 @@ Source: `scripts/check-i18n-consistency.mjs` + `.githooks/pre-commit`.
 - **CSS**: split across `renderer/css/00-base.css … 70-detail-misc.css` (loaded in numeric order). Add new rules in the section file that matches the feature — e.g. Snapmaker tweaks go in `50-snapmaker.css`, modal tweaks in `60-modals.css`. Asset URLs use `url('../../assets/svg/icons/…')` (two `..` because we're in `renderer/css/`). Scoped IDs (`#editAccountModalOverlay`, `#addAccountModalOverlay`, etc.) still apply where needed.
 - **displayName**: always read from Firestore `users/{uid}.displayName` (pseudo). Never use Firebase Auth `user.displayName` for UI display — it contains the Google real name.
 - **Admin fields**: `roles` and `Debug` in `users/{uid}` must only be written via Firebase Admin SDK / Cloud Function. The client toggle is a UX convenience for admins already authenticated.
+
+## CSS coding standards
+
+### SVG icons via `-webkit-mask-image`
+Always constrain **one dimension only** and derive the other from the SVG's intrinsic `viewBox` ratio using `aspect-ratio`. Never hard-code both `width` and `height` — doing so silently distorts the icon if the SVG is ever edited.
+
+```css
+/* ✅ correct — only height forced, width auto-derived */
+.my-icon {
+  height: 18px;
+  aspect-ratio: 52 / 22; /* viewBox="0 0 52 22" */
+  background-color: var(--muted);
+  -webkit-mask-image: url('../../assets/svg/icons/icon_foo.svg');
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
+
+/* ❌ wrong — both dimensions hard-coded, ratio broken if SVG changes */
+.my-icon { width: 40px; height: 18px; … }
+```
+
+To find the ratio: `head -1 assets/svg/icons/icon_foo.svg` → read `viewBox="0 0 W H"` → use `aspect-ratio: W / H`.
+
+### CSS specificity
+When a global rule (e.g. `input[type="text"]` — specificity 0,1,1) overrides a class rule (0,1,0), **double the class selector** to reach 0,2,0 rather than adding `!important`:
+```css
+/* beats input[type="text"] without !important */
+.my-sheet .my-input { background: transparent; }
+```
+
+### Hold-to-confirm buttons
+Use `setupHoldToConfirm(el, durationMs, callback)`. The element must contain a `<span class="hold-progress"></span>` child. Duration guideline: 1200 ms for reversible actions, 1500 ms for hard-destructive (delete/unlink).

@@ -116,6 +116,7 @@
         <div class="health td1s-health" id="td1sHealth" data-tooltip="TD1S: not detected"><span class="td1s-health-icon"></span></div>
         <div class="health scale-health" id="scaleHealth" data-tooltip="No scale connected"><span class="scale-health-icon">⚖</span></div>
         <div class="health" id="health" data-tooltip="Backend: idle"><span class="icon icon-cloud icon-20"></span></div>
+        <div class="health update-health hidden" id="updateStatusIcon" data-tooltip=""><span class="update-health-icon"></span></div>
       </div>
     </header>
 
@@ -1468,6 +1469,7 @@
     <div class="adp-head-text">
       <div class="panel-title" data-i18n="addProductTitle">Add product</div>
     </div>
+    <button class="adp-td1s-btn" id="adpTd1sBtn" type="button" title="TD1S Sensor"></button>
     <button class="modal-close" id="addProductClose" type="button" aria-label="Close">✕</button>
   </div>
 
@@ -1698,6 +1700,12 @@
         <span class="adp-label" data-i18n="addProductTdLbl">TD (HueForge)</span>
         <input id="adpTd" type="text" class="adp-input"
                value="" placeholder="0.1 – 100" inputmode="decimal" />
+      </label>
+
+      <label class="adp-row adp-row--full">
+        <span class="adp-label" data-i18n="customImgUrl">Product image URL</span>
+        <input id="adpImgUrl" type="url" class="adp-input"
+               value="" data-i18n-placeholder="customImgUrlPlaceholder" />
       </label>
 
     </section>

@@ -179,6 +179,9 @@
   "sectionPrint": "Paramètres d'impression",
   "sectionWeight": "Poids",
   "sectionLinks": "Documents & liens",
+  "customImgUrl": "URL de l'image produit",
+  "customImgUrlPlaceholder": "https://…",
+  "customImgUrlSave": "Enregistrer",
   "sectionContainer": "Contenant / Bobine",
   "sectionDetails": "Détails",
   "sectionRaw": "JSON brut — données bobine",
@@ -243,6 +246,7 @@
   "toolboxTitle": "Boîte à outils",
   "toolMeasureColor": "Scanner la couleur",
   "toolMeasureTd": "Scanner le TD",
+  "toolClearTd": "Effacer la valeur TD",
   "toolRemoveFromRack": "Retirer du rack",
   "agoNow": "à l'instant",
   "agoMin": {"one":"il y a {{n}}min","other":"il y a {{n}}min"},
@@ -665,5 +669,7 @@
   "ffgConnConnecting": "Connexion…",
   "ffgConnConnected": "Connectée",
   "ffgConnOffline": "Hors ligne",
-  "ffgConnReconnecting": "Reconnexion…"
+  "ffgConnReconnecting": "Reconnexion…",
+  "statCloud": "TigerTag Cloud",
+  "statCloudMini": "Cloud"
 }

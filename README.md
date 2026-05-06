@@ -16,6 +16,7 @@
 
 ## Features
 
+- 🖼️ **Custom product image (v1.4.13)** — DIY and TigerTag Cloud spools can now display a product image from any external URL. Set it from the detail panel (Edit button in the colour square, or toolbox when already set) or directly from the Add Product form. Broken URLs fall back to the colour placeholder automatically; the edit trigger reappears so you can fix the link.
 - 🌥️ **TigerTag Cloud — 100 % digital filaments, no chip required (v1.4.12)** — Create a fully-formed inventory entry without an RFID chip via the **Add Product** side panel. The doc gets a `CLOUD_<10-digit>` id and the new **TigerTag Cloud** tier badge (purple, distinct from TigerTag+ orange and TigerTag grey). Track filaments you bought before adopting TigerTag, wishlist rolls you plan to buy, or onboard family / studio members who don't own a reader yet. When you eventually program a chip, the doc is atomically renamed to its real 7-byte hex UID and every field you already entered is promoted in place — no second entry, no copy / paste
 - **Inventory management** — Real-time sync with your TigerTag inventory via Firebase/Firestore
 - **Table & Grid views** — Switch between a compact table or a visual card grid
@@ -50,6 +51,32 @@
 ---
 
 ## Changelog
+
+### v1.4.13 — 2026-05-07
+
+#### Custom product image for DIY & Cloud spools
+- **`url_img` + `url_img_user: true`** — DIY and TigerTag Cloud spools can now carry a product image from an external URL. The same `url_img` field used by TigerTag+ catalogue entries is reused; a companion boolean `url_img_user: true` flags the value as user-supplied so `isPlus` stays `false` and the spool keeps its DIY/Cloud identity. TigerTag+ spools are not editable (their image comes from the online catalogue).
+- **Edit pill in the colour square** — a unified pill bar sits at the bottom of the image/colour square. The edit icon (✏️) on the left is the trigger; tapping it expands the pill rightward to reveal the URL input and a confirm button (●) on the right. Keyboard: `Enter` = confirm, `Escape` = dismiss. The pill collapses back to just the icon when closed.
+- **Toolbox entry** — when a valid user image is already set, the edit action moves to the spool toolbox ("Edit image" row) and disappears from the colour square.
+- **Broken-link recovery** — an `onerror` handler detects failed image loads, swaps in the colour placeholder, and surfaces the edit trigger so the user can fix the URL without hunting for it.
+- **Add Product integration** — the ADP advanced section now has an image URL field; the value is written alongside `url_img_user: true` when the spool is created.
+
+#### Toolbox — Clear TD value
+- New split-button on the "Scan TD" toolbox row: a hold-to-confirm trash button (1 200 ms) appears to the right when `r.td != null`. Holding it deletes the `TD` field from Firestore via `FieldValue.delete()`. The row is hidden entirely when no TD is set.
+
+#### Add Product panel — TD1S sensor button
+- TD1S icon added to the ADP header (left of the close button). **Not connected** → opens the TD1S connect modal. **Connected** → glows green; scanning a filament auto-fills the colour HEX and TD value fields in the form. Button state syncs on `onStatus` events and on every `openAddProductPanel()` call.
+
+#### Stats bar — TigerTag Cloud counter
+- New purple stat tile ("TigerTag Cloud") always visible in the inventory header bar, showing the count of `CLOUD_` spools. DIY count now correctly excludes Cloud entries.
+
+#### Window chrome
+- **Dark title bar** — `nativeTheme.themeSource = 'dark'` forces the native macOS/Windows title bar to render in dark mode (dark background, white text, dark traffic lights).
+- **No window shadow** — `hasShadow: false` removes the OS-level drop shadow that was appearing along the right and bottom edges of the window.
+- **Update status icon** — a new icon sits to the right of the cloud health indicator. Hidden when up to date; orange + spinning during download; green + glow when a restart is ready. Tooltip on hover; clicking the green icon triggers the install.
+- **Panel shadow bleed fix** — `detail-panel`, `sfe-sheet` (Snapmaker filament edit) and `rp-side` (rack unranked panel) were leaking their `box-shadow` outside the viewport when off-screen. Shadow now applied only on `.open` / `.is-open` state.
+
+---
 
 ### v1.4.12 — 2026-05-06
 
