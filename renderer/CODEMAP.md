@@ -21,7 +21,8 @@ L4284-5072    App-level UI (resize, debug, settings, language, friends, …)
 L5073-5532    Storage / scales / 3D printers (subscribe + render printers grid)
 L5533-7216    Snapmaker Live integration (Moonraker WebSocket)
 L7288-8345    FlashForge Live integration (HTTP polling + filament edit)
-L8347-…       Add-printer flow (mDNS → port-scan → Add by IP → manual probe)
+L…            Creality Live integration (WebSocket polling port 9999)
+L…            Add-printer flow (mDNS → port-scan → Add by IP → manual probe)
 …             Storage view (rack rendering, drag-drop, masonry, rack-edit modal)
 …             Friend view (friend's inventory in main interface)
 …             Display-name setup + Friends system (requests, accept, blacklist)
@@ -306,6 +307,8 @@ Most common navigation tasks → start here:
 | Touch the FlashForge HTTP polling | `ffgConnect` L7390, `ffgPollOnce` L7460, `ffgMergeStatus` L7515 |
 | Touch the FlashForge live block UI | `renderFlashforgeLiveInner` L7700 |
 | Touch the FlashForge filament edit sheet | `openFlashforgeFilamentEdit` L7900, Apply at `$("ffgFilEditSave")` L8060 |
+| Touch the Creality WS layer | `creConnect`, `creMergeStatus` |
+| Touch the Creality live block UI | `renderCrealityLiveInner` |
 | Touch the bottom-sheet filament edit | `openSnapFilamentEdit` L5971, color grid L6244 |
 | Touch the Add-printer scan flow | mDNS L8030, port-scan L8131, one-click add L8241 |
 | Touch the Add by IP widget | L8634 |

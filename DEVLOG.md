@@ -5,6 +5,38 @@ Mis à jour en fin de chaque session Claude.
 
 ---
 
+## 2026-05-09 — v1.4.15
+
+### Demandes
+- Intégration Creality dans le panel 3D printers (live WebSocket port 9999)
+- Affichage temps réel : températures nozzle/bed/box, état impression, progression, couches, durée
+- CFS : grille de slots couleur si `cfsConnect=1` et `materialBoxs` présent
+- Caméra WebRTC (iframe, même pattern que Snapmaker) si `webrtcSupport=1`
+- Log des requêtes WS (même UI pause/clear/expand que Snapmaker/FlashForge)
+- Badge Online/Offline dans la grille et le side panel (ping WS léger 30 s TTL)
+
+### Fichiers modifiés
+| Fichier | Nature de la modification |
+|---------|--------------------------|
+| `renderer/inventory.js` | Section Creality (~300 lignes) : `_creConns`, `creKey`, `creIsOnline`, `crePingPrinter`, `creRefreshOnlineUI`, `renderCreOnlineBadge`, `creConnect`, `creOpenSocket`, `creScheduleReconnect`, `creDisconnect`, `creMergeStatus`, `creNotifyChange`, `renderCrealityLiveInner`, `creLogPush`, `renderCreLogInner` ; wiring dans `renderPrintersView`, `openPrinterDetail`, `closePrinterDetail`, `renderPrinterDetail` |
+| `renderer/CODEMAP.md` | Entrée Creality dans bird's-eye + cookbook |
+| `package.json` | version `1.4.14` → `1.4.15` |
+| `DEVLOG.md` | Ce fichier |
+
+### Notes techniques
+- **Protocole Creality** : WebSocket `ws://$ip:9999`, request/response (pas push) — on envoie `{"method":"get","params":{"boxsInfo":1,...}}` et on re-poll toutes les 2 s
+- **Probe live** : Ender-3 V4 à 192.168.40.106 répond en 7 845 octets JSON plat (tous les champs en root) — vérifié via socket Python
+- **`state`** : 0=idle, 1=printing, 2=finished — mappé vers les clés i18n `snapState_*` existantes
+- **Températures** : champs string dans le proto (`"25.880000"`) → `parseFloat()` systématique
+- **CFS** : `cfsConnect: 0` sur Ender-3 V4 mono-extrudeur → grille absente ; activée si `cfsConnect: 1` + `materialBoxs[]` non vide
+- **Caméra** : `webrtcSupport: 1` détecté sur l'Ender-3 V4 → iframe `http://$ip/webcam/webrtc` (identique Snapmaker/Crowsnest)
+- **Thumbnail** : `http://$ip/downloads/original/current_print_image.png` (chemin fixe Creality pendant/après impression)
+- **Helpers réutilisés** : `snapFmtDuration`, `snapFmtTempPair`, `SNAP_ICON_NOZZLE/BED/CLOCK`, `snapTextColor`, classes CSS `.snap-*`
+- **Ping** : WS léger (open → marquer online → close immédiatement), 30 s TTL, même pattern que Snapmaker HTTP ping
+- **Log buttons** : Pause/Clear/row-expand câblés dans le bloc `snapDelegated` de `renderPrinterDetail`
+
+---
+
 ## 2026-05-08 — v1.4.14
 
 ### Demandes

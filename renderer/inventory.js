@@ -7141,7 +7141,7 @@
   /* ── Brand metadata for display (label + accent color + connection hint) ── */
   const PRINTER_BRAND_META = {
     bambulab:   { label: "Bambu Lab",  accent: "#1ba84e", connection: "MQTT (LAN)" },
-    creality:   { label: "Creality",   accent: "#e22a2a", connection: "WebSocket / Klipper" },
+    creality:   { label: "Creality",   accent: "#e22a2a", connection: "WebSocket" },
     elegoo:     { label: "Elegoo",     accent: "#00a3e0", connection: "MQTT" },
     flashforge: { label: "FlashForge", accent: "#f39c12", connection: "HTTP" },
     snapmaker:  { label: "Snapmaker",  accent: "#9b59b6", connection: "WebSocket" }
@@ -7227,8 +7227,12 @@
       if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
       // Same for FlashForge — fires a 2.5s POST /detail probe.
       if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
+      // Same for Creality — opens a brief WS to port 9999.
+      if (p.brand === "creality"   && p.ip) crePingPrinter(p);
       const onlineBadge = p.brand === "flashforge"
         ? renderFfgOnlineBadge(p, "card")
+        : p.brand === "creality"
+        ? renderCreOnlineBadge(p, "card")
         : renderSnapOnlineBadge(p, "card");
       return `
         <div class="printer-card${p.isActive ? " printer-card--active" : ""}"
@@ -7422,6 +7426,10 @@
     if (printer.brand === "flashforge" && printer.ip) {
       ffgConnect(printer);
     }
+    // Creality — open the WebSocket on port 9999 and start 2 s polling.
+    if (printer.brand === "creality" && printer.ip) {
+      creConnect(printer);
+    }
   }
   function closePrinterDetail() {
     // If the filament-edit bottom-sheet is open over this side-panel,
@@ -7455,6 +7463,10 @@
     // FlashForge — same lifecycle: stop the polling loop on close.
     if (_activePrinter?.brand === "flashforge") {
       ffgDisconnect(ffgKey(_activePrinter));
+    }
+    // Creality — tear down the WebSocket and the 2 s poll interval.
+    if (_activePrinter?.brand === "creality") {
+      creDisconnect(creKey(_activePrinter));
     }
     _activePrinter = null;
   }
@@ -8780,6 +8792,10 @@
     const snapConn = (p.brand === "snapmaker") ? _snapConns.get(snapKey(p)) : null;
     const showSnapCam  = !!(snapConn && snapConn.status === "connected" && snapConn.ip);
 
+    // Creality — WebRTC camera via Crowsnest (same URL pattern as Snapmaker).
+    const creConn = (p.brand === "creality") ? _creConns.get(creKey(p)) : null;
+    const showCreCam  = !!(creConn && creConn.status === "connected" && creConn.data.webrtcSupport && creConn.ip);
+
     // FlashForge — MJPEG stream URL pulled out of /detail. Only show
     // the banner when the printer reports a usable URL AND the camera
     // is enabled (some models report the URL with the camera disabled
@@ -8796,7 +8812,7 @@
       : ffgCamUrlRaw;
     const showFfgCam = !!(ffgCamUrl && ffgCamEnabled && ffgConn?.status === "connected");
 
-    const showCam = showSnapCam || showFfgCam;
+    const showCam = showSnapCam || showFfgCam || showCreCam;
 
     // Snapmaker uses a WebRTC player page exposed by Crowsnest — iframe
     // load. FlashForge exposes a raw MJPEG stream URL — direct <img>.
@@ -8805,6 +8821,15 @@
       camBannerHtml = `
         <div class="pp-cam-full">
           <iframe class="snap-camera-frame" src="${esc(`http://${snapConn.ip}/webcam/webrtc`)}"
+                  sandbox="allow-scripts allow-same-origin"
+                  loading="lazy" referrerpolicy="no-referrer"
+                  allow="autoplay"></iframe>
+        </div>`;
+    } else if (showCreCam) {
+      // Creality WebRTC via Crowsnest — same iframe pattern as Snapmaker.
+      camBannerHtml = `
+        <div class="pp-cam-full">
+          <iframe class="snap-camera-frame" src="${esc(`http://${creConn.ip}/webcam/webrtc`)}"
                   sandbox="allow-scripts allow-same-origin"
                   loading="lazy" referrerpolicy="no-referrer"
                   allow="autoplay"></iframe>
@@ -8846,6 +8871,11 @@
       ? `<div id="ffgLive" class="snap-live-host">${renderFlashforgeLiveInner(p)}</div>`
       : "";
 
+    // Creality live data block — same reusable .snap-* CSS classes.
+    const creLiveHtml = (p.brand === "creality")
+      ? `<div id="creLive" class="snap-live-host">${renderCrealityLiveInner(p)}</div>`
+      : "";
+
     // FlashForge HTTP request log — same shape as the Snapmaker block
     // below, but driven by /detail polling. Surfaces every outgoing
     // POST + the printer's response so the user can pinpoint where the
@@ -8878,6 +8908,35 @@
                </button>
              </div>
              <div id="ffgLog">${renderFlashforgeLogInner(p)}</div>
+           </div>
+         </section>`
+      : "";
+
+    // Creality WS request log — same collapsible section shape.
+    const isCrePaused   = !!(creConn?.logPaused);
+    const creLogExpanded = !!(creConn?.logExpanded);
+    const creLogHtml = (p.brand === "creality")
+      ? `<section class="pp-section pp-section--collapsible snap-log-section" data-collapsed="${creLogExpanded ? "false" : "true"}">
+           <button class="pp-section-head pp-section-head--btn" type="button">
+             <span>${esc(t("snapLogTitle"))}
+                   <span class="snap-log-count" id="creLogCount">${(creConn?.log?.length) || 0}</span>
+                   ${isCrePaused ? `<span class="snap-log-paused-tag" id="creLogPausedTag">${esc(t("snapLogPaused"))}</span>` : ""}
+             </span>
+             <span class="pp-chev icon icon-chevron-r icon-14"></span>
+           </button>
+           <div class="pp-section-body">
+             <div class="snap-log-toolbar">
+               <button type="button" class="snap-log-btn snap-log-btn--pause${isCrePaused ? " is-paused" : ""}" id="creLogPauseBtn"
+                       data-paused="${isCrePaused ? "true" : "false"}">
+                 <span class="icon ${isCrePaused ? "icon-play" : "icon-pause"} icon-13"></span>
+                 <span class="label">${esc(t(isCrePaused ? "snapLogResume" : "snapLogPause"))}</span>
+               </button>
+               <button type="button" class="snap-log-btn" id="creLogClearBtn">
+                 <span class="icon icon-trash icon-13"></span>
+                 <span>${esc(t("snapLogClear"))}</span>
+               </button>
+             </div>
+             <div id="creLog">${renderCreLogInner(p)}</div>
            </div>
          </section>`
       : "";
@@ -8948,6 +9007,8 @@
     if (statusEl) {
       statusEl.innerHTML = (p.brand === "flashforge")
         ? renderFfgOnlineBadge(p, "side")
+        : (p.brand === "creality")
+        ? renderCreOnlineBadge(p, "side")
         : renderSnapOnlineBadge(p, "side");
     }
 
@@ -8956,6 +9017,7 @@
     // updates as soon as the side card opens.
     if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
     if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
+    if (p.brand === "creality"   && p.ip) crePingPrinter(p);
 
     // Tear down any previous FlashForge MJPEG `<img>` BEFORE we wipe
     // the panel body. Setting innerHTML drops the old element, but
@@ -8974,6 +9036,7 @@
 
       ${snapLiveHtml}
       ${ffgLiveHtml}
+      ${creLiveHtml}
 
       ${state.debugEnabled ? `
       <section class="pp-section pp-section--collapsible" data-collapsed="true">
@@ -8993,7 +9056,8 @@
       </section>
 
       ${snapLogHtml}
-      ${ffgLogHtml}` : ""}`;
+      ${ffgLogHtml}
+      ${creLogHtml}` : ""}`;
 
     // Wire interactions
     const body = $("printerPanelBody");
@@ -9227,6 +9291,39 @@
           if (countEl) countEl.textContent = "0";
           return;
         }
+        // Creality — Pause / Resume log.
+        if (e.target.closest("#creLogPauseBtn")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter) return;
+          const conn = _creConns.get(creKey(_activePrinter));
+          if (!conn) return;
+          conn.logPaused = !conn.logPaused;
+          const btn = $("creLogPauseBtn");
+          if (btn) {
+            btn.dataset.paused = conn.logPaused ? "true" : "false";
+            btn.classList.toggle("is-paused", conn.logPaused);
+            const icon  = btn.querySelector(".icon");
+            const label = btn.querySelector(".label");
+            if (icon)  icon.className  = `icon ${conn.logPaused ? "icon-play" : "icon-pause"} icon-13`;
+            if (label) label.textContent = t(conn.logPaused ? "snapLogResume" : "snapLogPause");
+          }
+          return;
+        }
+        // Creality — Clear log buffer.
+        if (e.target.closest("#creLogClearBtn")) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter) return;
+          const conn = _creConns.get(creKey(_activePrinter));
+          if (!conn) return;
+          conn.log = [];
+          const host = $("creLog");
+          if (host) host.innerHTML = renderCreLogInner(_activePrinter);
+          const countEl = $("creLogCount");
+          if (countEl) countEl.textContent = "0";
+          return;
+        }
         // Copy button inside an expanded row — copies the pretty JSON.
         const copyBtn = e.target.closest(".snap-log-detail-copy");
         if (copyBtn) {
@@ -9253,6 +9350,8 @@
           if (!rowEl || !_activePrinter) return;
           const conn = (_activePrinter.brand === "flashforge")
             ? _ffgConns.get(ffgKey(_activePrinter))
+            : (_activePrinter.brand === "creality")
+            ? _creConns.get(creKey(_activePrinter))
             : _snapConns.get(snapKey(_activePrinter));
           const idx = parseInt(rowEl.dataset.logIdx || "-1", 10);
           if (conn?.log?.[idx]) conn.log[idx].expanded = !conn.log[idx].expanded;
@@ -10787,6 +10886,463 @@
   });
 
   /* ── End FlashForge HTTP integration ─────────────────────────── */
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Creality Live integration (WebSocket polling on port 9999)
+     ══════════════════════════════════════════════════════════════════════
+     Ported from the Flutter `creality_websocket_page.dart`.
+     Creality K-series / Ender-3 V4 (and similar) expose a WebSocket on
+     port 9999. Unlike Moonraker (push subscriptions) or FlashForge (HTTP
+     poll), this protocol is request/response over a persistent socket:
+       → {"method":"get","params":{"boxsInfo":1,"boxConfig":1,"reqGcodeFile":1,"reqGcodeList":1}}
+       ← flat JSON object with all printer state fields at root level
+     We keep the socket open and re-send the query every 2 s.
+     Print state: 0 = idle, 1 = printing, 2 = finished.
+     CFS slots are in `materialBoxs` (absent on single-extruder models).
+     ══════════════════════════════════════════════════════════════════════ */
+
+  // Per-printer live state. Keyed by `${brand}:${id}` (same as snap/ffg).
+  const _creConns = new Map();
+  // Reachability cache for the Online/Offline grid dot (30 s TTL).
+  const _crePings = new Map(); // key -> { online: bool|null, lastChecked: number }
+
+  // Reusable poll payload — sent on open and every 2 s to get updated state.
+  const CRE_POLL_QUERY = JSON.stringify({
+    method: "get",
+    params: { boxsInfo: 1, boxConfig: 1, reqGcodeFile: 1, reqGcodeList: 1 }
+  });
+
+  function creKey(p) { return `${p.brand}:${p.id}`; }
+
+  // Authoritative "is this Creality printer reachable?" reading.
+  // Prefers live WebSocket state; falls back to the HTTP ping cache.
+  function creIsOnline(printer) {
+    if (printer?.brand !== "creality") return null;
+    const k = creKey(printer);
+    const conn = _creConns.get(k);
+    if (conn) return conn.status === "connected";
+    const ping = _crePings.get(k);
+    return ping ? ping.online : null;
+  }
+
+  // Quick reachability probe — opens a WS, marks online on open, then
+  // closes it. 2 s timeout. Used for the grid card dot when no live
+  // connection is active (panel closed).
+  async function crePingPrinter(printer) {
+    if (!printer || printer.brand !== "creality" || !printer.ip) return;
+    const k = creKey(printer);
+    const cached = _crePings.get(k);
+    const now = Date.now();
+    if (cached && now - cached.lastChecked < 30_000) return;
+    _crePings.set(k, { online: cached?.online ?? null, lastChecked: now });
+    let resolved = false;
+    const done = (online) => {
+      if (resolved) return; resolved = true;
+      _crePings.set(k, { online, lastChecked: now });
+      creRefreshOnlineUI(k);
+    };
+    let ws;
+    try { ws = new WebSocket(`ws://${printer.ip}:9999`); } catch { done(false); return; }
+    const tm = setTimeout(() => { done(false); try { ws.close(); } catch {} }, 2000);
+    ws.addEventListener("open",  () => { done(true);  clearTimeout(tm); try { ws.close(); } catch {} });
+    ws.addEventListener("error", () => { done(false); clearTimeout(tm); });
+    ws.addEventListener("close", () => { if (!resolved) { done(false); clearTimeout(tm); } });
+  }
+
+  function crePingAllPrinters() {
+    for (const p of state.printers) {
+      if (p.brand === "creality" && p.ip) crePingPrinter(p);
+    }
+  }
+  setInterval(crePingAllPrinters, 30_000);
+
+  // Surgical DOM update — replace just the online dot without full re-render.
+  function creRefreshOnlineUI(key) {
+    document.querySelectorAll(`[data-printer-key="${key}"] .printer-online`).forEach(el => {
+      const p = state.printers.find(x => creKey(x) === key);
+      el.outerHTML = renderCreOnlineBadge(p, "card");
+    });
+    if (_activePrinter && creKey(_activePrinter) === key) {
+      const host = $("ppOnlineRow");
+      if (host) host.outerHTML = renderCreOnlineBadge(_activePrinter, "side");
+    }
+  }
+
+  // Online badge HTML — mirrors renderSnapOnlineBadge in shape.
+  function renderCreOnlineBadge(printer, where) {
+    if (!printer || printer.brand !== "creality") return "";
+    const online = creIsOnline(printer);
+    const cls = online === true ? "is-online" : (online === false ? "is-offline" : "is-checking");
+    const lbl = online === true  ? t("snapStatusOnline")
+              : online === false ? t("snapStatusOffline")
+              :                    t("snapStatusConnecting");
+    const id  = where === "side" ? ` id="ppOnlineRow"` : "";
+    return `<span class="printer-online printer-online--${esc(where)} ${cls}"${id}>
+              <span class="printer-online-dot"></span>
+              <span class="printer-online-lbl">${esc(lbl)}</span>
+            </span>`;
+  }
+
+  // ── WebSocket lifecycle ──────────────────────────────────────────────
+
+  function creConnect(printer) {
+    const key = creKey(printer);
+    const existing = _creConns.get(key);
+    if (existing && existing.ws &&
+        (existing.ws.readyState === WebSocket.OPEN ||
+         existing.ws.readyState === WebSocket.CONNECTING)) {
+      if (existing.ip === printer.ip) return; // already connected to same IP
+      creDisconnect(key);
+    }
+    const conn = {
+      ip:         printer.ip,
+      key,
+      ws:         null,
+      status:     "connecting", // "connecting" | "connected" | "offline" | "error"
+      lastError:  null,
+      retry:      0,
+      retryTimer: null,
+      pollTimer:  null,
+      log:        [],
+      logPaused:  false,
+      logExpanded: false,
+      data: {
+        nozzleTemp:    null,  nozzleTarget: null,
+        bedTemp:       null,  bedTarget:    null,
+        boxTemp:       null,
+        state:         0,     // 0=idle, 1=printing, 2=finished
+        printProgress: 0,     // 0-100
+        printFileName: null,
+        printJobTime:  0,     // elapsed seconds
+        printLeftTime: 0,     // remaining seconds
+        layer:         0,
+        totalLayer:    0,
+        cfsConnect:    0,
+        materialBoxs:  [],    // CFS/extruder slots (empty on single-head models)
+        hostname:      null,
+        webrtcSupport: 0,
+        video:         0
+      }
+    };
+    _creConns.set(key, conn);
+    creOpenSocket(conn);
+  }
+
+  function creOpenSocket(conn) {
+    if (!conn.ip) { conn.status = "error"; conn.lastError = "no IP"; return; }
+    let ws;
+    try { ws = new WebSocket(`ws://${conn.ip}:9999`); }
+    catch (e) {
+      conn.status = "error"; conn.lastError = String(e?.message || e);
+      creNotifyChange(conn); creScheduleReconnect(conn); return;
+    }
+    conn.ws = ws;
+    conn.status = "connecting";
+    creNotifyChange(conn);
+
+    const sendQuery = () => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      creLogPush(conn, "→", CRE_POLL_QUERY);
+      ws.send(CRE_POLL_QUERY);
+    };
+
+    ws.addEventListener("open", () => {
+      conn.status = "connected"; conn.lastError = null; conn.retry = 0;
+      sendQuery();
+      // Creality WS is request/response — poll every 2 s for live updates.
+      conn.pollTimer = setInterval(sendQuery, 2000);
+      creNotifyChange(conn, /*statusChanged*/ true);
+    });
+
+    ws.addEventListener("message", ev => {
+      creLogPush(conn, "←", ev.data);
+      let obj; try { obj = JSON.parse(ev.data); } catch { return; }
+      creMergeStatus(conn, obj);
+      creNotifyChange(conn);
+    });
+
+    ws.addEventListener("close", () => {
+      clearInterval(conn.pollTimer); conn.pollTimer = null;
+      conn.status = "offline";
+      creNotifyChange(conn, /*statusChanged*/ true);
+      creScheduleReconnect(conn);
+    });
+
+    ws.addEventListener("error", () => { conn.lastError = "websocket error"; });
+  }
+
+  function creScheduleReconnect(conn) {
+    if (conn.retryTimer) return;
+    if (!_creConns.has(conn.key)) return; // disposed
+    conn.retry = Math.min(conn.retry + 1, 5);
+    const delay = Math.min(2000 * (1 << (conn.retry - 1)), 30000);
+    conn.retryTimer = setTimeout(() => {
+      conn.retryTimer = null;
+      if (!_creConns.has(conn.key)) return;
+      creOpenSocket(conn);
+    }, delay);
+  }
+
+  function creDisconnect(key) {
+    const conn = _creConns.get(key);
+    if (!conn) return;
+    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = null; }
+    clearInterval(conn.pollTimer); conn.pollTimer = null;
+    if (conn.ws) { try { conn.ws.close(); } catch {} conn.ws = null; }
+    _creConns.delete(key);
+  }
+
+  // ── Status merger ─────────────────────────────────────────────────────
+  // Creality response is a flat JSON object at root level (no nesting).
+
+  function creMergeStatus(conn, obj) {
+    const d = conn.data;
+    if (typeof obj.nozzleTemp    !== "undefined") d.nozzleTemp    = parseFloat(obj.nozzleTemp)    || 0;
+    if (typeof obj.targetNozzleTemp !== "undefined") d.nozzleTarget = Number(obj.targetNozzleTemp) || 0;
+    if (typeof obj.bedTemp0      !== "undefined") d.bedTemp       = parseFloat(obj.bedTemp0)      || 0;
+    if (typeof obj.targetBedTemp0 !== "undefined") d.bedTarget    = Number(obj.targetBedTemp0)    || 0;
+    if (typeof obj.boxTemp       !== "undefined") d.boxTemp       = parseFloat(obj.boxTemp)       || 0;
+    if (typeof obj.state         !== "undefined") d.state         = Number(obj.state);
+    if (typeof obj.printProgress !== "undefined") d.printProgress = Number(obj.printProgress)     || 0;
+    if (typeof obj.printFileName !== "undefined") {
+      // Strip full filesystem path — keep basename only.
+      const raw = String(obj.printFileName || "");
+      d.printFileName = raw ? raw.split("/").pop() : null;
+    }
+    if (typeof obj.printJobTime  !== "undefined") d.printJobTime  = Number(obj.printJobTime)  || 0;
+    if (typeof obj.printLeftTime !== "undefined") d.printLeftTime = Number(obj.printLeftTime) || 0;
+    if (typeof obj.layer         !== "undefined") d.layer         = Number(obj.layer)         || 0;
+    if (typeof obj.TotalLayer    !== "undefined") d.totalLayer    = Number(obj.TotalLayer)    || 0;
+    if (typeof obj.cfsConnect    !== "undefined") d.cfsConnect    = Number(obj.cfsConnect)    || 0;
+    if (Array.isArray(obj.materialBoxs))          d.materialBoxs  = obj.materialBoxs;
+    if (typeof obj.hostname      !== "undefined") d.hostname      = String(obj.hostname       || "");
+    if (typeof obj.webrtcSupport !== "undefined") d.webrtcSupport = Number(obj.webrtcSupport) || 0;
+    if (typeof obj.video         !== "undefined") d.video         = Number(obj.video)         || 0;
+  }
+
+  // ── rAF-coalesced re-renders ─────────────────────────────────────────
+
+  let _creRafPending   = false;
+  let _creStatusChanged = false;
+
+  function creNotifyChange(conn, statusChanged = false) {
+    if (statusChanged) _creStatusChanged = true;
+    if (_creRafPending) return;
+    _creRafPending = true;
+    requestAnimationFrame(() => {
+      _creRafPending = false;
+      const sc = _creStatusChanged; _creStatusChanged = false;
+      if (!_activePrinter || _activePrinter.brand !== "creality") return;
+      if (creKey(_activePrinter) !== conn.key) return;
+      if (sc) {
+        renderPrinterDetail();
+      } else {
+        const host = $("creLive");
+        if (host) host.innerHTML = renderCrealityLiveInner(_activePrinter);
+        const logHost = $("creLog");
+        if (logHost) logHost.innerHTML = renderCreLogInner(_activePrinter);
+      }
+      // Keep the ping cache in sync with the live WS state.
+      _crePings.set(conn.key, { online: conn.status === "connected", lastChecked: Date.now() });
+      creRefreshOnlineUI(conn.key);
+    });
+  }
+
+  // ── Live block render ─────────────────────────────────────────────────
+
+  function creStateLabel(state) {
+    if (state === 1) return t("snapState_printing") || "Printing";
+    if (state === 2) return t("snapState_complete")  || "Finished";
+    return t("snapState_standby") || "Idle";
+  }
+
+  function renderCrealityLiveInner(p) {
+    const conn = _creConns.get(creKey(p));
+    if (!conn) return `<div class="snap-connecting">${esc(t("snapConnecting"))}</div>`;
+    const d = conn.data;
+
+    // Connection header
+    const statusLabel = {
+      connected:  t("snapStatusOnline"),
+      connecting: t("snapStatusConnecting"),
+      offline:    t("snapStatusOffline"),
+      error:      t("snapStatusOffline")
+    }[conn.status] || conn.status;
+    const statusCls = conn.status === "connected" ? "snap-head-status--online" : "snap-head-status--offline";
+    const headHtml = `
+      <div class="snap-head">
+        <div class="snap-head-info">
+          ${d.hostname ? `<div class="snap-head-hostname">${esc(d.hostname)}</div>` : ""}
+          <div class="snap-head-status ${esc(statusCls)}">${esc(statusLabel)}</div>
+        </div>
+      </div>`;
+
+    const isConnected = conn.status === "connected";
+
+    // ── Print-job card (only when connected) ────────────────────────
+    let jobHtml = "";
+    if (isConnected) {
+      const isPrinting = d.state === 1;
+      const isFinished = d.state === 2;
+      const pct       = isPrinting ? Math.round(d.printProgress) : (isFinished ? 100 : 0);
+      const leafName  = d.printFileName || "";
+      const stateLabel = creStateLabel(d.state);
+      const fallbackImg = printerImageUrlFor(p.brand, p.printerModelId)
+                       || printerImageUrl(findPrinterModel(p.brand, "0"));
+      // Creality saves a snapshot at this fixed path during/after the print.
+      const thumbUrl  = (d.printFileName && (isPrinting || isFinished))
+        ? `http://${conn.ip}/downloads/original/current_print_image.png`
+        : (fallbackImg || "");
+      const layerText = isPrinting && d.totalLayer ? `${d.layer}/${d.totalLayer}` : "";
+      const durationText = isPrinting ? snapFmtDuration(d.printJobTime)  : "";
+      const leftText     = isPrinting && d.printLeftTime > 0 ? snapFmtDuration(d.printLeftTime) : "";
+      const jobStateCls  = isPrinting ? "printing" : (isFinished ? "complete" : "standby");
+      const nameLine = leafName
+        ? `<div class="snap-job-name" title="${esc(leafName)}">${esc(leafName)}</div>`
+        : `<div class="snap-job-name snap-job-name--idle">${esc(t("snapJobNoActive") || "—")}</div>`;
+      jobHtml = `
+        <div class="snap-job snap-job--${esc(jobStateCls)}">
+          <div class="snap-job-thumb"${thumbUrl ? ` style="background-image:url('${esc(thumbUrl)}')"` : ""}></div>
+          <div class="snap-job-info">
+            ${nameLine}
+            <div class="snap-job-stats">
+              <span class="snap-job-pct">${pct}%</span>
+              ${durationText ? `<span class="snap-job-time">${SNAP_ICON_CLOCK}<span>${esc(durationText)}</span></span>` : ""}
+              ${leftText     ? `<span class="snap-job-time snap-job-time--left">⏳ <span>${esc(leftText)}</span></span>` : ""}
+            </div>
+            <div class="snap-job-bar"><span style="width:${pct}%"></span></div>
+            <div class="snap-job-foot">
+              <span class="snap-job-state snap-job-state--${esc(jobStateCls)}">${esc(stateLabel)}</span>
+              ${layerText ? `<span class="snap-job-layers">${esc(layerText)}</span>` : ""}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ── Temperature row ──────────────────────────────────────────────
+    const tempPills = [];
+    if (typeof d.nozzleTemp === "number") {
+      const heating = d.nozzleTarget > 0 && d.nozzleTemp < d.nozzleTarget - 1;
+      tempPills.push(`
+        <div class="snap-temp${heating ? " snap-temp--heating" : ""}">
+          ${SNAP_ICON_NOZZLE}
+          <span class="snap-temp-val">${esc(snapFmtTempPair(d.nozzleTemp, d.nozzleTarget))}</span>
+        </div>`);
+    }
+    if (typeof d.bedTemp === "number") {
+      const heating = d.bedTarget > 0 && d.bedTemp < d.bedTarget - 1;
+      tempPills.push(`
+        <div class="snap-temp snap-temp--bed${heating ? " snap-temp--heating" : ""}">
+          ${SNAP_ICON_BED}
+          <span class="snap-temp-val">${esc(snapFmtTempPair(d.bedTemp, d.bedTarget))}</span>
+        </div>`);
+    }
+    if (d.boxTemp > 0) {
+      tempPills.push(`
+        <div class="snap-temp snap-temp--box">
+          ${SNAP_ICON_BED}
+          <span class="snap-temp-val snap-temp-val--box">${esc(Math.round(d.boxTemp) + "°C")} 📦</span>
+        </div>`);
+    }
+    const tempsHtml = tempPills.length
+      ? `<section class="snap-block">
+           <h4 class="snap-block-title">${esc(t("snapTemperatureTitle"))}</h4>
+           <div class="snap-temps">${tempPills.join("")}</div>
+         </section>`
+      : "";
+
+    // ── CFS material slots ────────────────────────────────────────────
+    // Rendered only when the CFS unit is connected (cfsConnect=1) and
+    // the printer reports at least one materialBoxs entry.
+    let cfsHtml = "";
+    if (d.cfsConnect && d.materialBoxs && d.materialBoxs.length) {
+      const slots = [];
+      for (const box of d.materialBoxs) {
+        const materials = Array.isArray(box.materials) ? box.materials : [];
+        for (const mat of materials) {
+          const raw    = String(mat.color || "").replace(/^#/, "");
+          const color  = raw.length === 6 ? `#${raw}` : null;
+          const type   = mat.type   || "—";
+          const vendor = mat.vendor || "—";
+          const active = mat.state === 1;
+          const fg     = color ? snapTextColor(color) : "var(--text)";
+          slots.push(`
+            <div class="snap-fil${active ? " snap-fil--active" : ""}">
+              <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
+                   style="${color ? `background:${esc(color)};color:${esc(fg)};border-color:${esc(color)};` : ""}">
+                <span class="snap-fil-main">${esc(type)}</span>
+              </div>
+              <div class="snap-fil-meta">
+                <div class="snap-fil-vendor">${esc(vendor)}</div>
+              </div>
+            </div>`);
+        }
+      }
+      if (slots.length) {
+        cfsHtml = `
+          <section class="snap-block">
+            <h4 class="snap-block-title">${esc(t("snapFilamentTitle"))}</h4>
+            <div class="snap-fil-grid">${slots.join("")}</div>
+          </section>`;
+      }
+    }
+
+    return `${headHtml}${jobHtml}${tempsHtml}${cfsHtml}`;
+  }
+
+  // ── Request log ──────────────────────────────────────────────────────
+  // Per-session ring buffer mirroring the Snapmaker log.
+
+  const CRE_LOG_MAX = 100;
+
+  function creLogPush(conn, dir, raw) {
+    if (conn.logPaused) return;
+    if (!conn.log) conn.log = [];
+    let summary = "";
+    try {
+      const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (obj?.method) summary = obj.method;
+      else {
+        const keys = Object.keys(obj).slice(0, 4);
+        summary = keys.join(", ");
+      }
+    } catch { summary = "(non-json)"; }
+    const ts = new Date().toLocaleTimeString([], { hour12: false });
+    const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
+    conn.log.push({ dir, ts, summary, raw: rawStr });
+    if (conn.log.length > CRE_LOG_MAX) conn.log.splice(0, conn.log.length - CRE_LOG_MAX);
+  }
+
+  function renderCreLogInner(p) {
+    const conn = _creConns.get(creKey(p));
+    const log = conn?.log || [];
+    if (!log.length) return `<div class="snap-log-empty">${esc(t("snapLogEmpty"))}</div>`;
+    const rows = log.slice().reverse().map((e, i) => {
+      let pretty = e.raw;
+      try { pretty = JSON.stringify(JSON.parse(e.raw), null, 2); } catch {}
+      const expanded = !!e.expanded;
+      return `
+        <div class="snap-log-row snap-log-row--${e.dir === "→" ? "out" : "in"}${expanded ? " snap-log-row--expanded" : ""}"
+             data-log-idx="${log.length - 1 - i}">
+          <button type="button" class="snap-log-row-head" data-row-toggle="1">
+            <span class="snap-log-dir">${esc(e.dir)}</span>
+            <span class="snap-log-ts">${esc(e.ts)}</span>
+            <span class="snap-log-summary">${esc(e.summary)}</span>
+            <span class="snap-log-row-chev icon icon-chevron-r icon-13"></span>
+          </button>
+          <div class="snap-log-detail"${expanded ? "" : " hidden"}>
+            <button type="button" class="snap-log-detail-copy" data-copy="${esc(pretty)}" title="${esc(t("copyLabel"))}">
+              <span class="icon icon-copy icon-13"></span>
+              <span>${esc(t("copyLabel"))}</span>
+            </button>
+            <pre class="snap-log-detail-pre">${esc(pretty)}</pre>
+          </div>
+        </div>`;
+    }).join("");
+    return `<div class="snap-log">${rows}</div>`;
+  }
+
+  /* ── End Creality WebSocket integration ─────────────────────────── */
 
   /* ── Add a printer — two-step flow ─────────────────────────────────────
      Step 1 — brand picker: a small modal listing the 5 supported brands
