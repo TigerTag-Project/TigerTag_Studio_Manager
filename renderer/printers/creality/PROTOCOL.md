@@ -1,186 +1,629 @@
-# Creality — Rétro-ingénierie & état de l'intégration
+# Protocole Creality LAN — Référence complète pour implémentation Node.js/Electron
 
-> **Matériel testé** : Ender-3 V4 (`model: "F009"`) @ `192.168.40.106`
-> OpenWrt 21.02-SNAPSHOT · armv7l · Klipper + Moonraker + serveur Creality propriétaire
->
-> **Sources croisées** :
-> - Session SSH live sur l'imprimante (mai 2026)
-> - Code Flutter source : `lib/screens/creality_websocket_page.dart`
-> - Intégration Home Assistant : `github.com/3dg1luk43/ha_creality_ws`
->
-> **Légende** :
-> ✅ Exploité — implémenté et affiché dans l'UI Tiger Studio
-> 🔶 Capturé — reçu et stocké dans `conn.data`, pas encore affiché
-> ⬜ Connu — documenté, pas encore capturé
-> ❌ Non supporté / inconnu sur cette imprimante
+> Extrait à partir des sources Flutter : `creality_websocket_page.dart`, `creality_scan_printers.dart`, `creality_main.dart`, widgets `camera_card`, `temperature_card`, `filament_card`, `print_card`, `printer_settings_card`, `websocket_logs_card`, et `creality_printer_brand_adapter.dart`.
 
 ---
 
-## 1. Transport
+## 1. Transport principal — WebSocket
 
-| Propriété | Valeur |
+| Paramètre | Valeur |
 |-----------|--------|
-| Protocole | WebSocket (plain, pas de TLS) |
+| Protocole | `ws://` (texte, pas binaire) |
 | Port | **9999** |
-| URL | `ws://<ip>:9999` |
-| Auth | Aucune (réseau local) ou Basic via URL credentials |
-| Caméra | WebRTC port **8000** (HTML page avec signaling `/call/webrtc_local`) |
-| Moonraker | HTTP port **7125** (start print, delete file) |
-| Web-server propriétaire | HTTP port **80** (`/downloads/humbnail/<file>.png`) |
+| Chemin | `/` |
+| URI complète | `ws://<ip>:9999/` |
+| Format des frames | JSON texte (UTF-8) |
+| Direction | Bidirectionnel (push serveur + commandes client) |
 
-### Heartbeat — critique
+L'imprimante **pousse son état en continu** sans que le client ait besoin de demander explicitement. Les frames arrivent en rafale dans la première seconde après connexion.
 
-Le printer envoie `{"ModeCode":"heart_beat"}` périodiquement.
-On **doit** répondre avec la chaîne littérale `ok` (pas du JSON) sous peine de déconnexion silencieuse.
+### Authentification (optionnelle)
+
+Certains firmwares requièrent une authentification HTTP Basic sur le handshake WebSocket.
 
 ```
-Printer → Client : {"ModeCode":"heart_beat"}
-Client  → Printer: ok                          ← ASCII brut, PAS {"ok":true}
+Authorization: Basic base64("account:password")
+```
+
+- `account` et `password` sont configurables par l'utilisateur.
+- **Identifiants par défaut connus** : `root` / `creality_2025` (firmware LAN de certains modèles).
+- Si le champ est vide des deux côtés, aucun header n'est envoyé.
+
+```js
+// Node.js (ws library)
+const WebSocket = require('ws');
+
+const account = 'root';
+const password = 'creality_2025';
+const token = Buffer.from(`${account}:${password}`).toString('base64');
+
+const ws = new WebSocket('ws://192.168.1.100:9999/', {
+  headers: {
+    'Authorization': `Basic ${token}`
+  }
+});
+```
+
+Sans authentification :
+
+```js
+const ws = new WebSocket('ws://192.168.1.100:9999/');
 ```
 
 ---
 
-## 2. Format des messages
+## 2. Caméra — WebRTC via page HTML embarquée
 
-### Client → Printer : `get`
-```json
-{ "method": "get", "params": { "<paramName>": 1, ... } }
+| Paramètre | Valeur |
+|-----------|--------|
+| Port caméra | **8000** |
+| Protocole | HTTP |
+| Point d'entrée | `http://<ip>:8000/` |
+| Type de flux | WebRTC (page HTML native de l'imprimante) |
+| MJPEG direct | Non utilisé |
+
+La caméra Creality expose une **page HTML complète** qui se charge dans un WebView (ou dans un `<iframe>` / `<webview>` Electron). La page gère elle-même la signalisation WebRTC et l'affichage vidéo. Il n'y a pas d'API de signalisation JSON exposée côté client — l'imprimante agit comme son propre serveur WebRTC et présente une IHM web autonome.
+
+**En Electron** : utiliser `<webview>` ou `BrowserWindow` secondaire qui charge `http://<ip>:8000/`.
+
+```js
+// Electron renderer — ouverture caméra dans webview
+const cameraUrl = `http://${printerIp}:8000/`;
+document.getElementById('cameraWebview').src = cameraUrl;
 ```
-Plusieurs params dans la même trame OK.
 
-### Client → Printer : `set`
-```json
-{ "method": "set", "params": { "<commandName>": { ...payload } } }
+```html
+<!-- inventory.html -->
+<webview
+  id="cameraWebview"
+  src="about:blank"
+  allowpopups
+  webpreferences="allowRunningInsecureContent"
+  style="width:100%; aspect-ratio:16/9;">
+</webview>
 ```
 
-### Printer → Client : réponses
-Objets JSON plats (pas d'enveloppe, pas d'écho du `method`).
-Plusieurs réponses peuvent arriver en rafale suite à une seule requête.
-
-⚠️ Beaucoup de valeurs numériques arrivent en **strings JSON** (`"27.940000"`) — toujours parser avec `parseFloat()`.
+> **Remarque** : Le port 8000 est sondé lors de la découverte pour vérifier si la caméra est disponible, mais son statut n'influence pas la décision de connexion principale (port 9999 suffit).
 
 ---
 
-## 3. Paramètres `get` — usage et exemples de réponse
+## 3. Découverte réseau LAN
 
-### Stratégie d'envoi (Tiger Studio)
+### Algorithme de scan
 
-| Moment | Requête |
-|--------|---------|
-| Connexion WS (une seule fois) | `CRE_INIT_QUERY` — tous les params + `reqMaterials` + `getGcodeFileInfo2` |
-| Ouverture du file explorer | `CRE_QUERY_FILES` — `getGcodeFileInfo2` uniquement |
-| Après impression / suppression | `CRE_QUERY_FILES` — rafraîchir la liste |
+1. Construire la liste des IPs à sonder :
+   - Sous-réseaux dérivés des IPs d'imprimantes déjà connues.
+   - Sous-réseaux de seed fournis manuellement.
+   - IP Wi-Fi locale → dériver le `/24`.
+   - Sous-réseaux communs ajoutés systématiquement : `192.168.1.x` et `192.168.40.x`.
+   - Pour chaque sous-réseau : hôtes 1 à 254.
+2. Pour chaque IP de la liste (concurrence = 64) :
+   a. Sonder TCP port 9999 (timeout 650 ms).
+   b. Si fermé → ignorer.
+   c. Si ouvert → ouvrir WebSocket + lire frames (timeout 2,2 s).
+   d. Envoyer une requête `get printerInfo` immédiatement après connexion pour déclencher un payload d'identité.
+   e. Agréger les clés JSON reçues (top-level + `params`, `msg`, `data`, `result`).
+   f. Sonder TCP port 8000 (caméra) en parallèle.
+3. Valider qu'il s'agit d'une Creality (règle `isCrealityLike` ci-dessous).
 
-Le printer **pousse des updates tout seul** après `CRE_INIT_QUERY`. Pas de polling périodique.
+### Règle de validation `isCrealityLike`
+
+L'hôte est une Creality si **les deux conditions suivantes sont vraies** :
+
+**Condition A — Identité forte** (au moins l'une) :
+- La payload contient la clé `model`
+- La payload contient la clé `modelVersion`
+- La payload contient la clé `deviceSn`
+- Le hostname contient : `creality`, `k1`, `k2`, `ender`, `hi-`, `hi_` (insensible à la casse)
+
+**Condition B — Télémétrie Creality** (au moins l'une) :
+```
+printerStatus | printProgress | printJobTime | nozzleTemp | targetNozzleTemp
+bedTemp0 | bedTemp | targetBedTemp0 | targetBedTemp | boxTemp | chamberTemp
+boxsInfo | cfsConnected | retMaterials | lightSw | webrtcSupport | ModeCode
+curPosition | workingLayer | totalLayers | filename
+```
+
+Cette règle écarte les faux positifs (NAS, Nagios, domotique...) qui occupent parfois le port 9999.
+
+### Structure du résultat de scan
+
+```js
+{
+  ip: "192.168.1.42",
+  wsPortOpen: true,       // port 9999 ouvert
+  cameraPortOpen: true,   // port 8000 ouvert
+  jsonConfirmed: true,    // règle isCrealityLike validée
+  hostname: "Creality-K1",
+  model: "F009",          // code firmware (ex: F009 = Ender 3 V4)
+  modelVersion: "1.1.0.45",
+  deviceSn: "CR4CXX...",
+  account: "root",        // credential qui a fonctionné (null si sans auth)
+  password: "creality_2025"
+}
+```
+
+### Mapping modèle connu (code `model`)
+
+| Code `model` | Modèle |
+|-------------|--------|
+| `F009` | Ender 3 V4 (id interne `10`) |
+| `F022` | SparkX (id interne `11`) |
 
 ---
 
-### 3.1 `boxsInfo` ✅
+## 4. Séquence d'initialisation
 
-**Usage** : état complet du système de filament (extrudeur EXT + modules CFS).
-
-**Requête** :
-```json
-{ "method": "get", "params": { "boxsInfo": 1 } }
+```
+Client                                Imprimante
+  │                                       │
+  ├─── TCP connect :9999 ─────────────────►│
+  │                                       │
+  ├─── WS Upgrade (+ Authorization si besoin) ─►│
+  │                                       │
+  │◄── Frames push (état initial) ─────────┤
+  │    (nozzleTemp, bedTemp, printProgress…)│
+  │                                       │
+  ├─── {"method":"get","params":{          │
+  │      "printerInfo":1}} ───────────────►│
+  │                                       │
+  │◄── Payload enrichi (model, hostname…) ─┤
+  │                                       │
+  ├─── {"method":"get","params":{          │
+  │      "reqGcodeFile":1,                 │
+  │      "reqGcodeList":1,                 │
+  │      "boxsInfo":1,                     │
+  │      "boxConfig":1,                    │
+  │      "reqMaterials":1}} ──────────────►│
+  │                                       │
+  │◄── boxsInfo (filaments CFS) ───────────┤
+  │◄── boxConfig ──────────────────────────┤
+  │◄── retGcodeFile ───────────────────────┤
+  │◄── retGcodeList ───────────────────────┤
+  │◄── retMaterials (catalogue filaments) ─┤
+  │                                       │
+  │◄── Push continu (telemetry) ───────────┤
 ```
 
-**Réponse réelle** (Ender-3 V4 avec module CFS 4 slots) :
+### Code Node.js — connexion complète
+
+```js
+const WebSocket = require('ws');
+
+function connectCreality(ip, options = {}) {
+  const { account, password } = options;
+  const wsUrl = `ws://${ip}:9999/`;
+
+  const headers = {};
+  if (account && password) {
+    const token = Buffer.from(`${account}:${password}`).toString('base64');
+    headers['Authorization'] = `Basic ${token}`;
+  }
+
+  const ws = new WebSocket(wsUrl, { headers });
+  let state = {};
+
+  ws.on('open', () => {
+    console.log(`[Creality] Connecté à ${wsUrl}`);
+
+    // Étape 1 : demander l'identité de l'imprimante
+    ws.send(JSON.stringify({
+      method: 'get',
+      params: { printerInfo: 1 }
+    }));
+
+    // Étape 2 : demander filaments + fichiers G-code
+    ws.send(JSON.stringify({
+      method: 'get',
+      params: {
+        reqGcodeFile: 1,
+        reqGcodeList: 1,
+        boxsInfo: 1,
+        boxConfig: 1,
+        reqMaterials: 1
+      }
+    }));
+  });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      mergeState(state, msg);
+      // Notifier l'UI...
+    } catch (e) {
+      console.warn('[Creality] Frame non-JSON reçue:', data.toString().slice(0, 200));
+    }
+  });
+
+  ws.on('close', () => console.log('[Creality] Déconnecté'));
+  ws.on('error', (err) => console.error('[Creality] Erreur WS:', err.message));
+
+  return ws;
+}
+```
+
+---
+
+## 5. Messages envoyés (Client → Imprimante)
+
+Tous les messages sont des objets JSON avec la structure :
+
+```json
+{ "method": "<get|set>", "params": { ... } }
+```
+
+### 5.1 Requête d'identité
+
+```json
+{
+  "method": "get",
+  "params": { "printerInfo": 1 }
+}
+```
+
+### 5.2 Requête filaments + fichiers G-code
+
+```json
+{
+  "method": "get",
+  "params": {
+    "reqGcodeFile": 1,
+    "reqGcodeList": 1,
+    "boxsInfo": 1,
+    "boxConfig": 1,
+    "reqMaterials": 1
+  }
+}
+```
+
+- `reqGcodeFile` — demande le fichier G-code courant
+- `reqGcodeList` — demande la liste des fichiers G-code
+- `boxsInfo` — demande l'état du système CFS (filaments multi-bobines)
+- `boxConfig` — configuration des boîtes de filament
+- `reqMaterials` — catalogue des matériaux disponibles (payload volumineux)
+
+### 5.3 Modifier un slot filament (commande `modifyMaterial`)
+
+```json
+{
+  "method": "set",
+  "params": {
+    "modifyMaterial": {
+      "id": 0,
+      "boxId": 1,
+      "rfid": "00001",
+      "type": "PLA",
+      "vendor": "Creality",
+      "name": "Generic PLA",
+      "color": "#0ff0000",
+      "minTemp": 190.0,
+      "maxTemp": 240.0,
+      "pressure": 0.04,
+      "selected": 1,
+      "percent": 100,
+      "editStatus": 1,
+      "state": 1
+    }
+  }
+}
+```
+
+#### Détail des champs `modifyMaterial`
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| `id` | `int` | Index du slot dans la boîte (0-based) |
+| `boxId` | `int` | ID de la boîte : `0` = extrudeur externe, `1+` = module CFS |
+| `rfid` | `string` | Identifiant Creality du matériau (ex: `"00001"` pour PLA). Valeur `"0"` si non référencé. |
+| `type` | `string` | Type de filament (`"PLA"`, `"PETG"`, `"ABS"`, `"TPU"`, etc.) |
+| `vendor` | `string` | Fabricant (ex: `"Creality"`, `"Generic"`) |
+| `name` | `string` | Nom d'affichage complet (ex: `"Generic PLA"`) |
+| `color` | `string` | Couleur en hex Creality : format `#0RRGGBB` (8 chars, préfixe `#0`) |
+| `minTemp` | `double` | Température minimale buse (°C) |
+| `maxTemp` | `double` | Température maximale buse (°C) |
+| `pressure` | `double` | Pressure advance (typique : `0.04`) |
+| `selected` | `int` | `1` = sélectionné |
+| `percent` | `int` | Pourcentage de filament restant (0–100) |
+| `editStatus` | `int` | `1` = édité manuellement |
+| `state` | `int` | `1` = actif |
+
+#### Encodage couleur Creality
+
+Format : `#0RRGGBB` (chaîne de 8 caractères)
+
+```js
+function colorToCrealityHex(r, g, b) {
+  const rh = r.toString(16).padStart(2, '0');
+  const gh = g.toString(16).padStart(2, '0');
+  const bh = b.toString(16).padStart(2, '0');
+  return `#0${rh}${gh}${bh}`.toLowerCase();
+}
+
+// Exemple : rouge pur
+colorToCrealityHex(255, 0, 0); // => "#0ff0000"
+```
+
+Décodage (depuis la payload `boxsInfo`) :
+
+```js
+function parseCrealityHex(s) {
+  let hex = s.trim().replace(/^#/, '');
+  if (hex.length === 7 && hex.startsWith('0')) hex = hex.slice(1); // supprimer le "0" préfixe
+  if (hex.length === 6) {
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16)
+    };
+  }
+  return { r: 128, g: 128, b: 128 }; // fallback gris
+}
+```
+
+---
+
+## 6. Messages reçus (Imprimante → Client)
+
+L'imprimante pousse son état via des frames JSON. **Les clés ne sont pas groupées dans une structure unique** : chaque frame peut contenir n'importe quel sous-ensemble de champs. Il faut **merger les frames** dans un objet d'état local.
+
+### 6.1 Fonction de merge d'état
+
+```js
+function mergeState(state, msg) {
+  if (typeof msg !== 'object' || msg === null) return;
+
+  // Extraction directe des clés connues
+  const direct = [
+    'hostname', 'model', 'modelVersion', 'deviceSn',
+    'printerStatus', 'printProgress', 'printJobTime', 'printLeftTime',
+    'nozzleTemp', 'targetNozzleTemp',
+    'bedTemp0', 'bedTemp', 'targetBedTemp0', 'targetBedTemp',
+    'boxTemp', 'chamberTemp',
+    'layer', 'TotalLayer', 'curPosition',
+    'printFileName', 'printStartTime', 'printId', 'printFileType',
+    'state', 'deviceState', 'feedState', 'print_state',
+    'err', 'errcode',
+    'dProgress', 'usedMaterialLength',
+    'current_object', 'excluded_objects', 'objects',
+    'lightSw', 'webrtcSupport', 'ModeCode',
+    'cfsConnected', 'totalJob', 'totalUsageTime', 'totalUsageMaterial'
+  ];
+
+  for (const key of direct) {
+    if (key in msg) state[key] = msg[key];
+  }
+
+  // Caches dédiés
+  if ('boxsInfo' in msg) state.boxsInfo = msg.boxsInfo;
+  if ('boxConfig' in msg && typeof msg.boxConfig === 'object') state.boxConfig = msg.boxConfig;
+  if ('reqGcodeFile' in msg) state.gcodeFile = msg.reqGcodeFile;
+  if ('retGcodeFile' in msg) state.gcodeFile = msg.retGcodeFile;
+  if ('reqGcodeList' in msg) state.gcodeList = msg.reqGcodeList;
+  if ('retGcodeList' in msg) state.gcodeList = msg.retGcodeList;
+
+  // Normalisation températures (arrivées souvent comme strings "219.930000")
+  for (const key of ['nozzleTemp', 'bedTemp0', 'targetNozzleTemp', 'targetBedTemp0', 'boxTemp', 'chamberTemp']) {
+    if (key in state && typeof state[key] === 'string') {
+      state[key] = parseFloat(state[key]) || 0;
+    }
+  }
+
+  // Historique d'impression
+  if ('historyList' in msg && Array.isArray(msg.historyList) && msg.historyList.length > 0) {
+    state.historyList = msg.historyList;
+    const first = msg.historyList[0];
+    if (first?.filename) state.lastHistoryFilename = first.filename;
+    if (first?.printfinish != null) state.lastHistoryPrintFinish = parseInt(first.printfinish) || 0;
+  }
+}
+```
+
+### 6.2 Table d'extraction des champs
+
+| Chemin JSON | Clé interne | Type | Notes |
+|-------------|-------------|------|-------|
+| `.hostname` | `hostname` | `string` | Nom réseau de l'imprimante |
+| `.model` | `model` | `string` | Code modèle firmware (ex: `"F009"`) |
+| `.modelVersion` | `modelVersion` | `string` | Version firmware (ex: `"1.1.0.45"`) |
+| `.deviceSn` | `deviceSn` | `string` | Numéro de série |
+| `.nozzleTemp` | `nozzle_temp` | `float` | Température buse actuelle (°C), souvent string à parser |
+| `.targetNozzleTemp` | `targetNozzleTemp` | `float` | Consigne buse (°C) |
+| `.bedTemp0` | `bed_temp` | `float` | Température plateau actuelle (°C) |
+| `.targetBedTemp0` | `targetBedTemp` | `float` | Consigne plateau (°C) |
+| `.boxTemp` | `chamber_temp` | `float` | Température enceinte / chambre (°C) |
+| `.chamberTemp` | `chamber_temp` | `float` | Alt. température chambre (certains firmwares) |
+| `.printProgress` | `printProgress` | `int` | Progression d'impression 0–100 |
+| `.dProgress` | `dProgress` | `int` | Progression alternative (certains firmwares) |
+| `.printLeftTime` | `printLeftTime` | `int` | Temps restant en secondes |
+| `.printJobTime` | `printJobTime` | `int` | Temps écoulé depuis début en secondes |
+| `.layer` | `layer` | `int` | Couche en cours |
+| `.TotalLayer` | `TotalLayer` | `int` | Nombre total de couches (peut rester 0) |
+| `.curPosition` | `curPosition` | `string/object` | Position XYZ courante |
+| `.printFileName` | `printFileName` | `string` | Chemin/nom du fichier en cours |
+| `.printStartTime` | `printStartTime` | `int/string` | Timestamp de début d'impression |
+| `.printId` | `printId` | `string` | Identifiant interne du job |
+| `.printFileType` | `printFileType` | `string` | Type de fichier |
+| `.state` | `state` | `int` | État machine : `0`=idle, `2`=finished (valeurs intermédiaires possibles) |
+| `.deviceState` | `deviceState` | `int` | Signal d'état machine secondaire |
+| `.feedState` | `feedState` | `int` | Signal d'état d'alimentation filament |
+| `.print_state` | `print_state` | `string` | État textuel (ex: `"printing"`) |
+| `.err` | `err` | `object/int` | Erreur : `{errcode: N}` ou int direct |
+| `.usedMaterialLength` | `usedMaterialLength` | `float` | Longueur de filament utilisée (mm) |
+| `.lightSw` | `lightSw` | `int/bool` | État éclairage |
+| `.webrtcSupport` | `webrtcSupport` | `bool` | Support WebRTC caméra |
+| `.cfsConnected` | `cfsConnected` | `bool` | Système CFS connecté |
+| `.ModeCode` | `ModeCode` | `int` | Code mode imprimante |
+| `.boxsInfo` | `boxsInfo` | `object` | État complet des boîtes filament CFS |
+| `.boxConfig` | `boxConfig` | `object` | Configuration des boîtes |
+| `.retGcodeFile` / `.reqGcodeFile` | `gcodeFile` | `any` | Infos fichier G-code courant |
+| `.retGcodeList` / `.reqGcodeList` | `gcodeList` | `any` | Liste des fichiers G-code |
+| `.historyList[0].filename` | `lastHistoryFilename` | `string` | Dernier fichier imprimé |
+| `.historyList[0].printfinish` | `lastHistoryPrintFinish` | `int` | Timestamp fin d'impression |
+| `.totalJob` | `totalJob` | `int` | Nombre total de jobs |
+| `.totalUsageTime` | `totalUsageTime` | `int` | Temps total d'utilisation |
+| `.totalUsageMaterial` | `totalUsageMaterial` | `float` | Filament total consommé |
+
+---
+
+## 7. États d'impression
+
+### 7.1 Codes numériques (`state`)
+
+| Valeur | Signification |
+|--------|---------------|
+| `0` | Idle |
+| `2` | Terminé (Finished) |
+| autre | État intermédiaire (heating, paused, etc.) |
+
+> **Note** : Les valeurs intermédiaires ne sont pas documentées officiellement. L'application affiche le code brut (`s:N`) en mode debug pour les capturer.
+
+### 7.2 Champ `deviceState`
+
+Signal d'état machine secondaire. Affiché comme `d:N` en debug. Valeurs non standardisées.
+
+### 7.3 Champ `feedState`
+
+Signal d'état d'alimentation filament. Affiché comme `f:N` en debug. Valeurs non standardisées.
+
+### 7.4 Logique de déduction d'état UI
+
+```js
+function deriveDisplayState(s) {
+  const {
+    printProgress = 0,
+    printLeftTime = 0,
+    printJobTime = 0,
+    layer = 0,
+    state,
+    print_state = '',
+    nozzle_temp = 0,
+    targetNozzleTemp = 0,
+    bed_temp = 0,
+    targetBedTemp = 0,
+    err
+  } = s;
+
+  // Code d'erreur (champ err peut être un objet ou un int)
+  let errCode = 0;
+  if (err && typeof err === 'object') errCode = err.errcode || 0;
+  else if (typeof err === 'number') errCode = err;
+
+  const isFinished = printProgress >= 100 || state === 2;
+  const isPrinting = !isFinished && (
+    printProgress > 0 ||
+    printLeftTime > 0 ||
+    printJobTime > 0 ||
+    layer > 0 ||
+    print_state === 'printing'
+  );
+  const isHeating = !isFinished && !isPrinting && (
+    (targetNozzleTemp > 0 && (targetNozzleTemp - nozzle_temp) > 5) ||
+    (targetBedTemp > 0 && (targetBedTemp - bed_temp) > 3)
+  );
+
+  if (errCode !== 0) return 'Error';
+  if (isFinished)  return 'Completed';
+  if (isPrinting)  return 'Printing';
+  if (isHeating)   return 'Heating';
+  if (print_state) return print_state.charAt(0).toUpperCase() + print_state.slice(1);
+  if (state != null && state !== 0) return `State ${state}`;
+  return 'Idle';
+}
+```
+
+### 7.5 États d'affichage avec spinner
+
+Les statuts suivants déclenchent un spinner animé dans l'UI :
+- `"Printing"`, `"Preparing"`, `"Prepare"`, `"Busy"`, `"Heating"`
+
+---
+
+## 8. Données de température
+
+### 8.1 Structure interne
+
+```js
+// État normalisé après merge
+{
+  nozzle_temp:      219.93,  // float, depuis nozzleTemp (string parsé)
+  targetNozzleTemp: 220.0,   // float
+  bed_temp:         60.0,    // float, depuis bedTemp0
+  targetBedTemp:    60.0,    // float, depuis targetBedTemp0
+  chamber_temp:     35.0     // float, depuis boxTemp ou chamberTemp
+  // pas de targetChamberTemp dans le protocole observé
+}
+```
+
+### 8.2 Exemple de payload brute reçue
+
+```json
+{
+  "nozzleTemp": "219.930000",
+  "targetNozzleTemp": 220,
+  "bedTemp0": "60.001000",
+  "targetBedTemp0": 60,
+  "boxTemp": "35.500000"
+}
+```
+
+> Les températures arrivent parfois comme **chaînes de caractères** (ex: `"219.930000"`). Toujours parser avec `parseFloat()`.
+
+### 8.3 Variantes de noms de champs
+
+| Firmware | Buse actuelle | Plateau actuel | Consigne plateau | Chambre |
+|----------|---------------|----------------|------------------|---------|
+| Standard | `nozzleTemp` | `bedTemp0` | `targetBedTemp0` | `boxTemp` |
+| Variante | `nozzleTemp` | `bedTemp` | `targetBedTemp` | `chamberTemp` |
+
+---
+
+## 9. Structure des données filament (CFS)
+
+### 9.1 Payload `boxsInfo` complète
+
 ```json
 {
   "boxsInfo": {
-    "same_material": [
-      ["000003", "0D4C8AA", [{"boxId": 1, "materialId": 0}], "PETG"],
-      ["001001", "0FF8B1F", [{"boxId": 1, "materialId": 2}], "PLA"]
-    ],
     "materialBoxs": [
       {
         "id": 0,
-        "state": 0,
-        "type": 1,
+        "type": 99,
         "materials": [
           {
-            "id": 0,
-            "vendor": "Generic",
-            "type": "PLA",
-            "color": "#0ff00ff",
-            "name": "Generic PLA",
-            "minTemp": 0,
-            "maxTemp": 0,
-            "selected": 0,
-            "pressure": 0.04,
-            "percent": 100,
-            "editStatus": 1,
-            "rfid": "00001",
-            "state": 1
+            "color":   "#0ff0000",
+            "type":    "PLA",
+            "vendor":  "Creality",
+            "state":   1
           }
         ]
       },
       {
         "id": 1,
-        "state": 1,
         "type": 0,
-        "temp": 27,
-        "humidity": 45,
         "materials": [
           {
-            "id": 0,
-            "vendor": "Generic",
-            "type": "PETG",
-            "name": "Generic PETG",
-            "rfid": "00003",
-            "color": "#0d4c8aa",
-            "minTemp": 0,
-            "maxTemp": 0,
-            "pressure": 0.07,
-            "percent": 100,
-            "state": 1,
-            "selected": 0,
-            "editStatus": 1
+            "color":   "#0ff0000",
+            "type":    "PLA",
+            "vendor":  "Creality",
+            "state":   1
           },
           {
-            "id": 1,
-            "vendor": "Hyper",
-            "type": "PLA",
-            "name": "Hyper PLA",
-            "rfid": "0",
-            "color": "#0ff5722",
-            "minTemp": 0,
-            "maxTemp": 0,
-            "pressure": 0.04,
-            "percent": 100,
-            "state": 0,
-            "selected": 0,
-            "editStatus": 0
+            "color":   "#000ff00",
+            "type":    "PETG",
+            "vendor":  "Generic",
+            "state":   0
           },
           {
-            "id": 2,
-            "vendor": "Creality",
-            "type": "PLA",
-            "name": "Hyper PLA",
-            "rfid": "01001",
-            "color": "#0ff8b1f",
-            "minTemp": 190,
-            "maxTemp": 240,
-            "pressure": 0.04,
-            "percent": 100,
-            "state": 1,
-            "selected": 0,
-            "editStatus": 1
+            "color":   "#00000ff",
+            "type":    "ABS",
+            "vendor":  "Bambu",
+            "state":   0
           },
           {
-            "id": 3,
-            "vendor": "Generic",
-            "type": "HIPS",
-            "name": "Generic HIPS",
-            "rfid": "0",
-            "color": "#0c8a4d6",
-            "minTemp": 0,
-            "maxTemp": 0,
-            "pressure": 0.04,
-            "percent": 100,
-            "state": 0,
-            "selected": 0,
-            "editStatus": 0
+            "color":   "#0ffffff",
+            "type":    "TPU",
+            "vendor":  "Generic",
+            "state":   0
           }
         ]
       }
@@ -189,734 +632,499 @@ Le printer **pousse des updates tout seul** après `CRE_INIT_QUERY`. Pas de poll
 }
 ```
 
-**Règles** :
-- `type: 1` → slot EXT (toujours `id: 0`, 1 seul slot, pas de `temp`/`humidity`)
-- `type: 0` → module CFS multi-slots (4 slots sur V4)
-- `temp` / `humidity` : capteur interne du module CFS (entiers — 27 °C, 45 %)
-- `state: 0` sur un slot EXT = pas de filament chargé dans l'extrudeur
-- `editStatus: 0` + `rfid: "0"` = slot non configuré
-- `same_material` : tableau de tuples `[rfidCode, colorCode, [{boxId, materialId}], type]` — slots physiquement matchés par RFID
-- Couleur au format `#0rrggbb` — voir §7
+### 9.2 Logique de parsing `boxsInfo`
+
+```js
+function parseBoxsInfo(boxsInfo) {
+  const result = {
+    external: null,   // slot extérieur (id=0, type≠0)
+    modules: []       // boîtes CFS (type=0), triées par id croissant
+  };
+
+  const materialBoxs = boxsInfo?.materialBoxs;
+  if (!Array.isArray(materialBoxs)) return result;
+
+  const moduleEntries = [];
+
+  for (const box of materialBoxs) {
+    if (typeof box !== 'object') continue;
+    const id = box.id;
+    const type = box.type;
+    const mats = box.materials;
+
+    // id=0 : extrudeur externe (un seul matériau)
+    if (id === 0 && Array.isArray(mats) && mats.length > 0) {
+      const m = mats[0];
+      result.external = {
+        color:  parseCrealityHex(m.color || '#0808080'),
+        type:   m.type   || '',
+        vendor: m.vendor || '',
+        active: m.state === 1
+      };
+    } else if (type === 0 && Array.isArray(mats)) {
+      // Module CFS
+      moduleEntries.push({ id, mats });
+    }
+  }
+
+  // Trier les modules CFS par id croissant
+  moduleEntries.sort((a, b) => a.id - b.id);
+
+  for (const { id: boxId, mats } of moduleEntries) {
+    const slots = mats.map((m, slotIndex) => ({
+      boxId,
+      slotId: slotIndex,
+      color:  parseCrealityHex(m.color || '#0808080'),
+      type:   m.type   || '',
+      vendor: m.vendor || '',
+      active: m.state === 1
+    }));
+    result.modules.push(slots);
+  }
+
+  return result;
+}
+```
+
+### 9.3 Champs d'un slot filament
+
+| Champ | Type | Description |
+|-------|------|-------------|
+| `boxId` | `int` | `0` = extrudeur externe, `1+` = module CFS |
+| `slotId` | `int` | Index 0-based dans le module |
+| `color` | `string` | Hex Creality `#0RRGGBB` |
+| `type` | `string` | Type matériau (ex: `"PLA"`) |
+| `vendor` | `string` | Fabricant |
+| `state` | `int` | `1` = actif/en cours |
 
 ---
 
-### 3.2 `boxConfig` 🔶
+## 10. Miniature / aperçu de l'impression
 
-**Usage** : configuration des boîtes (capacité, firmware boîte, etc.). Stocké brut, non affiché.
+L'imprimante expose l'image de l'impression courante via HTTP (pas via WebSocket) :
 
-**Requête** :
-```json
-{ "method": "get", "params": { "boxConfig": 1 } }
+```
+GET http://<ip>/downloads/original/current_print_image.png
 ```
 
-**Réponse réelle** (Ender-3 V4) :
+```js
+function getCurrentPrintImageUrl(ip) {
+  return `http://${ip}/downloads/original/current_print_image.png`;
+}
+```
+
+- Aucune authentification requise pour cet endpoint HTTP.
+- Si aucune impression n'est en cours, la requête peut retourner 404 ou une image placeholder.
+- Rafraîchir périodiquement (ex: toutes les 10 s) ou à chaque changement d'état.
+
+---
+
+## 11. Flux caméra — détails complets
+
+### URL d'accès
+
+```
+http://<ip>:8000/
+```
+
+### Implémentation Electron (preload + renderer)
+
+Dans le fichier `preload.js`, ajouter la permission pour les médias WebRTC si nécessaire. Dans `inventory.html`, utiliser une `<webview>` :
+
+```html
+<webview
+  id="creality-camera-view"
+  src="about:blank"
+  allowpopups
+  nodeintegration="false"
+  webpreferences="allowRunningInsecureContent, autoplayPolicy=no-user-gesture-required"
+  style="width: 100%; aspect-ratio: 16/9; background: #000;">
+</webview>
+```
+
+```js
+// Lancer la caméra
+function startCrealityCamera(ip) {
+  const webview = document.getElementById('creality-camera-view');
+  webview.src = `http://${ip}:8000/`;
+}
+
+// Arrêter la caméra (stopper les tracks WebRTC)
+function stopCrealityCamera() {
+  const webview = document.getElementById('creality-camera-view');
+  webview.executeJavaScript(`
+    (() => {
+      document.querySelectorAll('video, audio').forEach(node => {
+        if (node.srcObject && node.srcObject.getTracks) {
+          node.srcObject.getTracks().forEach(t => t.stop());
+          node.srcObject = null;
+        }
+        if (node.pause) node.pause();
+        node.removeAttribute('src');
+        if (node.load) node.load();
+      });
+    })();
+  `).catch(() => {});
+  webview.src = 'about:blank';
+}
+```
+
+### CSS d'ajustement de la page WebRTC embarquée
+
+Injecter après `did-finish-load` :
+
+```js
+webview.addEventListener('did-finish-load', () => {
+  webview.executeJavaScript(`
+    (() => {
+      const style = document.createElement('style');
+      style.textContent = \`
+        html, body {
+          margin: 0 !important; padding: 0 !important;
+          width: 100% !important; height: 100% !important;
+          overflow: hidden !important; background: #000 !important;
+        }
+        video, canvas, iframe, img {
+          width: 100% !important; height: 100% !important;
+          object-fit: contain !important; background: #000 !important;
+        }
+      \`;
+      document.head.appendChild(style);
+      // Autoplay
+      document.querySelectorAll('video').forEach(v => {
+        v.autoplay = true;
+        v.play && v.play().catch(() => {});
+      });
+    })();
+  `).catch(() => {});
+});
+```
+
+---
+
+## 12. Commandes de contrôle
+
+> **Note** : Aucune commande de contrôle d'impression (pause, reprise, stop) n'a été observée dans les sources analysées. Les sources se concentrent sur la lecture de l'état et la modification des filaments. Les commandes éventuelles suivraient vraisemblablement la même structure `{"method":"set","params":{...}}`.
+
+Seule commande de contrôle documentée dans les sources : **modification de filament** (`modifyMaterial`, voir section 5.3).
+
+---
+
+## 13. Gestion des erreurs
+
+### 13.1 Champ `err`
+
+Le champ `err` peut prendre deux formes selon le firmware :
+
 ```json
-{
-  "boxConfig": {
-    "autoRefill": 1,
-    "cAutoFeed": 1,
-    "cSelfTest": 0,
-    "cAutoUpdateFilament": 0
+{ "err": { "errcode": 42 } }
+// ou
+{ "errcode": 42 }
+```
+
+```js
+function extractErrCode(state) {
+  const err = state.err;
+  if (err && typeof err === 'object') return err.errcode || 0;
+  if (typeof err === 'number') return err;
+  if (typeof state.errcode === 'number') return state.errcode;
+  return 0;
+}
+```
+
+### 13.2 Règles de gestion
+
+| Situation | Comportement recommandé |
+|-----------|------------------------|
+| Port 9999 fermé | Ne pas ajouter dans la liste, timeout 650 ms |
+| WS échec handshake | Log + retry après délai (ne pas retry immédiatement) |
+| Frame non-JSON | Logger et ignorer (`try/catch` autour de `JSON.parse`) |
+| Payload volumineux (> 2000 chars) | Logger uniquement la taille, pas le contenu complet |
+| `errCode !== 0` | Afficher état "Error" avec le code |
+| Déconnexion (onClose) | Marquer `connected = false`, tenter reconnexion sur reprise d'activité |
+| Payload `retMaterials` | Très volumineux — ne pas logger en entier en prod |
+
+### 13.3 Reconnexion automatique
+
+```js
+function watchConnection(printerState) {
+  // Reconnexion 300 ms après retour de l'app en foreground
+  // Ne pas tenter si déjà connected ou connecting
+  if (!printerState.connected && !printerState.connecting) {
+    setTimeout(() => connectCreality(printerState.ip, printerState), 300);
   }
 }
 ```
 
-| Champ | Valeur | Signification |
-|-------|--------|---------------|
-| `autoRefill` | 0/1 | Refill automatique activé |
-| `cAutoFeed` | 0/1 | Alimentation auto CFS |
-| `cSelfTest` | 0/1 | Auto-test actif |
-| `cAutoUpdateFilament` | 0/1 | Mise à jour auto du profil filament |
+### 13.4 Parsing robuste de `TotalLayer`
 
----
+Le nombre total de couches peut arriver sous diverses formes :
 
-### 3.3 `reqGcodeFile` ✅
+```js
+const TOTAL_LAYER_KEYS = new Set([
+  'totallayer', 'totallayers', 'totallayernum', 'totallayercount',
+  'totallayernumber', 'totallayerindex', 'total_layer', 'total_layer_num',
+  'total_layer_count', 'print_layer_total', 'print_layer_num',
+  'targetprintlayer', 'layernumtotal', 'layercount', 'layer_count'
+]);
 
-**Usage** : forcer l'envoi du nom du fichier courant / dernier imprimé.
-
-**Requête** :
-```json
-{ "method": "get", "params": { "reqGcodeFile": 1 } }
-```
-
-**Réponse** : pas de message séparé — le printer inclut `printFileName` dans le blob statut initial.
-
-```json
-{
-  "printFileName": "/mnt/UDISK/printer_data/gcodes/Wheel logo-Ender-3 V4-PLA_3m28s.gcode",
-  "printFileType": 1,
-  "printProgress": 100,
-  "printStartTime": 1778377703
+function normalizeKey(k) {
+  return k.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
-```
 
-⚠️ Path complet — extraire le basename avec `path.substring(path.lastIndexOf("/") + 1)`.
+function extractTotalLayer(node, depth = 0) {
+  if (depth > 5 || node == null) return null;
 
----
-
-### 3.4 `reqGcodeList` ❌
-
-**Usage** : liste brute des fichiers gcode (sans thumbnails ni durées).
-Non utilisé dans Tiger Studio — remplacé par `getGcodeFileInfo2`.
-
-**Requête** :
-```json
-{ "method": "get", "params": { "reqGcodeList": 1 } }
-```
-
-**Réponse** : aucune réponse distincte observée sur Ender-3 V4 lors des tests réels.
-Le param est inclus dans `CRE_INIT_QUERY` mais ne génère pas de message séparé.
-Possible que le résultat soit embarqué dans le blob statut ou non supporté sur ce FW.
-
----
-
-### 3.5 `reqMaterials` 🔶
-
-**Usage** : catalogue Klipper des profils matière (params d'impression par type).
-Envoyé uniquement à la connexion initiale (`CRE_INIT_QUERY`). Stocké brut.
-
-**Requête** :
-```json
-{ "method": "get", "params": { "reqMaterials": 1 } }
-```
-
-**Réponse réelle** (structure réelle — profil complet Klipper, exemple PLA tronqué) :
-```json
-{
-  "retMaterials": [
-    {
-      "engineVersion": "3.0.0",
-      "printerIntName": "F009",
-      "nozzleDiameter": ["0.4"],
-      "kvParam": {
-        "filament_type": "PLA",
-        "filament_vendor": "Creality",
-        "nozzle_temperature": "220",
-        "nozzle_temperature_initial_layer": "220",
-        "nozzle_temperature_range_high": "240",
-        "nozzle_temperature_range_low": "190",
-        "hot_plate_temp": "60",
-        "hot_plate_temp_initial_layer": "60",
-        "filament_density": "1.24",
-        "filament_diameter": "1.75",
-        "filament_flow_ratio": "0.95",
-        "pressure_advance": "0.04",
-        "fan_max_speed": "100",
-        "fan_min_speed": "100",
-        "filament_max_volumetric_speed": "23",
-        "temperature_vitrification": "60",
-        "inherits": "Hyper PLA @Creality Ender V4 0.4 nozzle"
-        // … ~50 champs supplémentaires
-      },
-      "base": {
-        "id": "01001",
-        "brand": "Creality",
-        "name": "Hyper PLA",
-        "meterialType": "PLA",
-        "colors": ["#ffffff"],
-        "density": 1.24,
-        "diameter": "1.75",
-        "minTemp": 190,
-        "maxTemp": 240,
-        "isSoluble": false,
-        "isSupport": false,
-        "dryingTemp": 0,
-        "dryingTime": 0
+  if (typeof node === 'object' && !Array.isArray(node)) {
+    for (const [k, v] of Object.entries(node)) {
+      if (TOTAL_LAYER_KEYS.has(normalizeKey(k))) {
+        const n = parseInt(v);
+        if (!isNaN(n) && n > 0) return n;
+        if (typeof v === 'string') {
+          // "current: 16 / total: 250" — garder la plus grande valeur
+          const nums = [...v.matchAll(/\d+/g)].map(m => parseInt(m[0]));
+          if (nums.length) return Math.max(...nums);
+        }
       }
     }
-    // … un objet par profil matière dans la bibliothèque (PLA-CF, PETG, …)
-  ]
-}
-```
-
-**Champs clés dans `base`** (les seuls utilisés dans Tiger Studio) :
-
-| Champ | Type | Valeur exemple | Usage |
-|-------|------|----------------|-------|
-| `id` | string | `"01001"` | RFID-like ID interne |
-| `meterialType` | string | `"PLA"` | Type (⚠️ typo : `meterial`) |
-| `name` | string | `"Hyper PLA"` | Nom commercial |
-| `minTemp` | number | `190` | Temp nozzle min |
-| `maxTemp` | number | `240` | Temp nozzle max |
-| `dryingTemp` | number | `0` | Étuvage °C (0 = non renseigné) |
-| `dryingTime` | number | `0` | Étuvage heures (0 = non renseigné) |
-
----
-
-### 3.6 `getGcodeFileInfo2` ✅
-
-**Usage** : liste enrichie des fichiers gcode avec thumbnails, durées, couleurs, températures, poids filament.
-C'est la requête principale du file explorer Tiger Studio.
-
-**Requête** :
-```json
-{ "method": "get", "params": { "getGcodeFileInfo2": 1 } }
-```
-
-**Réponse réelle** (Ender-3 V4 — 2 exemples : mono-couleur et 4 couleurs) :
-```json
-{
-  "retGcodeFileInfo2": [
-    {
-      "custom_types":   1,
-      "type":           8,
-      "name":           "Wheel logo-Ender-3 V4-PLA_3m28s.gcode",
-      "path":           "/mnt/UDISK/printer_data/gcodes/Wheel logo-Ender-3 V4-PLA_3m28s.gcode",
-      "file_size":      138548,
-      "create_time":    1761292120,
-      "timeCost":       208,
-      "consumables":    158,
-      "floorHeight":    20,
-      "modelX":         0,
-      "modelY":         0,
-      "modelZ":         0,
-      "modelHeight":    4200,
-      "layerHeight":    0,
-      "material":       "PLA",
-      "nozzleTemp":     22000,
-      "bedTemp":        6000,
-      "software":       "Creality",
-      "thumbnail":      "/mnt/UDISK/creality/local_gcode/humbnail/Wheel logo-Ender-3 V4-PLA_3m28s.png",
-      "preview":        "/mnt/UDISK/creality/local_gcode/original/Wheel logo-Ender-3 V4-PLA_3m28s.png",
-      "startPixel":     1700,
-      "endPixel":       22900,
-      "materialColors": "#00FF00",
-      "materialIds":    "01001",
-      "filamentWeight": "0.47",
-      "match":          "T1A=T1C "
-    },
-    {
-      "custom_types":   1,
-      "type":           8,
-      "name":           "Maker2-Ender-3 V4-PLA_1h1m.gcode",
-      "path":           "/mnt/UDISK/printer_data/gcodes/Maker2-Ender-3 V4-PLA_1h1m.gcode",
-      "file_size":      2106025,
-      "create_time":    1761292118,
-      "timeCost":       3662,
-      "consumables":    4462,
-      "floorHeight":    20,
-      "modelX":         0,
-      "modelY":         0,
-      "modelZ":         0,
-      "modelHeight":    1000,
-      "layerHeight":    0,
-      "material":       "PLA;PLA;PLA;PLA",
-      "nozzleTemp":     19000,
-      "bedTemp":        6000,
-      "software":       "Creality",
-      "thumbnail":      "/mnt/UDISK/creality/local_gcode/humbnail/Maker2-Ender-3 V4-PLA_1h1m.png",
-      "preview":        "/mnt/UDISK/creality/local_gcode/original/Maker2-Ender-3 V4-PLA_1h1m.png",
-      "startPixel":     2200,
-      "endPixel":       20300,
-      "materialColors": "#211C16;#65B167;#FFFFFF;#B1BBBD",
-      "materialIds":    ";;;",
-      "filamentWeight": "8.74, 2.20, 0.89, 1.47",
-      "match":          "T1A=  T1B=  T1C=  T1D=T1C "
+    for (const v of Object.values(node)) {
+      const found = extractTotalLayer(v, depth + 1);
+      if (found != null) return found;
     }
-  ]
+  } else if (Array.isArray(node)) {
+    for (const item of node.slice(0, 40)) {
+      const found = extractTotalLayer(item, depth + 1);
+      if (found != null) return found;
+    }
+  } else if (typeof node === 'string') {
+    try {
+      return extractTotalLayer(JSON.parse(node), depth + 1);
+    } catch {}
+  }
+  return null;
 }
 ```
 
-**Encodages à connaître** :
-
-| Champ | Encodage | Exemple | Valeur réelle |
-|-------|----------|---------|---------------|
-| `nozzleTemp` | °C × 100 | `22000` | 220 °C |
-| `bedTemp` | °C × 100 | `6000` | 60 °C |
-| `timeCost` | secondes | `208` | 3 min 28 s |
-| `consumables` | mm × 100 ? | `158` | ~1.58 m filament |
-| `floorHeight` | µm | `20` | 0.02 mm (1ère couche) |
-| `modelHeight` | µm | `4200` | 4.2 mm |
-| `materialColors` | hex RGB séparés par `;` | `"#211C16;#65B167"` | 2 couleurs |
-| `material` | labels séparés par `;` | `"PLA;PLA;PLA;PLA"` | 4 matières |
-| `materialIds` | IDs séparés par `;` | `"01001"` ou `";;;"` si non mappé |
-| `filamentWeight` | grammes séparés par `,` | `"8.74, 2.20, 0.89, 1.47"` | poids par couleur |
-| `file_size` | octets | `138548` | ⚠️ `file_size` (underscore), pas `fileSize` |
-| `create_time` | timestamp UNIX (secondes) | `1761292120` | tri par date |
-| `match` | mapping slots | `"T1A=T1C "` | correspondance CFS↔filament |
-
-**Champs non documentés dans les anciennes versions** :
-- `preview` : path PNG grande résolution (vs `thumbnail` petite)
-- `startPixel` / `endPixel` : zone de prévisualisation dans le PNG
-- `match` : ex. `"T1A=T1C "` = extrudeur T1 alimenté par slot C du module
-- `software` : slicer utilisé (`"Creality"` = Creality Print)
-
-**URL thumbnail** : voir §9.3 — `_creThumbUrl()` extrait le basename du champ `thumbnail` et construit `http://<ip>/downloads/humbnail/<basename>.png`.
-
-Pour la miniature du **print en cours** (URL fixe, indépendante du nom de fichier) — voir §9.2.
-
 ---
 
-### 3.7 Bundle statut (réponse initiale + push périodique)
+## 14. Découverte — Implémentation Node.js
 
-**Réponse initiale** : un seul message de **76 clés** arrive immédiatement après `CRE_INIT_QUERY`.
-Il contient l'état complet de l'imprimante (remplace tous les params individuels).
+```js
+const net = require('net');
+const WebSocket = require('ws');
 
-**Push périodique** : uniquement `nozzleTemp` + `bedTemp0` (mini-blob, toutes ~1.5 s).
-```json
-{ "nozzleTemp": "76.900000", "bedTemp0": "50.200000" }
-```
+const WS_PORT = 9999;
+const CAMERA_PORT = 8000;
+const SOCKET_TIMEOUT_MS = 650;
+const WS_TIMEOUT_MS = 2200;
 
-**Blob initial complet réel** (Ender-3 V4, idle après impression, CFS connecté) :
-```json
-{
-  "TotalLayer":         0,
-  "accelToDecelLimits": 3000,
-  "accelerationLimits": 6000,
-  "aiDetection":        0,
-  "aiFirstFloor":       0,
-  "aiPausePrint":       0,
-  "aiSw":               0,
-  "autoLevelResult":    "148:0.79",
-  "autohome":           "X:0 Y:0 Z:0",
-  "auxiliaryFanPct":    0,
-  "bedTemp0":           "50.350000",
-  "bedTemp1":           "0.000000",
-  "bedTemp2":           "0.000000",
-  "bedTempAutoPid":     0,
-  "boxTemp":            0,
-  "caseFanPct":         0,
-  "cfsConnect":         1,
-  "connect":            1,
-  "cornerVelocityLimits": 8,
-  "curFeedratePct":     100,
-  "curFlowratePct":     100,
-  "curPosition":        "X:0.00 Y:220.00 Z:58.56",
-  "dProgress":          0,
-  "deviceState":        0,
-  "enableSelfTest":     0,
-  "err":                { "errcode": 0, "key": 0, "value": "" },
-  "fan":                0,
-  "fanAuxiliary":       0,
-  "fanCase":            0,
-  "feedState":          0,
-  "hostname":           "Ender-3_V4-574A",
-  "layer":              0,
-  "lightSw":            1,
-  "materialDetect":     0,
-  "materialDetector1":  1,
-  "materialDetector2":  0,
-  "materialStatus":     0,
-  "maxBedTemp":         100,
-  "maxBoxTemp":         0,
-  "maxNozzleTemp":      300,
-  "model":              "F009",
-  "modelFanPct":        0,
-  "modelVersion":       "printer hw ver:;printer sw ver:;DWIN hw ver:CR4NU200360C20;DWIN sw ver:1.1.0.45;",
-  "nozzleMoveSnapshot": 0,
-  "nozzleTemp":         "77.910000",
-  "nozzleTempAutoPid":  0,
-  "powerLoss":          0,
-  "pressureAdvance":    "0.040000",
-  "printFileName":      "/mnt/UDISK/printer_data/gcodes/Wheel logo-Ender-3 V4-PLA_3m28s.gcode",
-  "printFileType":      1,
-  "printId":            "",
-  "printJobTime":       0,
-  "printLeftTime":      0,
-  "printProgress":      100,
-  "printStartTime":     1778377703,
-  "realTimeFlow":       "72.160000",
-  "realTimeSpeed":      "50.000000",
-  "repoPlrStatus":      0,
-  "smoothTime":         "0.040000",
-  "state":              0,
-  "targetBedTemp0":     0,
-  "targetBedTemp1":     0,
-  "targetBedTemp2":     0,
-  "targetBoxTemp":      0,
-  "targetNozzleTemp":   0,
-  "tfCard":             1,
-  "upgradeStatus":      0,
-  "usedMaterialLength": 0,
-  "velocityLimits":     500,
-  "video":              1,
-  "video1":             0,
-  "videoElapse":        1,
-  "videoElapseFrame":   15,
-  "videoElapseInterval":1,
-  "webrtcSupport":      1,
-  "withSelfTest":       100
+async function isPortOpen(ip, port) {
+  return new Promise(resolve => {
+    const socket = new net.Socket();
+    socket.setTimeout(SOCKET_TIMEOUT_MS);
+    socket.on('connect', () => { socket.destroy(); resolve(true); });
+    socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    socket.on('error', () => resolve(false));
+    socket.connect(port, ip);
+  });
 }
-```
 
-**Clés non documentées avant le test réel** :
-| Clé | Valeur observée | Interprétation |
-|-----|-----------------|----------------|
-| `autoLevelResult` | `"148:0.79"` | `<nb_points>:<écart_max_mm>` |
-| `autohome` | `"X:0 Y:0 Z:0"` | Position home |
-| `accelToDecelLimits` | 3000 | Accélération entrée/sortie mm/s² |
-| `accelerationLimits` | 6000 | Accélération max mm/s² |
-| `cornerVelocityLimits` | 8 | Junction deviation mm/s |
-| `velocityLimits` | 500 | Vitesse max mm/s |
-| `materialDetector1/2` | 1 / 0 | Capteur runout slot 1/2 (1 = filament présent) |
-| `materialStatus` | 0 | État général alimentation |
-| `repoPlrStatus` | 0 | État reprise impression power-loss |
-| `withSelfTest` | 100 | % auto-test |
-| `videoElapse` | 1 | Timelapse activé |
-| `videoElapseFrame` | 15 | Nb frames timelapse |
-| `printProgress` | 100 | 100% = dernière impression terminée |
-| `printStartTime` | 1778377703 | Timestamp UNIX début du dernier job |
-| `smoothTime` | `"0.040000"` | Paramètre lissage de courbe |
-| `dProgress` | 0 | Progression transfert fichier USB |
-| `boxTemp` | 0 | Température chambre (0 = non mesuré sur V4 sans enceinte) |
+async function readCrealityHello(ip, credential = null) {
+  return new Promise(resolve => {
+    const url = `ws://${ip}:${WS_PORT}/`;
+    const opts = {};
+    if (credential) {
+      const tok = Buffer.from(`${credential.account}:${credential.password}`).toString('base64');
+      opts.headers = { 'Authorization': `Basic ${tok}` };
+    }
 
----
+    let ws;
+    const timer = setTimeout(() => { if (ws) ws.close(); resolve(null); }, WS_TIMEOUT_MS);
 
-## 4. Champs de statut — détail complet
+    try {
+      ws = new WebSocket(url, opts);
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+      return;
+    }
 
-### 4.1 Températures
+    const aggregated = {};
+    let frameCount = 0;
 
-| Clé wire | Type | Stocké dans | UI | Notes |
-|----------|------|-------------|-----|-------|
-| `nozzleTemp` | `string` | `d.nozzleTemp` | ✅ | Ex : `"27.940000"` — parser `asF` |
-| `targetNozzleTemp` | `string` | `d.nozzleTarget` | ✅ | Set-point |
-| `bedTemp0` | `string` | `d.bedTemp` | ✅ | |
-| `targetBedTemp0` | `string` | `d.bedTarget` | ✅ | |
-| `boxTemp` | `string` | `d.chamberTemp` | ✅ affiché si > 0 | Alias: `chamberTemp` certains FW |
-| `maxNozzleTemp` | `number` | `d.maxNozzleTemp` | 🔶 | 300 sur V4 |
-| `maxBedTemp` | `number` | `d.maxBedTemp` | 🔶 | 100 sur V4 |
+    ws.on('open', () => {
+      try {
+        ws.send(JSON.stringify({ method: 'get', params: { printerInfo: 1 } }));
+      } catch {}
+    });
 
-### 4.2 État impression
+    ws.on('message', (data) => {
+      frameCount++;
+      try {
+        const msg = JSON.parse(data.toString());
+        Object.assign(aggregated, msg);
+        for (const key of ['params', 'msg', 'data', 'result']) {
+          if (msg[key] && typeof msg[key] === 'object') Object.assign(aggregated, msg[key]);
+        }
+      } catch {}
 
-| Clé wire | Type | Stocké dans | UI | Notes |
-|----------|------|-------------|-----|-------|
-| `state` | `number` | `d.state` | ✅ | 0=idle 1=printing 2=fini |
-| `deviceState` | `number` | `d.deviceState` | 🔶 | Sous-état interne |
-| `feedState` | `number` | `d.feedState` | 🔶 | État alimentation |
-| `printProgress` | `number` | `d.printProgress` | ✅ | 0–100 |
-| `dProgress` | `number` | `d.dProgress` | ✅ fallback | Transfert fichier |
-| `layer` | `number` | `d.layer` | ✅ | Couche courante |
-| `TotalLayer` | `number` | `d.totalLayer` | ✅ | Note : T majuscule |
-| `printLeftTime` | `number` | `d.printLeftTime` | ✅ | Secondes restantes |
-| `printJobTime` | `number` | `d.printJobTime` | ✅ | Secondes écoulées |
-| `printFileName` | `string` | `d.printFileName` | ✅ | Path complet — extraire basename |
-| `historyList` | `array` | `d.lastHistoryFilename` | ✅ fallback | `[{ filename }]` |
-| `pause` | `number` | `d.isPaused` | ✅ | 1 = en pause |
-| `isPaused` | `number` | `d.isPaused` | ✅ | Alias FW alternatif |
+      const hasId = 'model' in aggregated || 'modelVersion' in aggregated || 'deviceSn' in aggregated;
+      if (hasId && frameCount >= 2) {
+        clearTimeout(timer);
+        ws.close();
+        resolve(aggregated);
+      }
+      if (frameCount >= 5) {
+        clearTimeout(timer);
+        ws.close();
+        resolve(aggregated);
+      }
+    });
 
-### 4.3 Vitesse / mouvement
+    ws.on('error', () => { clearTimeout(timer); resolve(null); });
+    ws.on('close', () => { clearTimeout(timer); resolve(aggregated.model ? aggregated : null); });
+  });
+}
 
-| Clé wire | Type | Stocké dans | UI | Notes |
-|----------|------|-------------|-----|-------|
-| `curFeedratePct` | `number` | `d.curFeedratePct` | 🔶 | Multiplicateur vitesse % |
-| `curFlowratePct` | `number` | `d.curFlowratePct` | 🔶 | Multiplicateur débit % |
-| `curPosition` | `string` | `d.curPosition` | 🔶 | `"X:5.00 Y:110.00 Z:20.59"` |
-| `realTimeSpeed` | `string` | `d.realTimeSpeed` | 🔶 | mm/s — parser `asF` |
-| `realTimeFlow` | `string` | `d.realTimeFlow` | 🔶 | mm³/s |
-| `pressureAdvance` | `string` | `d.pressureAdvance` | 🔶 | Ex : `"0.040000"` |
-| `usedMaterialLength` | `string` | `d.usedMaterialLength` | 🔶 | mm consommés |
+const TELEMETRY_KEYS = new Set([
+  'printerStatus', 'printProgress', 'printJobTime', 'nozzleTemp', 'targetNozzleTemp',
+  'bedTemp0', 'bedTemp', 'targetBedTemp0', 'targetBedTemp', 'boxTemp', 'chamberTemp',
+  'boxsInfo', 'cfsConnected', 'retMaterials', 'lightSw', 'webrtcSupport', 'ModeCode',
+  'curPosition', 'workingLayer', 'totalLayers', 'filename'
+]);
 
-### 4.4 Hardware / périphériques
+function isCrealityLike(payload, hostname) {
+  if (!payload) return false;
+  const keys = new Set(Object.keys(payload));
+  const hasStrongId = keys.has('model') || keys.has('modelVersion') || keys.has('deviceSn');
+  const hostnameHit = hostname && /creality|k1|k2|ender|hi-|hi_/i.test(hostname);
+  const hasTelemetry = [...keys].some(k => TELEMETRY_KEYS.has(k));
+  return (hasStrongId || hostnameHit) && hasTelemetry;
+}
 
-| Clé wire | Type | Stocké dans | UI | Notes |
-|----------|------|-------------|-----|-------|
-| `lightSw` | `number` | `d.lightSw` | ✅ | 1 = LED allumée |
-| `cfsConnect` | `number` | `d.cfsConnect` | 🔶 | 1 = module CFS branché |
-| `webrtcSupport` | `number` | `d.webrtcSupport` | 🔶 | |
-| `video` | `number` | `d.video` | 🔶 | Caméra dispo |
-| `hostname` | `string` | `d.hostname` | ✅ | Ex : `"Ender-3V4-574A"` |
-| `model` | `string` | `d.model` | 🔶 | `"F009"` = Ender-3 V4 |
-| `modelVersion` | `string` | `d.modelVersion` | 🔶 | String DWIN hw/sw complet |
-| `err` | `object` | `d.errCode/Key/Value` | 🔶 | `{ errcode, key, value }` |
+async function probeIp(ip, credentials = [null]) {
+  const wsOpen = await isPortOpen(ip, WS_PORT);
+  if (!wsOpen) return null;
 
----
+  const cameraOpen = await isPortOpen(ip, CAMERA_PORT);
 
-## 5. `boxsInfo` — structure CFS (détail)
-
-```
-boxsInfo.materialBoxs[]
-  ├── id        : index dans le tableau (0-based)
-  ├── boxId     : ID physique à renvoyer dans modifyMaterial
-  ├── type      : 1 = slot EXT, 0 = boîte CFS multi-slots
-  ├── temp      : température interne boîte CFS (°C, 0 si EXT)
-  ├── humidity  : humidité relative interne (%)
-  └── materials[]
-        ├── id         : index slot dans la boîte (0-based)
-        ├── vendor     : "Generic", "Creality", …
-        ├── type       : "PLA", "PETG", …
-        ├── color      : "#0rrggbb" — voir §7
-        ├── name       : "<vendor> <type>"
-        ├── rfid       : code type matière ("00001" = PLA)
-        ├── minTemp    : temp min nozzle
-        ├── maxTemp    : temp max nozzle
-        ├── pressure   : pressure advance (float)
-        ├── percent    : % restant (0–100)
-        ├── selected   : 1 si slot actif
-        └── editStatus : 1 = configuré par l'utilisateur
-
-boxsInfo.same_material[]
-  // Tableau de tuples — matériaux RFID identifiés présents dans le système
-  // Format : [rfidCode, colorCode, [{boxId, materialId}], materialType]
-  // Ex : ["001001", "0FF8B1F", [{"boxId": 1, "materialId": 2}], "PLA"]
-  //   → rfid "001001" (couleur #0FF8B1F) est en slot 2 du CFS box 1
-```
-
-| Layout Ender-3 V4 + CFS | boxId | type | Slots |
-|--------------------------|-------|------|-------|
-| Extrudeur externe (EXT) | 0 | 1 | 1 (id: 0) |
-| Module CFS | 1 | 0 | 4 (id: 0–3) |
-
----
-
-## 6. Commandes `set`
-
-### 6.1 `modifyMaterial` ✅
-
-```json
-{
-  "method": "set",
-  "params": {
-    "modifyMaterial": {
-      "id":         0,
-      "boxId":      1,
-      "rfid":       "00001",
-      "type":       "PLA",
-      "vendor":     "Generic",
-      "name":       "Generic PLA",
-      "color":      "#0ff5722",
-      "minTemp":    190,
-      "maxTemp":    230,
-      "pressure":   0.04,
-      "selected":   1,
-      "percent":    100,
-      "editStatus": 1,
-      "state":      1
+  for (const cred of credentials) {
+    const hello = await readCrealityHello(ip, cred);
+    if (hello && isCrealityLike(hello, hello.hostname)) {
+      return {
+        ip,
+        wsPortOpen: true,
+        cameraPortOpen: cameraOpen,
+        jsonConfirmed: true,
+        hostname: hello.hostname || null,
+        model: hello.model || null,
+        modelVersion: hello.modelVersion || null,
+        deviceSn: hello.deviceSn || null,
+        account: cred?.account || null,
+        password: cred?.password || null
+      };
     }
   }
+  return null;
+}
+
+async function scanLan(options = {}) {
+  const {
+    subnet = '192.168.1',
+    credentials = [null, { account: 'root', password: 'creality_2025' }],
+    concurrency = 64,
+    onCandidate = null,
+    onProgress = null
+  } = options;
+
+  const ips = Array.from({ length: 254 }, (_, i) => `${subnet}.${i + 1}`);
+  const results = [];
+  let done = 0;
+
+  const queue = [...ips];
+
+  async function worker() {
+    while (queue.length) {
+      const ip = queue.shift();
+      const candidate = await probeIp(ip, credentials);
+      done++;
+      if (onProgress) onProgress(done, ips.length);
+      if (candidate) {
+        results.push(candidate);
+        if (onCandidate) onCandidate(candidate);
+      }
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, ips.length) }, worker);
+  await Promise.all(workers);
+
+  return results.filter(c => c.jsonConfirmed)
+    .sort((a, b) => {
+      const [a1, a2, a3, a4] = a.ip.split('.').map(Number);
+      const [b1, b2, b3, b4] = b.ip.split('.').map(Number);
+      return ((a1<<24)+(a2<<16)+(a3<<8)+a4) - ((b1<<24)+(b2<<16)+(b3<<8)+b4);
+    });
 }
 ```
 
-### 6.2 `lightSw` ✅
-
-```json
-{ "method": "set", "params": { "lightSw": 1 } }
-{ "method": "set", "params": { "lightSw": 0 } }
-```
-
-### 6.3 `pause` / reprise ✅
-
-```json
-{ "method": "set", "params": { "pause": 1 } }
-{ "method": "set", "params": { "pause": 0 } }
-```
-
-### 6.4 `stop` ✅
-
-```json
-{ "method": "set", "params": { "stop": 1 } }
-```
-
-### 6.5 Commandes connues, non implémentées ⬜
-
-| Commande | Payload exemple | Effet |
-|----------|----------------|-------|
-| `curFeedratePct` | `{"curFeedratePct": 120}` | Multiplicateur vitesse (0–200) |
-| `curFlowratePct` | `{"curFlowratePct": 95}` | Multiplicateur débit (0–200) |
-
 ---
 
-## 7. Format couleur : `#0rrggbb`
+## 15. Checklist d'implémentation
 
-Creality utilise du **ARGB 8 caractères** avec l'octet alpha toujours à `0` :
+### Transport & Connexion
+- [ ] Connexion WebSocket sur `ws://<ip>:9999/`
+- [ ] Header `Authorization: Basic <base64>` si credentials configurés
+- [ ] Identifiants par défaut à tester : `root` / `creality_2025`
+- [ ] Reconnexion automatique sur déconnexion (délai 300 ms après reprise foreground)
+- [ ] Gestion `try/catch` sur tout `JSON.parse`
+- [ ] Ne pas logger les payloads > 2000 chars en entier (retMaterials très volumineux)
 
-```
-#0rrggbb
- ^       octet alpha fixe à "0" (= pleinement opaque dans leur convention)
-  ^^^^^^ R, G, B en hex
-```
+### Séquence d'init
+- [ ] À l'ouverture WS : envoyer `get printerInfo`
+- [ ] Dès premier message reçu : envoyer `get {reqGcodeFile, reqGcodeList, boxsInfo, boxConfig, reqMaterials}`
+- [ ] Merger toutes les frames reçues dans un objet d'état cumulatif (les clés ne sont pas toutes dans la même frame)
 
-| Wire | RGB | Couleur |
-|------|-----|---------|
-| `#0d4c8aa` | `(212,200,170)` | Beige |
-| `#0ff5722` | `(255,87,34)` | Orange |
-| `#0ff8b1f` | `(255,139,31)` | Ambre |
-| `#0ff00ff` | `(255,0,255)` | Magenta |
+### Télémétrie
+- [ ] Parser les températures comme `parseFloat()` (arrivées parfois comme strings)
+- [ ] Utiliser les deux noms de champs pour le plateau : `bedTemp0` et `bedTemp`
+- [ ] Utiliser `boxTemp` OU `chamberTemp` pour la chambre
+- [ ] `printProgress` OU `dProgress` pour la progression
+- [ ] Algorithme robuste pour `TotalLayer` (peut être string, ratio "X/Y", JSON nestée)
 
-**Conversions** (✅ implémentées) :
-```js
-// Printer → color picker HTML (#rrggbb)
-if (/^#0[0-9a-f]{6}$/i.test(raw)) colorVal = "#" + raw.slice(2);
+### États
+- [ ] Implémenter la logique de déduction d'état (`deriveDisplayState`)
+- [ ] Gérer `state === 2` = terminé
+- [ ] Extraire le code d'erreur depuis `err.errcode` ET `errcode` directement
 
-// Color picker HTML → printer (#0rrggbb)
-const colorHex = "#0" + pickerValue.replace("#", "").toLowerCase();
-```
+### Filaments CFS
+- [ ] Parser `boxsInfo.materialBoxs[]`
+- [ ] `id=0` = extrudeur externe (1 matériau)
+- [ ] `type=0` = module CFS (4 slots)
+- [ ] Décoder les couleurs avec `parseCrealityHex` (format `#0RRGGBB`)
+- [ ] `state === 1` = slot actif
 
----
+### Mise à jour filament
+- [ ] Implémenter `modifyMaterial` avec tous les champs obligatoires
+- [ ] Encoder la couleur avec `colorToCrealityHex` (format `#0RRGGBB`)
+- [ ] `boxId=0` pour l'extrudeur externe, `1+` pour les modules CFS
+- [ ] `rfid` : utiliser le crealityID de la base matériaux, ou `"0"` si inconnu
 
-## 8. Moonraker HTTP (port 7125)
+### Miniature
+- [ ] Récupérer via `GET http://<ip>/downloads/original/current_print_image.png`
+- [ ] Gestion d'erreur 404 (pas d'impression en cours)
 
-Utilisé en parallèle du WS pour les actions fichiers.
+### Caméra
+- [ ] URL : `http://<ip>:8000/` (page HTML WebRTC complète)
+- [ ] Charger dans `<webview>` Electron avec `allowRunningInsecureContent`
+- [ ] Injecter CSS après `did-finish-load` pour autoplay et full-fit
+- [ ] Arrêter les tracks WebRTC explicitement avant de changer d'imprimante
 
-| Action | Méthode | Endpoint | Body |
-|--------|---------|----------|------|
-| Lancer impression | `POST` | `/printer/print/start` | `{"filename": "benchy.gcode"}` |
-| Supprimer fichier | `DELETE` | `/server/files/gcodes/<filename>` | — |
-| Liste fichiers (non utilisé) | `GET` | `/server/files/list?root=gcodes` | — |
-
----
-
-## 9. Web-server propriétaire (port 80) — images
-
-### 9.1 Vue d'ensemble
-
-Le firmware expose un serveur HTTP minimaliste sur le port 80, **distinct de Moonraker (port 7125)**.
-Il sert uniquement des fichiers statiques depuis `/mnt/UDISK` mappé en `/downloads/`.
-
-⚠️ Typo intentionnelle dans le firmware : le dossier s'appelle `humbnail` (sans `t`).
-
----
-
-### 9.2 Miniature du print en cours ← le cas clé
-
-**URL fixe** (ne dépend pas du nom de fichier) :
-```
-http://<ip>/downloads/original/current_print_image.png
-```
-
-**Comportement** :
-- Le firmware **écrase ce fichier à chaque frame** pendant l'impression — c'est une image live, pas un static.
-- Résolution : variable selon le modèle (typiquement 200×200 à 400×400 px sur V4).
-- Retourne **HTTP 404** si aucune impression n'est en cours (ou si le fichier n'a jamais été créé).
-- Reste accessible après fin d'impression jusqu'au prochain démarrage (snapshot de la dernière frame).
-
-**Logique d'affichage dans Tiger Studio** :
-
-```js
-// renderCreJobCard() — index.js
-
-// 1. Priorité : thumbnail pré-slicé du fichier (fiable, spécifique au fichier)
-let thumbUrl = null;
-if (fileName && Array.isArray(d.fileList)) {
-  const match = d.fileList.find(f => f.name === fileName);
-  if (match) thumbUrl = _creThumbUrl(conn, match); // /downloads/humbnail/<file>.png
-}
-// 2. Fallback : frame caméra live — UNIQUEMENT pendant une impression active
-if (!thumbUrl && isPrinting) {
-  thumbUrl = `http://${conn.ip}/downloads/original/current_print_image.png`;
-}
-// 3. Pas de thumbnail (job terminé sans fileList chargée, ou idle sans contexte)
-```
-
-**Pourquoi ne PAS utiliser `current_print_image.png` pour les jobs terminés** :
-après la fin d'une impression, cette image reste celle du job précédent jusqu'au prochain boot.
-Si l'utilisateur n'a pas relancé d'impression, il verrait la miniature du **mauvais fichier**.
-Le thumbnail pré-slicé du fichier (`/downloads/humbnail/`) est toujours correct et disponible même hors impression.
-
-**Pourquoi `background-image` et pas `<img>`** : si l'URL répond 404, un `<img>` afficherait l'icône "image cassée". Un `background-image` échoue silencieusement — le div reste vide, sans artefact visuel.
-
----
-
-### 9.3 Thumbnails des fichiers gcode (liste)
-
-Chaque entrée `retGcodeFileInfo2` contient deux champs de chemin filesystem :
-
-| Champ | Chemin exemple | Usage |
-|-------|----------------|-------|
-| `thumbnail` | `/mnt/UDISK/creality/local_gcode/humbnail/Wheel logo-….png` | Miniature ~96×96 px |
-| `preview` | `/mnt/UDISK/creality/local_gcode/original/Wheel logo-….png` | Grande résolution |
-
-**Conversion chemin → URL HTTP** (fonction `_creThumbUrl()` — index.js) :
-
-```js
-function _creThumbUrl(conn, f) {
-  // On extrait uniquement le basename (le sous-dossier varie selon FW)
-  const base = String(f.thumbnail || "").split("/").pop();
-  return base
-    ? `http://${conn.ip}/downloads/humbnail/${encodeURIComponent(base)}`
-    : "";
-}
-// Exemple : f.thumbnail = "/mnt/UDISK/creality/local_gcode/humbnail/Benchy.png"
-//           → http://192.168.40.106/downloads/humbnail/Benchy.png
-```
-
-**⚠️ Le sous-dossier dans le chemin filesystem (`local_gcode/humbnail/`) n'est pas la route HTTP.**
-Seul le **basename** (nom de fichier) est utilisé — le serveur le mappe directement sous `/downloads/humbnail/`.
-
----
-
-### 9.4 Résumé des routes
-
-| Route HTTP | Chemin filesystem | Contenu | Quand disponible |
-|------------|-------------------|---------|-----------------|
-| `/downloads/original/current_print_image.png` | `/mnt/UDISK/creality/local_gcode/original/current_print_image.png` | Frame live du print en cours | Pendant et après impression |
-| `/downloads/humbnail/<file>.png` | `/mnt/UDISK/creality/local_gcode/humbnail/<file>.png` | Miniature ~96×96 du gcode | Dès le slicing |
-| `/downloads/original/<file>.png` | `/mnt/UDISK/creality/local_gcode/original/<file>.png` | Preview grande résolution | Dès le slicing |
-
----
-
-## 10. Codes modèle
-
-| `model` | Imprimante |
-|---------|-----------|
-| `F009` | Ender-3 V4 |
-
-`modelVersion` sur V4 : `"DWIN hw ver:CR4NU200360C20;DWIN sw ver:1.1.0.45;"`
-
----
-
-## 11. Ce qui est implémenté dans Tiger Studio
-
-### ✅ Opérationnel
-
-| Fonctionnalité | Fichier / Fonction |
-|----------------|-------------------|
-| Connexion WebSocket + reconnexion exponentielle | `creOpenSocket()` |
-| Heartbeat `{ModeCode:"heart_beat"}` → `"ok"` | handler message |
-| Init unique `CRE_INIT_QUERY` (pas de polling) | `ws.open` |
-| Températures nozzle / bed / chambre + indicateur chauffe | `renderCreTempCard()` |
-| Progression impression, couche, temps restant/écoulé | `renderCreJobCard()` |
-| Thumbnail job en cours (`/downloads/original/`) | `renderCreJobCard()` |
-| Spinner animation sur état "Printing" | CSS `.snap-job-state--printing::before` |
-| Slots filament EXT + CFS 4 slots | `renderCreFilamentCard()` |
-| Bottom-sheet édition filament (type, vendor, couleur) | `openCreFilamentEdit()` |
-| Commande `modifyMaterial` (format vérifié live) | `creSendSet()` |
-| Conversion couleur `#0rrggbb` ↔ `#rrggbb` | `openCreFilamentEdit()` |
-| Toggle LED (`lightSw`) — hold-button ampoule | `creActionLed()` |
-| Pause / reprise — hold 1 s | `creActionPause()` |
-| Annulation impression — hold 2 s | `creActionStop()` |
-| File explorer en bottom sheet (dossier icône) | `openCreFileSheet()` |
-| Thumbnails fichiers (`/downloads/humbnail/`) | `_creThumbUrl()` |
-| Infos fichiers : durée, couleurs, poids, matière, temps | `_creFileListHtml()` |
-| Lancer impression via Moonraker POST | `creActionPrintFile()` |
-| Supprimer fichier Moonraker DELETE — hold 2 s | `creActionDeleteFile()` |
-| Log WS (entrées/sorties, expandable, copy) | `renderCreLogInner()` |
-| Badge online/offline + ping 30 s | `crePingPrinter()` |
-| Caméra WebRTC — `<iframe>` vers `http://<ip>:8000/webrtc` (même approche Snapmaker) | `renderCrealityLiveInner()` cam-banner block |
-
-### 🔶 Capturé, pas encore affiché
-
-| Champ(s) | Action future |
-|----------|----|
-| `boxsInfo.materialBoxs[].temp` / `.humidity` | Afficher temp °C + humidité % par module CFS |
-| `d.curFeedratePct`, `d.curFlowratePct` | Curseurs vitesse/débit dans job card |
-| `d.curPosition` | Affichage XYZ en debug ou job card |
-| `d.realTimeSpeed`, `d.realTimeFlow` | Stats live sous la progress bar |
-| `d.pressureAdvance` | Info slot filament actif |
-| `d.usedMaterialLength` | Consommation mm dans job card |
-| `d.cfsConnect` | Masquer section CFS si `0` |
-| `d.errCode`, `d.errKey`, `d.errValue` | Bandeau erreur dans job card |
-| `d.maxNozzleTemp`, `d.maxBedTemp` | Clamper slider températures |
-| `d.model`, `d.modelVersion` | Affichage dans settings imprimante |
-| `boxsInfo.same_material[]` | Groupage visuel slots identiques |
-
-### ⬜ Connu mais pas encore capturé
-
-| Commande / champ | Notes |
-|-----------------|-------|
-| `set curFeedratePct/curFlowratePct` | Tuning live pendant impression |
-| Événements `ModeCode: "notify"` | Re-fetch boxsInfo sur événement |
-
----
-
-## 12. Bugs / dettes connues
-
-| Problème | Impact | Fix |
-|----------|--------|-----|
-| Section CFS affichée même si `cfsConnect: 0` | Slot vide visible à tort | Conditionner sur `d.cfsConnect` |
-| `creStateLabel()` ne couvre que 3 états (0/1/2) | État `3`/`4` affiché "Idle" | Étendre le switch |
-| Pas de gestion `err.errcode !== 0` | Erreurs silencieuses | Bandeau rouge dans job card |
-| ~~Thumbnail job fixe `current_print_image.png` — image du mauvais fichier après fin d'impression~~ | **Fixé** — priorité au thumbnail pré-slicé du fichier (`/downloads/humbnail/`) ; `current_print_image.png` uniquement en fallback pendant une impression active | `renderCreJobCard()` |
-
----
-
-*Mis à jour : 2026-05-10 — post-refacto Tiger Studio (no-poll, file sheet, hold-to-confirm)*
+### Découverte
+- [ ] Sonder TCP port 9999 (timeout 650 ms)
+- [ ] Sonder TCP port 8000 séparément (info caméra)
+- [ ] Valider `isCrealityLike` (identité forte + télémétrie)
+- [ ] Tester les credentials par défaut (`root`/`creality_2025`) en fallback
+- [ ] Concurrence max 64 IPs simultanées
+- [ ] Balayer `192.168.1.x` et `192.168.40.x` en plus du sous-réseau local
+- [ ] Trier les résultats confirmés en premier, puis par IP croissante
