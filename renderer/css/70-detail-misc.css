@@ -66,6 +66,9 @@
   .icon-plug      { -webkit-mask-image: url('../../assets/svg/icons/icon_plug.svg');         mask-image: url('../../assets/svg/icons/icon_plug.svg'); }
   .icon-battery   { -webkit-mask-image: url('../../assets/svg/icons/icon_battery.svg');      mask-image: url('../../assets/svg/icons/icon_battery.svg'); }
   .icon-bolt      { -webkit-mask-image: url('../../assets/svg/icons/icon_bolt.svg');         mask-image: url('../../assets/svg/icons/icon_bolt.svg'); }
+  .icon-bulb      { -webkit-mask-image: url('../../assets/svg/icons/icon_bulb.svg');         mask-image: url('../../assets/svg/icons/icon_bulb.svg'); }
+  .icon-stop      { -webkit-mask-image: url('../../assets/svg/icons/icon_stop.svg');         mask-image: url('../../assets/svg/icons/icon_stop.svg'); }
+  .icon-folder    { -webkit-mask-image: url('../../assets/svg/icons/icon_folder.svg');       mask-image: url('../../assets/svg/icons/icon_folder.svg'); }
   .icon-clock     { -webkit-mask-image: url('../../assets/svg/icons/icon_clock.svg');        mask-image: url('../../assets/svg/icons/icon_clock.svg'); }
   .icon-wifi      { -webkit-mask-image: url('../../assets/svg/icons/icon_wifi.svg');         mask-image: url('../../assets/svg/icons/icon_wifi.svg'); }
 

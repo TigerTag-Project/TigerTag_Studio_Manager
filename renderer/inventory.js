@@ -1,4 +1,44 @@
-(() => {
+// ── Printer brand modules — each registers itself into the brands registry.
+// Import order determines registration order (affects brand picker list).
+import { ctx as _printerCtx } from './printers/context.js';
+import { brands } from './printers/registry.js';
+import './printers/bambulab/index.js';
+import './printers/elegoo/index.js';
+import {
+  ffgKey, ffgGetConn, ffgIsOnline,
+  ffgPingPrinter,
+  ffgConnect, ffgDisconnect, ffgTearDownCamera,
+  renderFfgOnlineBadge,
+  renderFlashforgeLiveInner, renderFlashforgeLogInner,
+  openFlashforgeFilamentEdit, closeFlashforgeFilamentEdit,
+} from './printers/flashforge/index.js';
+import { renderFfgCamBanner, ffgRefreshCamBanner } from './printers/flashforge/widget_camera.js';
+import { renderSnapCamBanner } from './printers/snapmaker/widget_camera.js';
+import { renderCreCamBanner, startCreCam, stopCreCam } from './printers/creality/widget_camera.js';
+import {
+  snapKey, snapGetConn, snapIsOnline,
+  snapPingPrinter,
+  snapConnect, snapDisconnect,
+  renderSnapOnlineBadge,
+  renderSnapmakerLiveInner, renderSnapmakerLogInner,
+  openSnapFilamentEdit, closeSnapFilamentEdit,
+  snapSendCustomJson,
+  snapFmtTempPair, snapFmtDuration, snapTextColor, snapFilenameRel,
+  SNAP_FIL_COLOR_PRESETS,
+  SNAP_ICON_NOZZLE, SNAP_ICON_BED, SNAP_ICON_CHAMBER, SNAP_ICON_CLOCK,
+} from './printers/snapmaker/index.js';
+import {
+  creKey, creIsOnline, crePingPrinter,
+  creConnect, creDisconnect,
+  renderCrealityLiveInner, renderCreLogInner,
+  creRefreshOnlineUI, renderCreOnlineBadge,
+  creGetConn,
+  openCreFilamentEdit, closeCreFilamentEdit,
+  openCreFileSheet, closeCreFileSheet,
+  creActionLed, creActionPause, creActionStop,
+  creLoadFileList, creActionPrintFile, creActionDeleteFile,
+} from './printers/creality/index.js';
+
   const API_BASE         = "https://cdn.tigertag.io";
 
   // ── Firebase helpers — one named app instance per account ────────────────
@@ -111,6 +151,7 @@
     unsubFriendRequests: null,
     friendView: null,        // { uid, displayName, avatarColor } — set when viewing a friend's inventory
     td1sConnected: false,
+    rendererPath: null,  // absolute path to renderer/ dir — used as file:// preload base for <webview>
     db: { brand: [], material: [], aspect: [], type: [], diameter: [], unit: [], version: [], containers: [] }
   };
 
@@ -444,6 +485,12 @@
         } catch { state.db.printerModels[brand] = []; }
       }));
     } catch {}
+    // Renderer path — needed to build the file:// preload URL for the Creality
+    // camera <webview>. Fetched once here so renderPrinterDetail() can use it
+    // synchronously when building the webview HTML string.
+    if (window.electronAPI?.getRendererPath) {
+      try { state.rendererPath = await window.electronAPI.getRendererPath(); } catch {}
+    }
   }
 
   /* ── Printer model lookup ──────────────────────────────────────────────
@@ -3758,7 +3805,7 @@
         maybeMigrateFlatRackToNested(uid);
         saveInventory(raw);
         preCacheImages(state.rows).then(() => {
-          sortRows(); renderStats(); renderInventory();
+          sortStateRows(); renderStats(); renderInventory();
           // Refresh open detail panel with latest data
           if (state.selected && $("detailPanel").classList.contains("open")) {
             openDetail(state.selected);
@@ -3837,7 +3884,7 @@
         state.inventory = raw;
         state.rows = Object.entries(raw).map(([k,vv]) => normalizeRow(k, vv || {}));
         await preCacheImages(state.rows);
-        sortRows(); renderStats(); renderInventory();
+        sortStateRows(); renderStats(); renderInventory();
       }
     } catch {}
 
@@ -4036,7 +4083,7 @@
   }
 
   /* ── inventory load ── */
-  function sortRows() {
+  function sortStateRows() {
     state.rows.sort((a, b) => {
       if (a.deleted !== b.deleted) return a.deleted ? 1 : -1;
       return a.uid.localeCompare(b.uid);
@@ -7139,13 +7186,13 @@
   }
 
   /* ── Brand metadata for display (label + accent color + connection hint) ── */
-  const PRINTER_BRAND_META = {
-    bambulab:   { label: "Bambu Lab",  accent: "#1ba84e", connection: "MQTT (LAN)" },
-    creality:   { label: "Creality",   accent: "#e22a2a", connection: "WebSocket" },
-    elegoo:     { label: "Elegoo",     accent: "#00a3e0", connection: "MQTT" },
-    flashforge: { label: "FlashForge", accent: "#f39c12", connection: "HTTP" },
-    snapmaker:  { label: "Snapmaker",  accent: "#9b59b6", connection: "WebSocket" }
-  };
+  // Brand metadata, form schemas and helper texts are now defined in
+  // renderer/printers/{brand}/settings.js and registered via registerBrand().
+  // These computed objects maintain the same shape so all downstream code
+  // (openPrinterAddForm, renderPrintersView, etc.) works unchanged.
+  const PRINTER_BRAND_META = Object.fromEntries([...brands].map(([id, b]) => [id, b.meta]));
+  const PRINTER_ADD_SCHEMA = Object.fromEntries([...brands].map(([id, b]) => [id, b.schema]));
+  const PRINTER_ADD_HELPER = Object.fromEntries([...brands].map(([id, b]) => [id, b.helper]));
 
   /* ── Render the user's 3D printers in the main panel.
      Read-only listing — adding / editing / deleting printers happens in the
@@ -7400,7 +7447,7 @@
      explicit Show toggle. Sensitive fields are still readable by the
      owner — the masking is purely a shoulder-surfing / screen-share
      defense, NOT a security boundary (Firestore rules are).               */
-  let _activePrinter = null; // currently-open printer { brand, id, ...data }
+  let _activePrinter  = null; // currently-open printer { brand, id, ...data }
 
   function openPrinterDetail(brand, id) {
     const printer = state.printers.find(p => p.brand === brand && p.id === id);
@@ -7446,6 +7493,13 @@
     if ($("ffgFilEditSheet")?.classList.contains("open")) {
       try { closeFlashforgeFilamentEdit(); } catch {}
     }
+    // Creality file explorer sheet.
+    if ($("creFilEditSheet")?.classList.contains("open")) {
+      try { closeCreFilamentEdit(); } catch {}
+    }
+    if ($("creFileSheet")?.classList.contains("open")) {
+      try { closeCreFileSheet(); } catch {}
+    }
     // Cut the MJPEG stream BEFORE the panel slides out. The `<img>`
     // stays in DOM while the .open class is removed (just CSS-hidden),
     // so without an explicit src reset Chromium keeps the connection
@@ -7464,8 +7518,9 @@
     if (_activePrinter?.brand === "flashforge") {
       ffgDisconnect(ffgKey(_activePrinter));
     }
-    // Creality — tear down the WebSocket and the 2 s poll interval.
+    // Creality — stop the WebRTC camera, then tear down the WebSocket.
     if (_activePrinter?.brand === "creality") {
+      stopCreCam();
       creDisconnect(creKey(_activePrinter));
     }
     _activePrinter = null;
@@ -7498,1269 +7553,37 @@
     renderPrinterDetail();
   }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     Snapmaker Live integration (Moonraker over WebSocket)
-     ══════════════════════════════════════════════════════════════════════
-     Ported from the Flutter `SnapmakerWebSocketPage` (snapmaker_websocket_page.dart).
-     Snapmaker U1 runs a Klipper / Moonraker stack on the printer; we open a
-     WebSocket to ws://{ip}:7125/websocket and subscribe to printer objects
-     to stream live temperatures, the filament loaded in each of up to 4
-     extruders, and the active print job state.
-     Phase 1 (this turn): read-only display + auto reconnect + camera embed.
-     Phase 2 (later): manual filament edit, NFC scan, thumbnail metadata.
-     ══════════════════════════════════════════════════════════════════════ */
-
-  // Per-printer live state. Keyed by `${brand}:${id}` (same composite key
-  // we use elsewhere). Value carries the WebSocket, latest snapshot, and
-  // reconnect bookkeeping. Stays in module scope (not in `state`) since
-  // it's transient — never persisted.
-  const _snapConns = new Map();
-
-  // Lightweight reachability cache, populated by snapPingPrinter (HTTP
-  // GET to /server/info on the Moonraker port). Used to drive the
-  // "Online / Offline" indicator in the printer grid + side card hero
-  // even when no WebSocket session is open. Refreshed every 30 s.
-  const _snapPings = new Map(); // key -> { online: bool|null, lastChecked: number }
-
-  function snapKey(p) { return `${p.brand}:${p.id}`; }
-
-  // Authoritative "is this Snapmaker reachable?" reading.
-  // 1. If a live WebSocket exists, use its status (most accurate).
-  // 2. Otherwise fall back to the last HTTP ping result.
-  // 3. Returns `null` when we have no signal yet (renders as a "checking" dot).
-  function snapIsOnline(printer) {
-    if (printer?.brand !== "snapmaker") return null;
-    const k = snapKey(printer);
-    const conn = _snapConns.get(k);
-    if (conn) return conn.status === "connected";
-    const ping = _snapPings.get(k);
-    return ping ? ping.online : null;
-  }
-
-  async function snapPingPrinter(printer) {
-    if (!printer || printer.brand !== "snapmaker" || !printer.ip) return;
-    const k = snapKey(printer);
-    const cached = _snapPings.get(k);
-    const now = Date.now();
-    // 30 s cache — avoid pinging the same printer on every render.
-    if (cached && now - cached.lastChecked < 30_000) return;
-    _snapPings.set(k, { online: cached?.online ?? null, lastChecked: now });
-    try {
-      const ctrl = new AbortController();
-      const tm = setTimeout(() => ctrl.abort(), 2000);
-      const res = await fetch(`http://${printer.ip}:7125/server/info`, {
-        method: "GET",
-        signal: ctrl.signal,
-        cache: "no-store"
-      });
-      clearTimeout(tm);
-      _snapPings.set(k, { online: res.ok, lastChecked: now });
-    } catch (_) {
-      _snapPings.set(k, { online: false, lastChecked: now });
-    }
-    // Patch the affected card / side-card without rebuilding everything.
-    snapRefreshOnlineUI(k);
-  }
-
-  function snapPingAllPrinters() {
-    for (const p of state.printers) {
-      if (p.brand === "snapmaker" && p.ip) snapPingPrinter(p);
-    }
-  }
-  // Background refresh — kicks in once the user has signed in and
-  // state.printers is populated. We only ping while at least one
-  // Snapmaker is in the list, otherwise it's a no-op.
-  setInterval(snapPingAllPrinters, 30_000);
-
-  // Surgical DOM update — replaces just the status dot + label in the
-  // affected card and (if open) the side-card hero. Avoids re-rendering
-  // the whole grid on every ping resolution.
-  function snapRefreshOnlineUI(key) {
-    document.querySelectorAll(`[data-printer-key="${key}"] .printer-online`).forEach(el => {
-      const p = state.printers.find(x => snapKey(x) === key);
-      el.outerHTML = renderSnapOnlineBadge(p, "card");
-    });
-    if (_activePrinter && snapKey(_activePrinter) === key) {
-      const host = $("ppOnlineRow");
-      if (host) host.outerHTML = renderSnapOnlineBadge(_activePrinter, "side");
-    }
-  }
-
-  // Single source of truth for the badge HTML — used in both the grid
-  // card and the side-card. `where` toggles a class for slightly
-  // different styling between the two locations.
-  function renderSnapOnlineBadge(printer, where) {
-    if (!printer || printer.brand !== "snapmaker") return "";
-    const online = snapIsOnline(printer);
-    const cls = online === true ? "is-online" : (online === false ? "is-offline" : "is-checking");
-    const lbl = online === true ? t("snapStatusOnline")
-              : online === false ? t("snapStatusOffline")
-              : t("snapStatusConnecting");
-    const id  = where === "side" ? ` id="ppOnlineRow"` : "";
-    return `<span class="printer-online printer-online--${esc(where)} ${cls}"${id}>
-              <span class="printer-online-dot"></span>
-              <span class="printer-online-lbl">${esc(lbl)}</span>
-            </span>`;
-  }
-
-  // Open or refresh the connection for a printer. Idempotent — calling
-  // again on the same printer is a no-op while the socket is OPEN.
-  function snapConnect(printer) {
-    const key = snapKey(printer);
-    const existing = _snapConns.get(key);
-    if (existing && existing.ws && (existing.ws.readyState === WebSocket.OPEN || existing.ws.readyState === WebSocket.CONNECTING)) {
-      // Already connected/connecting — if the ip changed, tear down first.
-      if (existing.ip === printer.ip) return;
-      snapDisconnect(key);
-    }
-    const conn = {
-      ip: printer.ip,
-      key,
-      ws: null,
-      status: "connecting", // "connecting" | "connected" | "offline" | "error"
-      lastError: null,
-      retry: 0,
-      retryTimer: null,
-      // Latest parsed data — kept flat for cheap reads in the renderer.
-      data: {
-        temps: {},          // { e1_temp, e1_target, e2_temp, ... bed_temp, bed_target }
-        filaments: [],      // [{ color: "#RRGGBB", vendor, type, subType, official }] × up to 4
-        printState: null,   // "standby" | "printing" | "paused" | "complete" | "error"
-        printFilename: null,
-        printDuration: 0,
-        progress: 0,        // 0..1
-        currentLayer: 0,
-        totalLayer: 0,
-        printPreviewUrl: null,  // slicer thumbnail (set by snapFetchMetadata)
-        printEstimated: null    // estimated_time in seconds (from metadata)
-      }
-    };
-    _snapConns.set(key, conn);
-    snapOpenSocket(conn);
-  }
-
-  function snapOpenSocket(conn) {
-    if (!conn.ip) { conn.status = "error"; conn.lastError = "no IP"; return; }
-    const url = `ws://${conn.ip}:7125/websocket`;
-    let ws;
-    try { ws = new WebSocket(url); }
-    catch (e) {
-      console.warn("[snap] WS construct failed:", e?.message);
-      conn.status = "error";
-      conn.lastError = String(e?.message || e);
-      snapNotifyChange(conn);
-      snapScheduleReconnect(conn);
-      return;
-    }
-    conn.ws = ws;
-    conn.status = "connecting";
-    snapNotifyChange(conn);
-
-    // Wrap send so every outbound payload is captured for the log view.
-    const sendLogged = (obj) => {
-      const json = JSON.stringify(obj);
-      snapLogPush(conn, "→", json);
-      ws.send(json);
-    };
-
-    ws.addEventListener("open", () => {
-      conn.status = "connected";
-      conn.lastError = null;
-      conn.retry = 0;
-      // Subscribe to all the printer objects we care about. The 4 extruder
-      // names match the Snapmaker U1 4-tool firmware naming convention.
-      sendLogged({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "printer.objects.subscribe",
-        params: { objects: {
-          print_task_config: null,
-          print_stats: null,
-          virtual_sdcard: null,
-          display_status: null,
-          extruder:  ["temperature", "target"],
-          extruder1: ["temperature", "target"],
-          extruder2: ["temperature", "target"],
-          extruder3: ["temperature", "target"],
-          heater_bed:["temperature", "target"]
-        }}
-      });
-      // Initial snapshot — `subscribe` returns the current state synchronously
-      // but we send a query too in case the firmware version doesn't.
-      sendLogged({
-        jsonrpc: "2.0", id: 1001,
-        method: "printer.objects.query",
-        params: { objects: {
-          print_stats: null, virtual_sdcard: null, display_status: null,
-          extruder: null, extruder1: null, extruder2: null, extruder3: null,
-          heater_bed: null
-        }}
-      });
-      // Status changed (connecting → connected) — the hero camera depends
-      // on this, so we ask for a full re-render not just the live block.
-      snapNotifyChange(conn, /*statusChanged*/ true);
-    });
-
-    ws.addEventListener("message", ev => {
-      // Capture every inbound frame for the log first — so even non-status
-      // notifications (logs / RPC results we don't otherwise inspect) are
-      // visible to the developer.
-      snapLogPush(conn, "←", ev.data);
-
-      let obj; try { obj = JSON.parse(ev.data); } catch { return; }
-      let status = null;
-      if (obj.result && obj.result.status) status = obj.result.status;
-      else if ((obj.method === "notify_status_update" || obj.method === "notify_status_changed")
-               && Array.isArray(obj.params) && obj.params[0]) {
-        status = obj.params[0];
-      }
-      if (status && typeof status === "object") snapMergeStatus(conn, status);
-      // Always notify so the log row appears even when the payload didn't
-      // carry a status update (RPC results, etc.).
-      snapNotifyChange(conn);
-    });
-
-    ws.addEventListener("close", () => {
-      conn.status = "offline";
-      snapNotifyChange(conn, /*statusChanged*/ true);
-      snapScheduleReconnect(conn);
-    });
-
-    ws.addEventListener("error", () => {
-      // The 'close' handler will fire next; just record the error here.
-      conn.lastError = "websocket error";
-    });
-  }
-
-  function snapScheduleReconnect(conn) {
-    if (conn.retryTimer) return;
-    if (!_snapConns.has(conn.key)) return; // disposed
-    // Capped exponential backoff: 2s, 4s, 8s, 16s, then 30s.
-    conn.retry = Math.min(conn.retry + 1, 5);
-    const delay = Math.min(2000 * (1 << (conn.retry - 1)), 30000);
-    conn.retryTimer = setTimeout(() => {
-      conn.retryTimer = null;
-      // The user might have closed the panel in the meantime.
-      if (!_snapConns.has(conn.key)) return;
-      snapOpenSocket(conn);
-    }, delay);
-  }
-
-  function snapDisconnect(key) {
-    const conn = _snapConns.get(key);
-    if (!conn) return;
-    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = null; }
-    if (conn.ws) {
-      try { conn.ws.close(); } catch (_) {}
-      conn.ws = null;
-    }
-    _snapConns.delete(key);
-  }
-
-  // Merge a Moonraker `status` payload into our flat `data` shape.
-  function snapMergeStatus(conn, status) {
-    const d = conn.data;
-
-    // Live temps: extruder*, heater_bed
-    const tempPair = (objName, prefix) => {
-      const obj = status[objName];
-      if (!obj || typeof obj !== "object") return;
-      if (typeof obj.temperature === "number") d.temps[`${prefix}_temp`]   = obj.temperature;
-      if (typeof obj.target === "number")      d.temps[`${prefix}_target`] = obj.target;
-    };
-    tempPair("extruder",   "e1");
-    tempPair("extruder1",  "e2");
-    tempPair("extruder2",  "e3");
-    tempPair("extruder3",  "e4");
-    tempPair("heater_bed", "bed");
-
-    // Filament info — `print_task_config` carries arrays of length 4.
-    const cfg = status.print_task_config;
-    if (cfg && typeof cfg === "object") {
-      const colors  = Array.isArray(cfg.filament_color_rgba) ? cfg.filament_color_rgba : null;
-      const vendors = Array.isArray(cfg.filament_vendor)     ? cfg.filament_vendor     : null;
-      const types   = Array.isArray(cfg.filament_type)       ? cfg.filament_type       : null;
-      const subs    = Array.isArray(cfg.filament_sub_type)   ? cfg.filament_sub_type   : null;
-      const offs    = Array.isArray(cfg.filament_official)   ? cfg.filament_official   : null;
-      // Only overwrite if at least one array landed — `notify_status_update`
-      // for a single field would otherwise nuke the others.
-      if (colors || vendors || types || subs || offs) {
-        const merged = d.filaments.length === 4 ? d.filaments.slice() : [{},{},{},{}];
-        for (let i = 0; i < 4; i++) {
-          merged[i] = { ...(merged[i] || {}) };
-          if (colors  && colors[i]  != null) merged[i].color    = snapParseRgbaHex(String(colors[i]));
-          if (vendors && vendors[i] != null) merged[i].vendor   = String(vendors[i]);
-          if (types   && types[i]   != null) merged[i].type     = String(types[i]);
-          if (subs    && subs[i]    != null) merged[i].subType  = String(subs[i]);
-          if (offs    && offs[i]    != null) merged[i].official = !!offs[i];
-        }
-        d.filaments = merged;
-      }
-    }
-
-    // Print job state
-    const ps = status.print_stats;
-    if (ps && typeof ps === "object") {
-      if (typeof ps.state === "string")          d.printState = ps.state;
-      if (typeof ps.filename === "string")       d.printFilename = ps.filename;
-      if (typeof ps.print_duration === "number") d.printDuration = ps.print_duration;
-      // Layer counters live under `print_stats.info` — Moonraker schema.
-      if (ps.info && typeof ps.info === "object") {
-        if (typeof ps.info.current_layer === "number") d.currentLayer = ps.info.current_layer;
-        if (typeof ps.info.total_layer   === "number") d.totalLayer   = ps.info.total_layer;
-      }
-      // Trigger an HTTP metadata fetch for the slicer-rendered thumbnail.
-      // Only does work when the filename actually changes.
-      const rel = snapFilenameRel(d.printFilename);
-      if (rel) snapFetchMetadata(conn, rel);
-    }
-    const ds = status.display_status;
-    if (ds && typeof ds === "object" && typeof ds.progress === "number") {
-      d.progress = ds.progress;
-    }
-    const vsd = status.virtual_sdcard;
-    if (vsd && typeof vsd === "object" && typeof vsd.progress === "number" && !d.progress) {
-      d.progress = vsd.progress;
-    }
-  }
-
-  /* ── Snapmaker manual filament edit — bottom sheet ───────────────
-     Click on a colour square (or its edit icon) → opens a modal
-     pre-filled with the current filament data. Confirming sends the
-     SET_PRINT_FILAMENT_CONFIG g-code via the existing WebSocket so
-     the printer's `print_task_config` updates and the new values
-     stream back through `notify_status_update`.                       */
-  // 24 colour presets shown in the "Select Color" screen, ordered to
-  // match the mobile companion app's palette (5 per row, neutrals → cool
-  // → green → warm → red/pink → purple). The 25th slot is a "custom"
-  // chip that opens the native colour picker.
-  const SNAP_FIL_COLOR_PRESETS = [
-    "#000000", "#808080", "#CDCDCD", "#FFFFFF", "#135E7E",
-    "#B6C3CB", "#4AB1F0", "#2641E9", "#2CDCA6", "#157F5F",
-    "#1CB01C", "#C2E58C", "#FFE600", "#FF9933", "#6E4519",
-    "#B58137", "#F0E6D6", "#D4C8AA", "#ED1C24", "#EC5A85",
-    "#FF00FF", "#C8A4D6", "#8526D3", "#4B1F97"
-  ];
-  // Vendor → materials map — iso to the mobile companion. The mobile
-  // ships with these 8 brands and the Generic 10-material catalogue;
-  // each brand falls back to the Generic list when it has no specific
-  // products (matches the Flutter "vendorToLabels.putIfAbsent + union
-  // fallback" pattern).
-  const SNAP_FIL_VENDOR_MATERIALS = {
-    "Generic":   ["PLA", "PETG", "ABS", "TPU", "ABS-AF", "ABS-CF", "ASA", "ASA-CF", "ASA-GF", "Biopolymer"],
-    "JamgHe":    [],
-    "Landu":     [],
-    "R3D":       [],
-    "Rosa3D":    [],
-    "Snapmaker": [],
-    "Sunlu":     [],
-    "eSun":      []
-  };
-  // Backwards compat — the chip-based code paths still reference these.
-  const SNAP_FIL_BRANDS    = Object.keys(SNAP_FIL_VENDOR_MATERIALS);
-  const SNAP_FIL_MATERIALS = SNAP_FIL_VENDOR_MATERIALS["Generic"];
-
-  // Sort materials with priority — PLA / PETG / ABS / TPU come first
-  // when they appear EXACTLY (variants like "ABS-AF" or "PLA Matte"
-  // fall to the alphabetical section, matching the mobile app's order).
-  const SNAP_FIL_PRIORITY = ["PLA", "PETG", "ABS", "TPU"];
-  function snapSortMaterials(list) {
-    const upper    = list.map(s => s.toUpperCase());
-    const used     = new Set();
-    const priority = [];
-    for (const p of SNAP_FIL_PRIORITY) {
-      const idx = upper.findIndex((u, i) => !used.has(i) && u === p);
-      if (idx >= 0) { priority.push(list[idx]); used.add(idx); }
-    }
-    const rest = list.filter((_, i) => !used.has(i))
-                     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-    return [...priority, ...rest];
-  }
-  let _snapFilEdit = null; // { brand, deviceId, extruderIndex, conn }
-  let _sfeSelectedBrand = "";    // last chip-or-text value picked
-  let _sfeSelectedMaterial = ""; // last chip-or-text value picked
-
-  // Convert "#RRGGBB" or "#RRGGBBAA" to a Klipper-friendly 8-char
-  // lowercase RGBA hex string. We default alpha to ff (full opacity).
-  function snapColorToRgbaHex(hex) {
-    let v = (hex || "").trim();
-    if (v.startsWith("#")) v = v.slice(1);
-    if (v.length === 6) v += "ff";
-    return v.toLowerCase().slice(0, 8);
-  }
-
-  // Sanitise free-text inputs so the resulting g-code line stays
-  // parseable on the Klipper side (no embedded spaces, no quotes).
-  function snapSanitiseGcodeArg(s) {
-    return String(s || "").trim().replace(/\s+/g, "-").replace(/["'`]/g, "");
-  }
-
-  // Send a single g-code line via the printer's existing WebSocket.
-  // Logs the outbound frame so it's visible in the request log too.
-  function snapSendGcode(conn, script) {
-    if (!conn?.ws || conn.ws.readyState !== WebSocket.OPEN) return false;
-    const msg = {
-      jsonrpc: "2.0", id: 201,
-      method: "printer.gcode.script",
-      params: { script }
-    };
-    const json = JSON.stringify(msg);
-    snapLogPush(conn, "→", json);
-    conn.ws.send(json);
-    return true;
-  }
-
-  // Render the LEFT column: list of vendors. Selected one is highlighted.
-  function snapFilRenderVendorList(selected) {
-    return SNAP_FIL_BRANDS.map(v => {
-      const meta = PRINTER_BRAND_META[v.toLowerCase().replace(/\s+/g, "")];
-      const accentStyle = meta ? `style="--brand-accent:${meta.accent}"` : "";
-      const isSel = v.toLowerCase() === (selected || "").toLowerCase();
-      return `<button type="button" class="sfe-fil-row${isSel ? " is-selected" : ""}${meta ? " sfe-fil-row--brand" : ""}"
-                      data-val="${esc(v)}" ${accentStyle}>${esc(v)}</button>`;
-    }).join("");
-  }
-  // Render the RIGHT column: materials for the chosen vendor. Falls back
-  // to the Generic catalogue when the vendor has no specific products.
-  function snapFilRenderMaterialList(vendor, selectedMat) {
-    const list  = (SNAP_FIL_VENDOR_MATERIALS[vendor]?.length
-                   ? SNAP_FIL_VENDOR_MATERIALS[vendor]
-                   : SNAP_FIL_VENDOR_MATERIALS["Generic"]);
-    const sorted = snapSortMaterials(list);
-    return sorted.map(m => {
-      const isSel = m.toLowerCase() === (selectedMat || "").toLowerCase();
-      return `<button type="button" class="sfe-fil-row${isSel ? " is-selected" : ""}" data-val="${esc(m)}">
-                <span class="sfe-fil-row-text">${esc(m)}</span>
-                ${isSel ? `<span class="sfe-fil-row-check">✓</span>` : ""}
-              </button>`;
-    }).join("");
-  }
-
-  function openSnapFilamentEdit(printer, extruderIndex) {
-    const conn = _snapConns.get(snapKey(printer));
-    // The modal opens whatever the WS state — opening it should always
-    // feel responsive on click. If the connection is down the Send
-    // button will surface the error at submit time.
-    const fil = (conn?.data?.filaments?.[extruderIndex]) || {};
-    // RFID-locked filaments (`fil.official === true`) still open the
-    // sheet, but in READ-ONLY mode: SAME layout / order / presentation
-    // as the editable sheet, controls just disabled. The user reads
-    // what the printer reported but can't mutate it.
-    const readonly = !!fil.official;
-    const sheetEl = $("snapFilEditSheet");
-    if (sheetEl) sheetEl.classList.toggle("sfe-sheet--readonly", readonly);
-    // Title swaps between "Edit filament" and "Read-only filament".
-    const titleEl = $("snapFilEditTitle");
-    if (titleEl) {
-      const newKey = readonly ? "snapFilEditTitleReadonly" : "snapFilEditTitle";
-      titleEl.textContent = t(newKey);
-      titleEl.dataset.i18n = newKey; // keep i18n applier in sync if locale changes
-    }
-    // Native disabled flips — same controls, just inert. We re-apply
-    // every open since the sheet is reused for every extruder click.
-    const subEl   = $("sfeSubtype");
-    const applyEl = $("snapFilEditSave");
-    if (subEl)   subEl.disabled   = readonly;
-    if (applyEl) applyEl.disabled = readonly;
-    _snapFilEdit = { brand: printer.brand, deviceId: printer.id, extruderIndex, key: snapKey(printer), readonly };
-    _sfeSelectedBrand    = fil.vendor  || "";
-    _sfeSelectedMaterial = fil.type    || "";
-
-    // Pre-fill form values
-    const colorInp = $("sfeColorInput");
-    const vendorInp= $("sfeVendor");
-    const matInp   = $("sfeMaterial");
-    const subInp   = $("sfeSubtype");
-    if (colorInp) colorInp.value = (fil.color && /^#[0-9a-f]{6}/i.test(fil.color)) ? fil.color.slice(0, 7) : "#FF5722";
-    // Custom-text inputs: only show a value when the current vendor/material
-    // is NOT in the predefined chip lists (otherwise the chip + the input
-    // would echo the same value, which is noisy).
-    if (vendorInp) vendorInp.value = SNAP_FIL_BRANDS.some(b => b.toLowerCase() === _sfeSelectedBrand.toLowerCase()) ? "" : (fil.vendor || "");
-    if (matInp)    matInp.value    = SNAP_FIL_MATERIALS.some(m => m.toLowerCase() === _sfeSelectedMaterial.toLowerCase()) ? "" : (fil.type || "");
-
-    // Sub-type select — populated from the id_aspect catalog so we
-    // always send a documented value to the printer. Filter out the
-    // "-" / "None" placeholders. Sort alphabetically but pin "Basic"
-    // to the top since it's the default + most common.
-    if (subInp && subInp.tagName === "SELECT") {
-      const aspects = (state.db.aspect || [])
-        .filter(a => a && a.label && a.label !== "-" && a.label.toLowerCase() !== "none")
-        .map(a => a.label);
-      aspects.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-      const basicIdx = aspects.findIndex(l => l.toLowerCase() === "basic");
-      if (basicIdx > 0) { aspects.splice(basicIdx, 1); aspects.unshift("Basic"); }
-      // Add the current value as a custom option if it doesn't match any
-      // aspect — preserves user-typed legacy values without silently
-      // dropping them.
-      const cur = String(fil.subType || "").trim();
-      const isKnown = !!cur && aspects.some(a => a.toLowerCase() === cur.toLowerCase());
-      const opts = [];
-      if (cur && !isKnown) opts.push(`<option value="${esc(cur)}" selected>${esc(cur)} (custom)</option>`);
-      for (const label of aspects) {
-        const isSel = isKnown ? cur.toLowerCase() === label.toLowerCase()
-                              : label === "Basic";
-        opts.push(`<option value="${esc(label)}"${isSel ? " selected" : ""}>${esc(label)}</option>`);
-      }
-      subInp.innerHTML = opts.join("");
-    }
-
-    // Header sub on the summary screen
-    // Subtitle deliberately blank — the user already sees which
-    // printer + extruder they tapped from in the side card behind the
-    // sheet, no need to repeat it here.
-    $("snapFilEditSub").textContent = "";
-    $("sfeError").hidden = true;
-
-    // Render the colour grid (24 presets + 1 custom). The native picker
-    // The custom slot has its own inline <input type="color"> rendered
-    // by sfeRenderColorGrid — we just feed it the initial colour.
-    const initialColor = (fil.color && /^#[0-9a-f]{6}/i.test(fil.color)) ? fil.color.slice(0, 7) : "#FF5722";
-    sfeRenderColorGrid(initialColor);
-
-    // Two-column filament picker. Pre-select the vendor that matches
-    // the current filament (or the first one if nothing matches).
-    const vendorList = $("sfeVendorList");
-    const matList    = $("sfeMaterialList");
-    if (vendorList) {
-      const vendorMatch = SNAP_FIL_BRANDS.find(b => b.toLowerCase() === _sfeSelectedBrand.toLowerCase())
-                       || SNAP_FIL_BRANDS[0];
-      _sfeSelectedBrand = vendorMatch;
-      vendorList.innerHTML = snapFilRenderVendorList(vendorMatch);
-    }
-    if (matList) {
-      matList.innerHTML = snapFilRenderMaterialList(_sfeSelectedBrand, _sfeSelectedMaterial);
-    }
-
-    // Always start with the sub-pickers closed so only the summary shows.
-    sfeCloseFilamentSheet();
-    sfeCloseColorSheet();
-    sfeUpdateSummary();
-
-    // Show the sheet
-    $("snapFilEditSheet").classList.add("open");
-    $("snapFilEditSheet").setAttribute("aria-hidden", "false");
-    $("snapFilEditBackdrop").classList.add("open");
-  }
-
-  // Both sub-pickers (Filament + Colour) are now standalone sheets that
-  // STACK on top of the summary sheet — the summary stays visible
-  // behind so the user keeps their context. Each has its own slide-up
-  // animation triggered by the .open class.
-  function sfeOpenFilamentSheet() {
-    $("sfeFilamentSheet")?.classList.add("open");
-    $("sfeFilamentSheet")?.setAttribute("aria-hidden", "false");
-  }
-  function sfeCloseFilamentSheet() {
-    $("sfeFilamentSheet")?.classList.remove("open");
-    $("sfeFilamentSheet")?.setAttribute("aria-hidden", "true");
-  }
-  function sfeOpenColorSheet() {
-    $("sfeColorSheet")?.classList.add("open");
-    $("sfeColorSheet")?.setAttribute("aria-hidden", "false");
-  }
-  function sfeCloseColorSheet() {
-    $("sfeColorSheet")?.classList.remove("open");
-    $("sfeColorSheet")?.setAttribute("aria-hidden", "true");
-  }
-
-  // Refresh the summary screen — Line 1 (filament summary text), Line 2
-  // (colour dot). Called whenever a sub-screen commits a new value.
-  function sfeUpdateSummary() {
-    const v   = _sfeSelectedBrand    || "—";
-    const m   = _sfeSelectedMaterial || "—";
-    const sub = $("sfeSubtype")?.value?.trim() || "";
-    const summary = sub ? `${v} ${m} ${sub}` : `${v} ${m}`;
-    const valEl = $("sfeFilSummaryVal");
-    if (valEl) valEl.textContent = summary;
-    const dot = $("sfeColorSummaryDot");
-    if (dot) dot.style.background = $("sfeColorInput")?.value || "#888";
-  }
-
-  // Render the colour grid: 24 presets + a 25th "custom" slot. The
-  // custom slot is a wrapper containing a transparent `<input
-  // type="color">` overlaid on top — the wrapper shows the current
-  // colour + edit icon, the input receives the click and anchors the
-  // OS-native picker right where it lives. Without this overlay trick
-  // the picker pops up in the top-left of the window because a
-  // `display:none` input has no visual anchor.
-  function sfeRenderColorGrid(currentColor) {
-    const grid = $("sfeColorGrid");
-    if (!grid) return;
-    const cur = (currentColor || "").toLowerCase();
-    const presetCells = SNAP_FIL_COLOR_PRESETS.map(c => {
-      const isSel = c.toLowerCase() === cur;
-      return `<button type="button" class="sfe-color-cell${isSel ? " is-selected" : ""}"
-                      data-color="${esc(c)}"
-                      style="background:${esc(c)}"
-                      title="${esc(c)}"></button>`;
-    }).join("");
-    const safeColor = currentColor && /^#[0-9a-f]{6}$/i.test(currentColor) ? currentColor : "#888888";
-    const customCell = `
-      <div class="sfe-color-cell sfe-color-cell--custom" id="sfeColorCustomBtn"
-           style="background:${esc(safeColor)}"
-           title="${esc(t("snapFilEditCustomColor") || "Custom")}">
-        <span class="icon icon-edit icon-13"></span>
-        <input type="color" class="sfe-color-cell-native" id="sfeColorPickerInline"
-               value="${esc(safeColor)}" aria-label="Custom color"/>
-      </div>`;
-    grid.innerHTML = presetCells + customCell;
-  }
-
-  function closeSnapFilamentEdit() {
-    $("snapFilEditSheet")?.classList.remove("open");
-    $("snapFilEditSheet")?.setAttribute("aria-hidden", "true");
-    $("snapFilEditBackdrop")?.classList.remove("open");
-    // Both stacked sub-sheets follow the summary down so nothing is
-    // left dangling when the whole edit flow is closed.
-    sfeCloseFilamentSheet();
-    sfeCloseColorSheet();
-    _snapFilEdit = null;
-  }
-  // ✕ on the SUMMARY closes the whole flow (summary + any open picker).
-  // ✕ on a picker only closes that picker (handled separately below).
-  $("snapFilEditClose")?.addEventListener("click", closeSnapFilamentEdit);
-  $("snapFilEditBackdrop")?.addEventListener("click", closeSnapFilamentEdit);
-  $("sfeColorClose")?.addEventListener("click", () => {
-    sfeUpdateSummary();
-    sfeCloseColorSheet();
+  // Populate the shared printer rendering context for brand card widgets.
+  // Must come after all helpers are defined. Brand card functions read from
+  // _printerCtx at call time (not at import time), so this is always ready.
+  Object.assign(_printerCtx, {
+    esc, t,
+    toast: (msg, type) => toast(msg, type),
+    snapFmtTempPair, snapFmtDuration, snapTextColor,
+    findPrinterModel, printerImageUrl, printerImageUrlFor,
+    snapFilenameRel,
+    SNAP_ICON_NOZZLE, SNAP_ICON_BED, SNAP_ICON_CHAMBER, SNAP_ICON_CLOCK,
+    SNAP_FIL_COLOR_PRESETS,
+    getActivePrinter:      () => _activePrinter,
+    getState:              () => state,
+    onFullRender:          () => renderPrinterDetail(),
+    onPrinterStatusChange: () => { if (typeof refreshOpenPrinterDetail === "function") refreshOpenPrinterDetail(); },
+    onPrintersViewChange:  () => renderPrintersView(),
+    setupHoldToConfirm,
   });
 
-  // ── Summary → sub-sheet navigation. Each sub-picker is its own sheet
-  // that stacks on top of the summary; the summary stays visible behind. ─
-  $("sfeOpenFilament")?.addEventListener("click", () => {
-    // Read-only mode (RFID-locked filament): the summary rows are
-    // still visible but the user can't dive into sub-pickers — the
-    // chevron is hidden but the underlying button still listens, so
-    // we guard here so clicks don't pop open the picker silently.
-    if (_snapFilEdit?.readonly) return;
-    sfeOpenFilamentSheet();
-    // Auto-scroll the selected vendor into view in the left column.
-    setTimeout(() => {
-      const sel = $("sfeVendorList")?.querySelector(".is-selected");
-      if (sel) sel.scrollIntoView({ block: "center", behavior: "auto" });
-    }, 0);
-  });
-  $("sfeOpenColor")?.addEventListener("click", () => {
-    if (_snapFilEdit?.readonly) return; // read-only: no colour picker
-    sfeOpenColorSheet();
-  });
-
-  // Back buttons on the stacked sub-sheets — close the sheet, leave
-  // the summary visible behind, and refresh its preview values.
-  $("sfeFilamentBack")?.addEventListener("click", () => {
-    sfeUpdateSummary();
-    sfeCloseFilamentSheet();
-  });
-  $("sfeColorBack")?.addEventListener("click", () => {
-    sfeUpdateSummary();
-    sfeCloseColorSheet();
-  });
-  // Filament close (X on the picker header) — same behaviour as Back
-  // (both keep the summary alive, only kill the picker).
-  $("sfeFilamentClose")?.addEventListener("click", () => {
-    sfeUpdateSummary();
-    sfeCloseFilamentSheet();
-  });
-
-  // Sub-type changes update the summary line live. `change` covers
-  // <select> dropdowns; `input` covers any future free-text fallback.
-  $("sfeSubtype")?.addEventListener("change", sfeUpdateSummary);
-  $("sfeSubtype")?.addEventListener("input",  sfeUpdateSummary);
-
-  // ── Filament screen — vendor/material clicks ──────────────────────
-  $("sfeVendorList")?.addEventListener("click", e => {
-    const row = e.target.closest(".sfe-fil-row");
-    if (!row) return;
-    _sfeSelectedBrand = row.dataset.val || "";
-    $("sfeVendorList").querySelectorAll(".sfe-fil-row").forEach(r =>
-      r.classList.toggle("is-selected", r === row));
-    const matList = $("sfeMaterialList");
-    if (matList) matList.innerHTML = snapFilRenderMaterialList(_sfeSelectedBrand, _sfeSelectedMaterial);
-    const v = $("sfeVendor"); if (v) v.value = "";
-  });
-  // Tapping a material commits the (vendor, material) pair and goes
-  // back to the summary screen — same flow as the mobile app. Picking
-  // a new filament also wipes the sub-type input: the previous
-  // sub-type was specific to the old filament and is meaningless for
-  // the new one (e.g. "Speed Matt" stops making sense once you switch
-  // from Rosa3D ASA to Bambu Lab PETG).
-  $("sfeMaterialList")?.addEventListener("click", e => {
-    const row = e.target.closest(".sfe-fil-row");
-    if (!row) return;
-    _sfeSelectedMaterial = row.dataset.val || "";
-    const m = $("sfeMaterial"); if (m) m.value = "";
-    // Reset the sub-type to "Basic" when picking a new filament — the
-    // previous sub-type was specific to the old filament. Falls back
-    // to the first option if "Basic" isn't there for some reason.
-    const sub = $("sfeSubtype");
-    if (sub && sub.tagName === "SELECT") {
-      const basicOpt = Array.from(sub.options).find(o => o.value.toLowerCase() === "basic");
-      if (basicOpt) sub.value = basicOpt.value;
-      else if (sub.options.length) sub.selectedIndex = 0;
-    } else if (sub) {
-      sub.value = "";
+  // Dispatch to the per-brand camera widget. Returns "" when the
+  // printer is offline, has no camera, or the brand is unknown.
+  // To add a new brand: create printers/<brand>/widget_camera.js,
+  // import renderXxxCamBanner here, add a case below. inventory.js
+  // itself never builds camera HTML.
+  function renderCamBanner(p) {
+    switch (p?.brand) {
+      case "snapmaker":  return renderSnapCamBanner(p);
+      case "creality":   return renderCreCamBanner(p);
+      case "flashforge": return renderFfgCamBanner(p);
+      default: return "";
     }
-    // Re-render with the green check, then close the picker — the
-    // summary sheet underneath shows the new "Brand Material" line.
-    $("sfeMaterialList").innerHTML = snapFilRenderMaterialList(_sfeSelectedBrand, _sfeSelectedMaterial);
-    setTimeout(() => {
-      sfeUpdateSummary();
-      sfeCloseFilamentSheet();
-    }, 180);
-  });
-
-  // ── Color screen — preset cell click + custom slot inline input ──
-  // The custom slot has its native <input type="color"> overlaid on top
-  // (transparent), so a click on the slot opens the OS picker anchored
-  // to the slot itself. We listen to `input` (live drag) and `change`
-  // (final pick) via delegation since the grid is re-rendered on each
-  // colour change.
-  $("sfeColorGrid")?.addEventListener("click", e => {
-    // Don't intercept clicks bubbling from the inline picker — let the
-    // native input handle them (it's covered by the wrapper anyway).
-    if (e.target.closest("#sfeColorPickerInline")) return;
-    const cell = e.target.closest(".sfe-color-cell:not(.sfe-color-cell--custom)");
-    if (!cell) return;
-    const c = cell.dataset.color;
-    if (!c) return;
-    $("sfeColorInput").value = c;
-    sfeRenderColorGrid(c);
-    setTimeout(() => {
-      sfeUpdateSummary();
-      sfeCloseColorSheet();
-    }, 150);
-  });
-  // Live preview while the user drags the OS picker — updates the
-  // hidden input + repaints the custom slot so it reflects the chosen
-  // hue in real time. Delegated since the grid re-renders.
-  $("sfeColorGrid")?.addEventListener("input", e => {
-    if (!e.target.matches?.("#sfeColorPickerInline")) return;
-    const c = e.target.value;
-    $("sfeColorInput").value = c;
-    // Update just the wrapper background — re-rendering the whole grid
-    // here would close the OS picker mid-drag.
-    const wrap = e.target.closest(".sfe-color-cell--custom");
-    if (wrap) wrap.style.background = c;
-  });
-  // Final commit (the user closed the OS picker) — re-render the grid
-  // so the new colour shows as "selected" if it matches a preset, then
-  // bounce back to the summary.
-  $("sfeColorGrid")?.addEventListener("change", e => {
-    if (!e.target.matches?.("#sfeColorPickerInline")) return;
-    const c = e.target.value;
-    $("sfeColorInput").value = c;
-    sfeRenderColorGrid(c);
-    setTimeout(() => {
-      sfeUpdateSummary();
-      sfeCloseColorSheet();
-    }, 100);
-  });
-
-  // Send button → build the SET_PRINT_FILAMENT_CONFIG line and push it
-  // to the printer. Format ported from the Flutter mobile app.
-  $("snapFilEditSave")?.addEventListener("click", async () => {
-    if (!_snapFilEdit) return;
-    const conn = _snapConns.get(_snapFilEdit.key);
-    if (!conn) return;
-    const errEl = $("sfeError");
-    errEl.hidden = true;
-
-    // Vendor + material come either from a chip (last clicked) or from
-    // the custom-text input — whichever the user touched most recently.
-    const vendor   = snapSanitiseGcodeArg($("sfeVendor").value || _sfeSelectedBrand)    || "Generic";
-    const material = snapSanitiseGcodeArg($("sfeMaterial").value || _sfeSelectedMaterial) || "PLA";
-    const subtype  = snapSanitiseGcodeArg($("sfeSubtype").value);
-    const rgba     = snapColorToRgbaHex($("sfeColorInput").value);
-
-    // Snapmaker firmware requires every named arg to be present in the
-    // command line — omitting `FILAMENT_SUBTYPE` causes it to silently
-    // ignore the whole call. We always emit the key, with an empty
-    // value when the user didn't provide a sub-type.
-    const parts = [
-      "SET_PRINT_FILAMENT_CONFIG",
-      `CONFIG_EXTRUDER=${_snapFilEdit.extruderIndex}`,
-      `VENDOR=${vendor}`,
-      `FILAMENT_TYPE=${material}`,
-      `FILAMENT_SUBTYPE=${subtype}`,
-      `FILAMENT_COLOR_RGBA=${rgba}`
-    ];
-    const script = parts.join(" ");
-
-    // Mirror the outgoing g-code to DevTools so the user can verify the
-    // exact line that was pushed to Klipper without scrolling the log.
-    console.log("[snap] → gcode:", script);
-
-    const btn = $("snapFilEditSave");
-    btn.classList.add("loading");
-    btn.disabled = true;
-    try {
-      const ok = snapSendGcode(conn, script);
-      if (!ok) throw new Error("websocket not open");
-      // Close immediately; the printer's notify_status_update will arrive
-      // moments later and refresh the colour square / vendor labels.
-      closeSnapFilamentEdit();
-    } catch (e) {
-      console.warn("[snap] filament edit send failed:", e?.message);
-      errEl.textContent = t("snapFilEditError");
-      errEl.hidden = false;
-    } finally {
-      btn.classList.remove("loading");
-      btn.disabled = false;
-    }
-  });
-
-  /* ── Moonraker file path / thumbnail helpers ──────────────────────
-     Klipper exposes the active job's filename as something like
-     "/printer_data/gcodes/folder/Lame ryobi.gcode" — we have to peel it
-     down to "folder/Lame ryobi.gcode" before we can pass it to the
-     metadata endpoint, and again to build thumbnail URLs.              */
-  function snapNormalizePath(path) {
-    const out = [];
-    for (const raw of String(path || "").split("/")) {
-      const part = raw.trim();
-      if (!part || part === ".") continue;
-      if (part === "..") { if (out.length) out.pop(); continue; }
-      out.push(part);
-    }
-    return out.join("/");
-  }
-  function snapJoinPath(a, b) {
-    const left  = (a || "").trim();
-    const right = (b || "").trim();
-    if (!left)  return snapNormalizePath(right);
-    if (!right) return snapNormalizePath(left);
-    return snapNormalizePath(`${left}/${right}`);
-  }
-  function snapFilenameRel(absPath) {
-    let s = String(absPath || "").trim();
-    if (!s) return "";
-    if (s.startsWith("/")) {
-      const i = s.indexOf("/gcodes/");
-      if (i >= 0) s = s.slice(i + "/gcodes/".length);
-      else {
-        const i2 = s.indexOf("/printer_data/gcodes/");
-        if (i2 >= 0) s = s.slice(i2 + "/printer_data/gcodes/".length);
-      }
-    } else if (s.startsWith("gcodes/")) {
-      s = s.slice("gcodes/".length);
-    }
-    return snapNormalizePath(s);
-  }
-  function snapParentFolder(filename) {
-    const c = snapNormalizePath(filename);
-    const i = c.lastIndexOf("/");
-    return i <= 0 ? "" : c.substring(0, i);
-  }
-  function snapFileUrl(ip, relativePath) {
-    const cleaned = snapNormalizePath(relativePath);
-    const parts = cleaned.split("/").filter(Boolean).map(encodeURIComponent);
-    return `http://${ip}:7125/server/files/gcodes/${parts.join("/")}`;
-  }
-  function snapBestThumb(metadata) {
-    const arr = metadata?.thumbnails;
-    if (!Array.isArray(arr) || !arr.length) return null;
-    let best = null, bestScore = -1;
-    for (const t of arr) {
-      if (!t || typeof t !== "object") continue;
-      const w = +t.width || 0, h = +t.height || 0, sz = +t.size || 0;
-      const score = (w > 0 && h > 0) ? (w * h) : sz;
-      if (score >= bestScore) { bestScore = score; best = t; }
-    }
-    return best;
-  }
-  function snapThumbUrl(ip, filename, metadata) {
-    const t = snapBestThumb(metadata);
-    if (!t) return null;
-    const rel = String(t.relative_path || t.thumbnail_path || "").trim();
-    if (!rel) return null;
-    const folder = snapParentFolder(filename);
-    return snapFileUrl(ip, snapJoinPath(folder, rel));
-  }
-
-  // GET http://{ip}:7125/server/files/metadata?filename=...
-  // Stores the slicer thumbnail URL + estimated print time on the
-  // connection so the job card can render them. Idempotent — guarded by
-  // `_lastMetaFile` so we don't refetch on every WS frame.
-  async function snapFetchMetadata(conn, relFilename) {
-    if (!relFilename || !conn.ip) return;
-    if (conn.data._lastMetaFile === relFilename) return;
-    conn.data._lastMetaFile = relFilename;
-    const url = `http://${conn.ip}:7125/server/files/metadata?filename=${encodeURIComponent(relFilename)}`;
-    try {
-      const res = await fetch(url, { method: "GET" });
-      if (!res.ok) return;
-      const json = await res.json();
-      const meta = (json && json.result) ? json.result : json;
-      if (!meta || typeof meta !== "object") return;
-      conn.data.printPreviewUrl = snapThumbUrl(conn.ip, relFilename, meta) || null;
-      conn.data.printEstimated  = (typeof meta.estimated_time === "number") ? meta.estimated_time : null;
-      snapNotifyChange(conn);
-    } catch (_) {
-      // Network failure is non-fatal — the card falls back to the
-      // printer's catalog image and skips the estimated-time display.
-    }
-  }
-
-  // Convert a Klipper RGBA-hex string ("#RRGGBBAA" or "RRGGBB") to a
-  // browser-friendly "#RRGGBB" string, dropping the alpha.
-  function snapParseRgbaHex(s) {
-    let v = (s || "").trim();
-    if (!v) return null;
-    if (v.startsWith("#")) v = v.slice(1);
-    if (v.length === 8) v = v.slice(0, 6); // drop alpha
-    if (v.length !== 6) return null;
-    return "#" + v.toUpperCase();
-  }
-
-  // Whenever the live data changes we update the side card if it's
-  // still showing this printer.
-  //   • Default path: cheap re-render of `#snapLive` (data updates only).
-  //   • statusChanged=true: full re-render of the side card via
-  //     renderPrinterDetail — needed because the hero camera iframe is
-  //     conditional on the connection being open.
-  let _snapRenderRaf = null;
-  let _snapRenderStatusFlag = false;
-  function snapNotifyChange(conn, statusChanged = false) {
-    if (!_activePrinter) return;
-    if (snapKey(_activePrinter) !== conn.key) return;
-    if (statusChanged) _snapRenderStatusFlag = true;
-    if (_snapRenderRaf) return; // coalesce bursts
-    _snapRenderRaf = requestAnimationFrame(() => {
-      _snapRenderRaf = null;
-      const fullRerender = _snapRenderStatusFlag;
-      _snapRenderStatusFlag = false;
-      if (fullRerender) {
-        renderPrinterDetail();
-      } else {
-        // Live data block
-        const liveHost = $("snapLive");
-        if (liveHost) liveHost.innerHTML = renderSnapmakerLiveInner(_activePrinter);
-        // Request-log block — the log no longer has a nested scroll
-        // (the panel body scrolls instead), so a plain innerHTML swap
-        // is enough. Older entries stay visible above; new ones append
-        // at the top of the list because we sort newest-first.
-        const logHost = $("snapLog");
-        if (logHost) logHost.innerHTML = renderSnapmakerLogInner(_activePrinter);
-        const countEl = $("snapLogCount");
-        if (countEl) {
-          const c = _snapConns.get(snapKey(_activePrinter))?.log?.length || 0;
-          countEl.textContent = String(c);
-        }
-      }
-    });
-  }
-
-  // Format helpers for the live block
-  function snapFmtTemp(v) { return (typeof v === "number" && isFinite(v)) ? `${Math.round(v)}` : "—"; }
-  function snapFmtTempPair(cur, tgt) {
-    return `${snapFmtTemp(cur)}/${snapFmtTemp(tgt)}°C`;
-  }
-  function snapFmtDuration(seconds) {
-    const s = Math.max(0, Math.floor(seconds || 0));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m.toString().padStart(2, "0")}m` : `${m}m`;
-  }
-  // Pick black or white text for a coloured background using sRGB luma —
-  // matches the contrast convention used elsewhere in the app.
-  function snapTextColor(hex) {
-    if (!hex || hex.length < 7) return "#fff";
-    const r = parseInt(hex.slice(1, 3), 16) / 255;
-    const g = parseInt(hex.slice(3, 5), 16) / 255;
-    const b = parseInt(hex.slice(5, 7), 16) / 255;
-    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    return lum > 0.55 ? "#000" : "#fff";
-  }
-  // Inline SVGs for the small temp icons — kept as renderer constants so
-  // they pick up `currentColor` from the parent without extra CSS wiring.
-  const SNAP_ICON_NOZZLE = `<svg class="snap-temp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v6l-3 4-3-4z"/><path d="M9 17q1 2 0 4"/><path d="M12 17q1 2 0 4"/><path d="M15 17q1 2 0 4"/></svg>`;
-  const SNAP_ICON_BED    = `<svg class="snap-temp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="16" x2="21" y2="16"/><path d="M7 12q1-3 0-5"/><path d="M12 12q1-3 0-5"/><path d="M17 12q1-3 0-5"/></svg>`;
-  const SNAP_ICON_CLOCK  = `<svg class="snap-job-time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>`;
-
-  // Returns the inner HTML for the Snapmaker live container.
-  // Layout (matches the TigerTag mobile companion app):
-  //   1. Connection header (LED + status + IP)
-  //   2. Camera (full-width, on top — first signal of "yes the printer is there")
-  //   3. Print-job card (only when actively printing)
-  //   4. Temperature row — compact pills "26/0°C" for each E + bed
-  //   5. Filament grid — big coloured squares with material name centered,
-  //      vendor + sub-type below
-  function renderSnapmakerLiveInner(p) {
-    const conn = _snapConns.get(snapKey(p));
-    if (!conn) {
-      return `
-        <div class="snap-empty">
-          <span class="icon icon-cloud icon-18"></span>
-          <span>${esc(t("snapNoConnection"))}</span>
-        </div>`;
-    }
-    const d = conn.data;
-
-    // ── Connection header removed — the Online/Offline badge now lives
-    // in the panel-title (next to the brand+model pills). See
-    // renderPrinterDetail() for that markup. We keep the function
-    // structure so partial re-renders only patch the data blocks below.
-
-    // ── Camera was here previously — now lives in the hero (replaces the
-    // static product photo when the printer is connected). See
-    // renderPrinterDetail() for the swap logic.
-
-    // ── 3. Print-job card ────────────────────────────────────────────
-    // Only rendered when the WebSocket is actually connected — otherwise
-    // we'd be showing a frozen snapshot (potentially with stale "printing"
-    // state from before the link dropped) which is more confusing than
-    // helpful. While disconnected the panel hero already carries the
-    // Online/Offline badge, so the user has the connection signal they
-    // need without this card.
-    const isConnected = conn.status === "connected";
-    let jobHtml = "";
-    if (isConnected) {
-      const jobState  = d.printState || "standby";
-      const isActive  = !["standby", "complete", "cancelled"].includes(jobState);
-      const pct       = isActive ? Math.round(((d.progress || 0) * 100)) : 0;
-      const leafName  = isActive && d.printFilename
-                      ? snapFilenameRel(d.printFilename).split("/").pop()
-                      : "";
-      // Thumbnail: prefer the slicer preview from /server/files/metadata.
-      // Fallback to the printer's catalog image so the card never looks
-      // empty even before metadata has loaded.
-      const fallbackImg = printerImageUrlFor(p.brand, p.printerModelId)
-                       || printerImageUrl(findPrinterModel(p.brand, "0"));
-      const thumbUrl  = (isActive && d.printPreviewUrl) ? d.printPreviewUrl : (fallbackImg || "");
-      const layerText = isActive && (d.currentLayer || d.totalLayer)
-                      ? `${d.currentLayer || 0}/${d.totalLayer || 0}` : "";
-      const durationText = isActive ? snapFmtDuration(d.printDuration) : "0m";
-      const stateLabel = t("snapState_" + jobState) || jobState;
-      const nameLine = leafName
-        ? `<div class="snap-job-name" title="${esc(leafName)}">${esc(leafName)}</div>`
-        : `<div class="snap-job-name snap-job-name--idle">${esc(t("snapJobNoActive") || "—")}</div>`;
-      jobHtml = `
-        <div class="snap-job snap-job--${esc(jobState)}">
-          <div class="snap-job-thumb"${thumbUrl ? ` style="background-image:url('${esc(thumbUrl)}')"` : ""}></div>
-          <div class="snap-job-info">
-            ${nameLine}
-            <div class="snap-job-stats">
-              <span class="snap-job-pct">${pct}%</span>
-              <span class="snap-job-time">${SNAP_ICON_CLOCK} <span>${esc(durationText)}</span></span>
-            </div>
-            <div class="snap-job-bar"><span style="width:${pct}%"></span></div>
-            <div class="snap-job-foot">
-              <span class="snap-job-state snap-job-state--${esc(jobState)}">${esc(stateLabel)}</span>
-              ${layerText ? `<span class="snap-job-layers">${esc(layerText)}</span>` : ""}
-            </div>
-          </div>
-        </div>`;
-    }
-
-    // ── 4. Temperature row — one pill per active extruder + bed ─────
-    // "Active" = the firmware reported either a current or a target temp
-    // for this tool. We always include the bed if it reports anything.
-    const tempPills = [];
-    for (let i = 1; i <= 4; i++) {
-      const cur = d.temps[`e${i}_temp`];
-      const tgt = d.temps[`e${i}_target`];
-      if (typeof cur !== "number" && typeof tgt !== "number") continue;
-      const heating = (typeof tgt === "number" && tgt > 0 && typeof cur === "number" && cur < tgt - 1);
-      tempPills.push(`
-        <div class="snap-temp${heating ? " snap-temp--heating" : ""}">
-          ${SNAP_ICON_NOZZLE}
-          <span class="snap-temp-val">${esc(snapFmtTempPair(cur, tgt))}</span>
-        </div>`);
-    }
-    if (typeof d.temps.bed_temp === "number" || typeof d.temps.bed_target === "number") {
-      const cur = d.temps.bed_temp, tgt = d.temps.bed_target;
-      const heating = (typeof tgt === "number" && tgt > 0 && typeof cur === "number" && cur < tgt - 1);
-      tempPills.push(`
-        <div class="snap-temp snap-temp--bed${heating ? " snap-temp--heating" : ""}">
-          ${SNAP_ICON_BED}
-          <span class="snap-temp-val">${esc(snapFmtTempPair(cur, tgt))}</span>
-        </div>`);
-    }
-    const tempsHtml = tempPills.length
-      ? `<section class="snap-block">
-           <h4 class="snap-block-title">${esc(t("snapTemperatureTitle"))}</h4>
-           <div class="snap-temps">${tempPills.join("")}</div>
-         </section>`
-      : "";
-
-    // ── 5. Filament grid — big coloured squares ─────────────────────
-    // We render a square for every extruder slot that has either a
-    // filament definition OR a reported temp (so a slot with no filament
-    // loaded still appears, with an empty/dashed square).
-    const filCards = [];
-    for (let i = 1; i <= 4; i++) {
-      const fil  = d.filaments[i - 1] || {};
-      const cur  = d.temps[`e${i}_temp`];
-      const tgt  = d.temps[`e${i}_target`];
-      const has  = !!(fil.color || fil.vendor || fil.type || fil.subType
-                    || typeof cur === "number" || typeof tgt === "number");
-      if (!has) continue;
-      const color = fil.color || null;
-      const fg    = color ? snapTextColor(color) : "var(--text)";
-      // Inside the coloured square: the BASE material (type) only —
-      // never the subtype. e.g. "PLA", "PETG", "ABS".
-      const squareLabel = fil.type || t("snapNoFilament");
-      // Below the square: brand on the first line, full identity
-      // ("Type Subtype") on the second — same hierarchy a user reads
-      // from a real spool label. Falls back gracefully when subtype
-      // isn't reported (older firmware).
-      const typeAndSub = fil.type
-        ? (fil.subType ? `${fil.type} ${fil.subType}` : fil.type)
-        : (fil.subType || "—");
-      // The whole card is the click-target. Editable slots open the
-      // sheet in mutate mode; RFID-locked slots open the SAME sheet
-      // in read-only mode (no chevrons / no subtype select / no
-      // Apply button). The `data-snap-fil-edit` attribute is set on
-      // ALL filament cards so the closest() walk in the click
-      // delegation catches every inner click — readonly state is
-      // resolved inside openSnapFilamentEdit by reading fil.official.
-      const editable = !fil.official;
-      filCards.push(`
-        <div class="snap-fil snap-fil--editable${editable ? "" : " snap-fil--locked"}"
-             data-snap-fil-edit="1"
-             data-extruder-idx="${i - 1}"
-             title="${editable ? esc(t("snapFilEditableTip")) : esc(t("snapFilLockedTip"))}">
-          <div class="snap-fil-tag">E${i}</div>
-          <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
-               style="${color ? `background:${esc(color)};color:${esc(fg)};border-color:${esc(color)};` : ""}">
-            <span class="snap-fil-main">${esc(squareLabel)}</span>
-          </div>
-          <div class="snap-fil-meta">
-            <span class="snap-fil-status icon ${fil.official ? "icon-eye-on snap-fil-status--locked" : "icon-edit"} icon-13"
-                  aria-hidden="true"></span>
-            <div class="snap-fil-vendor">${esc(fil.vendor || "—")}</div>
-            <div class="snap-fil-sub">${esc(typeAndSub)}</div>
-          </div>
-        </div>`);
-    }
-    const filamentsHtml = filCards.length
-      ? `<section class="snap-block">
-           <h4 class="snap-block-title">${esc(t("snapFilamentTitle"))}</h4>
-           <div class="snap-fil-grid">${filCards.join("")}</div>
-         </section>`
-      : "";
-
-    return `
-      ${jobHtml}
-      ${tempsHtml}
-      ${filamentsHtml}`;
-  }
-
-  /* ── Request log — what we send / what the printer answers ──────────
-     Stored on `conn.log` as an array of { dir: "→"|"←", ts, summary, raw }.
-     The UI is a collapsible section at the bottom of the live block.
-     Each line is clickable to copy the raw JSON to the clipboard.       */
-  // Visible-buffer cap. Older entries fall off so we never grow without
-  // bound — 100 frames is enough to debug a request flow without bloating
-  // memory on long-running sessions.
-  const SNAP_LOG_MAX = 100;
-  function snapLogPush(conn, dir, raw) {
-    // When the user has frozen the log via the Pause toggle, drop new
-    // frames so what's on screen stays stable for inspection.
-    if (conn.logPaused) return;
-    if (!conn.log) conn.log = [];
-    let summary = "";
-    try {
-      const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (obj?.method) summary = obj.method;
-      else if (obj?.result && typeof obj.result === "object") {
-        const keys = obj.result.status ? Object.keys(obj.result.status) : Object.keys(obj.result);
-        summary = "result · " + keys.slice(0, 4).join(", ");
-      } else summary = "(no method)";
-      if (typeof obj?.id !== "undefined") summary += `  id:${obj.id}`;
-    } catch { summary = "(non-json)"; }
-    const ts = new Date().toLocaleTimeString([], { hour12: false });
-    const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
-    conn.log.push({ dir, ts, summary, raw: rawStr });
-    if (conn.log.length > SNAP_LOG_MAX) conn.log.splice(0, conn.log.length - SNAP_LOG_MAX);
-  }
-
-  // Inner contents of the log container — replaced on every re-render.
-  // Rows are click-to-expand: each shows a one-line summary; on click,
-  // the full pretty-printed JSON appears inline with its own copy
-  // button. Pausing the stream (via the toolbar) freezes the log so the
-  // user can inspect a long frame at their own pace.
-  // Send a hand-crafted JSON-RPC frame from the paste textarea straight
-  // through the WebSocket. Useful for testing custom Moonraker calls
-  // without leaving the UI. The pasted payload is forwarded VERBATIM —
-  // we don't wrap it in a JSON-RPC envelope, the user is expected to
-  // provide a complete `{ jsonrpc, id, method, params }` object.
-  function snapSendCustomJson() {
-    const ta  = $("snapLogPasteInput");
-    const err = $("snapLogPasteError");
-    if (!ta || !err) return;
-    err.hidden = true;
-
-    const conn = _activePrinter ? _snapConns.get(snapKey(_activePrinter)) : null;
-    if (!conn?.ws || conn.ws.readyState !== WebSocket.OPEN) {
-      err.textContent = t("snapPasteNotConnected") || "Printer not connected.";
-      err.hidden = false;
-      return;
-    }
-
-    let obj;
-    try { obj = JSON.parse(ta.value); }
-    catch (e) {
-      err.textContent = (t("snapPasteInvalidJson") || "Invalid JSON:") + " " + (e?.message || e);
-      err.hidden = false;
-      return;
-    }
-
-    const json = JSON.stringify(obj);
-    snapLogPush(conn, "→", json);
-    try {
-      conn.ws.send(json);
-    } catch (e) {
-      err.textContent = (t("snapPasteSendError") || "Send failed:") + " " + (e?.message || e);
-      err.hidden = false;
-      return;
-    }
-    // Re-render the log so the new outbound frame appears at the top.
-    const host = $("snapLog");
-    if (host) host.innerHTML = renderSnapmakerLogInner(_activePrinter);
-    const countEl = $("snapLogCount");
-    if (countEl) countEl.textContent = String(conn.log?.length || 0);
-    // Visual confirmation on the Send button.
-    const btn = $("snapLogPasteSendBtn");
-    if (btn) {
-      btn.classList.add("snap-log-paste-send--ok");
-      setTimeout(() => btn.classList.remove("snap-log-paste-send--ok"), 700);
-    }
-  }
-
-  function renderSnapmakerLogInner(p) {
-    const conn = _snapConns.get(snapKey(p));
-    const log = conn?.log || [];
-    if (!log.length) {
-      return `<div class="snap-log-empty">${esc(t("snapLogEmpty"))}</div>`;
-    }
-    const rows = log.slice().reverse().map((e, i) => {
-      let pretty = e.raw;
-      try { pretty = JSON.stringify(JSON.parse(e.raw), null, 2); } catch (_) {}
-      // We index from the END (newest first) because that's the visible
-      // order. The expanded flag lives on the entry object so it persists
-      // across partial re-renders (when paused, no re-render happens; when
-      // streaming, expansions reset — that's the trade-off).
-      const expanded = !!e.expanded;
-      return `
-        <div class="snap-log-row snap-log-row--${e.dir === "→" ? "out" : "in"}${expanded ? " snap-log-row--expanded" : ""}"
-             data-log-idx="${log.length - 1 - i}">
-          <button type="button" class="snap-log-row-head" data-row-toggle="1">
-            <span class="snap-log-dir">${esc(e.dir)}</span>
-            <span class="snap-log-ts">${esc(e.ts)}</span>
-            <span class="snap-log-summary">${esc(e.summary)}</span>
-            <span class="snap-log-row-chev icon icon-chevron-r icon-13"></span>
-          </button>
-          <div class="snap-log-detail"${expanded ? "" : " hidden"}>
-            <button type="button" class="snap-log-detail-copy" data-copy="${esc(pretty)}" title="${esc(t("copyLabel"))}">
-              <span class="icon icon-copy icon-13"></span>
-              <span>${esc(t("copyLabel"))}</span>
-            </button>
-            <pre class="snap-log-detail-pre">${esc(pretty)}</pre>
-          </div>
-        </div>`;
-    }).join("");
-    return `<div class="snap-log">${rows}</div>`;
   }
 
   function renderPrinterDetail() {
@@ -8785,75 +7608,16 @@
     // edited through the gear button which opens the Printers Settings
     // modal in edit mode. The remaining hero is purely informational and
     // the Raw data section is kept as a debug aid.
-    // For Snapmaker we want the camera to span the FULL width of the side
-    // card (edge-to-edge, no rounded frame). It sits ABOVE the hero block
-    // so it reads as the headline media. When the WS isn't connected we
-    // fall back to the static product photo INSIDE the hero (existing).
-    const snapConn = (p.brand === "snapmaker") ? _snapConns.get(snapKey(p)) : null;
-    const showSnapCam  = !!(snapConn && snapConn.status === "connected" && snapConn.ip);
+    // Per-brand connection refs — used by the log sections below.
+    // (Camera logic no longer needs these here; it lives in widget_camera.js.)
+    const snapConn = (p.brand === "snapmaker") ? snapGetConn(snapKey(p)) : null;
+    const creConn  = (p.brand === "creality")  ? creGetConn(creKey(p))  : null;
 
-    // Creality — WebRTC camera via Crowsnest (same URL pattern as Snapmaker).
-    const creConn = (p.brand === "creality") ? _creConns.get(creKey(p)) : null;
-    // Creality reports webrtcSupport:1 AND video:1 — camera page on port 8000.
-    const showCreCam  = !!(creConn && creConn.status === "connected"
-                        && (creConn.data.webrtcSupport || creConn.data.video)
-                        && creConn.ip);
-
-    // FlashForge — MJPEG stream URL pulled out of /detail. Only show
-    // the banner when the printer reports a usable URL AND the camera
-    // is enabled (some models report the URL with the camera disabled
-    // server-side; in that case the <img> would 404).
-    const ffgConn = (p.brand === "flashforge") ? _ffgConns.get(ffgKey(p)) : null;
-    const ffgCamUrlRaw = ffgConn?.data?.camera?.url || null;
-    const ffgCamEnabled = !!(ffgConn?.data?.camera?.enabled);
-    // Append the per-open camSession as `&_=<ts>` so each fresh open of
-    // the side-card hits a brand-new URL (forcing a new HTTP GET → new
-    // MJPEG slot on the printer). Re-renders during the SAME open reuse
-    // the same camSession so we don't churn connections on every poll.
-    const ffgCamUrl = ffgCamUrlRaw && ffgConn?.camSession
-      ? (ffgCamUrlRaw + (ffgCamUrlRaw.includes("?") ? "&" : "?") + "_=" + ffgConn.camSession)
-      : ffgCamUrlRaw;
-    const showFfgCam = !!(ffgCamUrl && ffgCamEnabled && ffgConn?.status === "connected");
-
-    const showCam = showSnapCam || showFfgCam || showCreCam;
-
-    // Snapmaker uses a WebRTC player page exposed by Crowsnest — iframe
-    // load. FlashForge exposes a raw MJPEG stream URL — direct <img>.
-    let camBannerHtml = "";
-    if (showSnapCam) {
-      camBannerHtml = `
-        <div class="pp-cam-full">
-          <iframe class="snap-camera-frame" src="${esc(`http://${snapConn.ip}/webcam/webrtc`)}"
-                  sandbox="allow-scripts allow-same-origin"
-                  loading="lazy" referrerpolicy="no-referrer"
-                  allow="autoplay"></iframe>
-        </div>`;
-    } else if (showCreCam) {
-      // Creality WebRTC — the printer serves a self-contained HTML page on
-      // port 8000 that establishes the WebRTC session and renders the video.
-      // (Verified live on Ender-3 V4 — same pattern used by the Flutter app.)
-      camBannerHtml = `
-        <div class="pp-cam-full">
-          <iframe class="snap-camera-frame" src="${esc(`http://${creConn.ip}:8000/`)}"
-                  sandbox="allow-scripts allow-same-origin"
-                  loading="lazy" referrerpolicy="no-referrer"
-                  allow="autoplay; camera"></iframe>
-        </div>`;
-    } else if (showFfgCam) {
-      // The MJPEG stream is requested as an <img> src — the browser
-      // keeps the connection open and refreshes frame-by-frame.
-      // On `error` (load fails — typically because the FlashForge
-      // mjpg-streamer is already serving its 1 allowed client to
-      // someone else), we swap the inner of #ffgCamHost to a fallback:
-      // the static printer photo with an overlay explaining the
-      // single-stream limit + a Retry button. Both the error capture
-      // and the retry click are wired by the body delegated handlers
-      // (no inline onerror string — keeps the IIFE clean).
-      camBannerHtml = `
-        <div id="ffgCamHost" class="pp-cam-full ffg-cam-host">
-          ${ffgRenderCamBannerInner(p, ffgCamUrl, heroImgUrl, modelName)}
-        </div>`;
-    }
+    // Camera banner — delegated entirely to the per-brand widget_camera.js.
+    // Each widget decides visibility and builds the full HTML internally.
+    // Adding a new printer brand never requires touching this file.
+    const camBannerHtml = renderCamBanner(p);
+    const showCam = camBannerHtml !== "";
 
     // Hero photo — only when the camera is NOT taking over.
     const heroImgHtml = (!showCam && heroImgUrl)
@@ -8877,6 +7641,7 @@
       : "";
 
     // Creality live data block — same reusable .snap-* CSS classes.
+    // We capture the rendered HTML and push it into the memo cache so the
     const creLiveHtml = (p.brand === "creality")
       ? `<div id="creLive" class="snap-live-host">${renderCrealityLiveInner(p)}</div>`
       : "";
@@ -8888,7 +7653,7 @@
     // The user's expand/collapse choice is persisted on `conn.logExpanded`
     // (set by the toolbar click handler) so partial re-renders during
     // status flapping don't snap the section closed under their cursor.
-    const ffgConnLogRef = (p.brand === "flashforge") ? _ffgConns.get(ffgKey(p)) : null;
+    const ffgConnLogRef = (p.brand === "flashforge") ? ffgGetConn(ffgKey(p)) : null;
     const isFfgPaused = !!(ffgConnLogRef?.logPaused);
     const ffgLogExpanded = !!(ffgConnLogRef?.logExpanded);
     const ffgLogHtml = (p.brand === "flashforge")
@@ -9064,6 +7829,11 @@
       ${ffgLogHtml}
       ${creLogHtml}` : ""}`;
 
+    // Creality camera — start WebRTC after the <video> is in the DOM.
+    if (p.brand === "creality" && creConn?.ip) {
+      startCreCam(creConn.ip);
+    }
+
     // Wire interactions
     const body = $("printerPanelBody");
     body.querySelectorAll(".pp-eye").forEach(btn => {
@@ -9115,7 +7885,7 @@
         // it survives partial / full re-renders triggered by polling.
         if (sec.classList.contains("snap-log-section")
             && _activePrinter?.brand === "flashforge") {
-          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          const conn = ffgGetConn(ffgKey(_activePrinter));
           if (conn) conn.logExpanded = collapsed;  // newly expanded if was collapsed
         }
       });
@@ -9138,7 +7908,7 @@
         if (!(tgt instanceof HTMLElement)) return;
         if (!tgt.classList?.contains("ffg-camera-img")) return;
         if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
-        const conn = _ffgConns.get(ffgKey(_activePrinter));
+        const conn = ffgGetConn(ffgKey(_activePrinter));
         if (!conn || conn.camFailed) return;
         conn.camFailed = true;
         ffgRefreshCamBanner();
@@ -9163,6 +7933,17 @@
           }
           return;
         }
+        // Creality — filament edit
+        const creFilTrigger = e.target.closest("[data-cre-fil-edit]");
+        if (creFilTrigger) {
+          const card    = creFilTrigger.closest(".snap-fil");
+          const boxId   = parseInt(card?.dataset?.boxId   ?? "-1", 10);
+          const slotIdx = parseInt(card?.dataset?.slotIdx ?? "-1", 10);
+          if (boxId >= 0 && slotIdx >= 0 && _activePrinter?.brand === "creality") {
+            openCreFilamentEdit(_activePrinter, boxId, slotIdx);
+          }
+          return;
+        }
         // FlashForge — Retry camera button. Bumps camSession so the
         // browser issues a brand-new GET (the printer's mjpg-streamer
         // sees a "fresh" client) and clears camFailed so the next
@@ -9172,7 +7953,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
-          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          const conn = ffgGetConn(ffgKey(_activePrinter));
           if (!conn) return;
           // Tear down any lingering <img> first so the printer sees the
           // close BEFORE the new GET arrives (otherwise the firmware
@@ -9191,7 +7972,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _snapConns.get(snapKey(_activePrinter));
+          const conn = snapGetConn(snapKey(_activePrinter));
           if (!conn) return;
           conn.logPaused = !conn.logPaused;
           const btn  = $("snapLogPauseBtn");
@@ -9228,7 +8009,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _snapConns.get(snapKey(_activePrinter));
+          const conn = snapGetConn(snapKey(_activePrinter));
           if (!conn) return;
           conn.log = [];
           const host = $("snapLog");
@@ -9251,7 +8032,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          const conn = ffgGetConn(ffgKey(_activePrinter));
           if (!conn) return;
           conn.logPaused = !conn.logPaused;
           const btn  = $("ffgLogPauseBtn");
@@ -9287,7 +8068,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _ffgConns.get(ffgKey(_activePrinter));
+          const conn = ffgGetConn(ffgKey(_activePrinter));
           if (!conn) return;
           conn.log = [];
           const host = $("ffgLog");
@@ -9301,7 +8082,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _creConns.get(creKey(_activePrinter));
+          const conn = creGetConn(creKey(_activePrinter));
           if (!conn) return;
           conn.logPaused = !conn.logPaused;
           const btn = $("creLogPauseBtn");
@@ -9320,13 +8101,36 @@
           e.preventDefault();
           e.stopPropagation();
           if (!_activePrinter) return;
-          const conn = _creConns.get(creKey(_activePrinter));
+          const conn = creGetConn(creKey(_activePrinter));
           if (!conn) return;
           conn.log = [];
           const host = $("creLog");
           if (host) host.innerHTML = renderCreLogInner(_activePrinter);
           const countEl = $("creLogCount");
           if (countEl) countEl.textContent = "0";
+          return;
+        }
+        // Creality — LED toggle (click) + open file sheet (folder button).
+        const creActionTrigger = e.target.closest("[data-cre-action]");
+        if (creActionTrigger) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!_activePrinter || _activePrinter.brand !== "creality") return;
+          if (creActionTrigger.dataset.creAction === "led") creActionLed(_activePrinter);
+          return;
+        }
+        if (e.target.closest("[data-cre-open-files]")) {
+          e.preventDefault(); e.stopPropagation();
+          if (_activePrinter?.brand === "creality") openCreFileSheet(_activePrinter);
+          return;
+        }
+        // Creality file sheet — print button (delete uses hold-to-confirm, bound in sheet).
+        const printTrigger = e.target.closest("[data-cre-file-print]");
+        if (printTrigger) {
+          e.preventDefault(); e.stopPropagation();
+          if (_activePrinter?.brand === "creality") {
+            creActionPrintFile(_activePrinter, printTrigger.dataset.creFilePrint);
+          }
           return;
         }
         // Copy button inside an expanded row — copies the pretty JSON.
@@ -9347,17 +8151,17 @@
         // (typical when paused — no new pushes mean the rows array is
         // stable and the index → entry mapping holds). Resolve the conn
         // from the brand of the active printer so FlashForge rows
-        // expand against `_ffgConns` and Snapmaker rows against
-        // `_snapConns`.
+        // expand against the ffg conn map and Snapmaker rows against
+        // the snap conn map.
         const head = e.target.closest("[data-row-toggle]");
         if (head) {
           const rowEl = head.closest(".snap-log-row");
           if (!rowEl || !_activePrinter) return;
           const conn = (_activePrinter.brand === "flashforge")
-            ? _ffgConns.get(ffgKey(_activePrinter))
+            ? ffgGetConn(ffgKey(_activePrinter))
             : (_activePrinter.brand === "creality")
-            ? _creConns.get(creKey(_activePrinter))
-            : _snapConns.get(snapKey(_activePrinter));
+            ? creGetConn(creKey(_activePrinter))
+            : snapGetConn(snapKey(_activePrinter));
           const idx = parseInt(rowEl.dataset.logIdx || "-1", 10);
           if (conn?.log?.[idx]) conn.log[idx].expanded = !conn.log[idx].expanded;
           // DOM swap — toggle the hidden attribute + the row's class
@@ -9476,1878 +8280,9 @@
     });
   }
 
-  /* ══════════════════════════════════════════════════════════════════════
-     FlashForge HTTP integration (cleartext POST polling)
-     ══════════════════════════════════════════════════════════════════════
-     Ported from the Flutter `FlashforgeHttpPage`. FlashForge AD5X / 5M
-     and similar models expose an HTTP endpoint on port 8898:
-       POST http://<ip>:8898/detail   → live status (read)
-       POST http://<ip>:8898/control  → commands (write — filament change)
-     Both calls take the same auth body { serialNumber, checkCode } where
-     `checkCode` is the network-access password configured on the printer.
-     Polling cadence: every 2s (matches the mobile companion app).
-     Error contract:
-       code === -2 OR message contains "network error"           → offline
-       code ===  1 AND message contains "sn is different"        → bad SN (toast)
-       code ===  1 AND message contains "access code is different" → bad password (toast)
-     The integration mirrors the Snapmaker pattern (snap*) — same shape,
-     same UI conventions, but HTTP-polled instead of WebSocket-streamed.
-     ══════════════════════════════════════════════════════════════════════ */
 
-  // Per-printer live state, keyed by `${brand}:${id}` (parallels _snapConns).
-  // Module-scope (not in `state`) since it's transient — never persisted.
-  const _ffgConns = new Map();
-  // Reachability cache for the Online/Offline badge on the printer grid card,
-  // refreshed every 30s (mirror _snapPings).
-  const _ffgPings = new Map(); // key -> { online: bool|null, lastChecked: number }
+  // Creality Live integration moved to renderer/printers/creality.js
 
-  function ffgKey(p) { return `${p.brand}:${p.id}`; }
-
-  // Force any active MJPEG stream to release. The FlashForge mjpg-streamer
-  // accepts a single concurrent client — if we don't break the held-open
-  // connection on close, reopening the side-card (or opening a different
-  // FlashForge after this one) hits the printer while it still thinks
-  // the previous client is connected, and the second `<img>` never
-  // receives a frame. Setting `src=""` then removing the attribute
-  // signals Chromium to abort the in-flight load → the TCP socket gets
-  // FIN'd → printer frees the slot. We also clear cached URLs from the
-  // attribute so even a quick reopen-with-same-URL forces a new GET.
-  function ffgTearDownCamera() {
-    document.querySelectorAll(".ffg-camera-img").forEach(img => {
-      try {
-        img.src = "about:blank";
-        img.removeAttribute("src");
-      } catch (_) {}
-    });
-  }
-
-  // Authoritative "is this FlashForge reachable?" reading.
-  // 1. Active poller status wins.  2. HTTP ping cache as fallback.
-  // 3. Returns null when no signal yet (renders as "checking" dot).
-  function ffgIsOnline(printer) {
-    if (printer?.brand !== "flashforge") return null;
-    const k = ffgKey(printer);
-    const conn = _ffgConns.get(k);
-    if (conn) return conn.status === "connected";
-    const ping = _ffgPings.get(k);
-    return ping ? ping.online : null;
-  }
-
-  // The Flutter UI accepts both bare IPs ("192.168.1.52") and full URLs
-  // ("http://192.168.1.52:8898" / with custom port). We mirror that here so
-  // power users can override the default 8898 port via the printer's IP field.
-  function ffgBaseUrl(ipField) {
-    const raw = String(ipField || "").trim();
-    if (!raw) return null;
-    if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, "");
-    return `http://${raw}:8898`;
-  }
-
-  // Normalize a FlashForge serial to the form the firmware expects on
-  // its HTTP API (port 8898 /detail + /control). The label printed on
-  // the AD5X / 5M chassis shows the SN as e.g. "MQQE9501368", but the
-  // firmware's authentication compares against the internal value
-  // "SNMQQE9501368" (queryable via `~M115` on port 8899). The mobile
-  // companion app strips the `SN` prefix when it shows the SN to the
-  // user, so anyone who copies it off-screen ends up with the short
-  // form — and the printer rejects every poll with `code:1, "SN is
-  // different"`. We force the prefix back on. Idempotent: an SN that
-  // already starts with `SN` (any case) is left as-is.
-  function ffgNormalizeSerial(raw) {
-    const sn = String(raw || "").trim();
-    if (!sn) return "";
-    if (/^sn/i.test(sn)) return sn;
-    return "SN" + sn;
-  }
-
-  function ffgAuthBody(printer) {
-    // Both fields land on the printer doc when the user adds a FlashForge
-    // (see PRINTER_ADD_SCHEMA.flashforge above). Falsy values still get
-    // sent — the printer answers with the helpful "sn is different" /
-    // "access code is different" payloads we surface as toasts.
-    return {
-      serialNumber: ffgNormalizeSerial(printer.serialNumber),
-      checkCode:    String(printer.password || "").trim()
-    };
-  }
-
-  // Quick reachability check used to drive the Online/Offline badge on the
-  // printer grid card BEFORE the full polling loop opens. Cached for 30s.
-  async function ffgPingPrinter(printer) {
-    if (!printer || printer.brand !== "flashforge") return;
-    const base = ffgBaseUrl(printer.ip);
-    if (!base) return;
-    const k = ffgKey(printer);
-    const cached = _ffgPings.get(k);
-    const now = Date.now();
-    if (cached && now - cached.lastChecked < 30_000) return;
-    _ffgPings.set(k, { online: cached?.online ?? null, lastChecked: now });
-    // Route through main process to bypass renderer CORS (the FlashForge
-    // firmware doesn't handle CORS preflight; see main.js ffg:http-post).
-    // Same defensive shape as ffgPollOnce — bridge unavailability /
-    // rejection / non-object response all collapse to "offline" without
-    // breaking the periodic ping.
-    let online = false;
-    try {
-      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
-      if (typeof bridge === "function") {
-        const j = await bridge(`${base}/detail`, ffgAuthBody(printer));
-        const code = j?.code;
-        const msg  = String(j?.message || "");
-        // Even an auth failure (code:1, "sn is different") implies the
-        // printer is reachable — only network errors count as "offline".
-        online = !(code === -2 || /network error/i.test(msg));
-      }
-    } catch (_) {
-      online = false;
-    }
-    _ffgPings.set(k, { online, lastChecked: now });
-    ffgRefreshOnlineUI(k);
-  }
-
-  function ffgPingAllPrinters() {
-    for (const p of state.printers) {
-      if (p.brand === "flashforge" && p.ip) ffgPingPrinter(p);
-    }
-  }
-  setInterval(ffgPingAllPrinters, 30_000);
-
-  // Surgical DOM update — replaces just the status dot/label in the grid
-  // card and (if open) the side-card hero. Mirrors snapRefreshOnlineUI.
-  function ffgRefreshOnlineUI(key) {
-    document.querySelectorAll(`[data-printer-key="${key}"] .printer-online`).forEach(el => {
-      const p = state.printers.find(x => ffgKey(x) === key);
-      el.outerHTML = renderFfgOnlineBadge(p, "card");
-    });
-    if (_activePrinter && ffgKey(_activePrinter) === key) {
-      const host = $("ppOnlineRow");
-      if (host) host.outerHTML = renderFfgOnlineBadge(_activePrinter, "side");
-    }
-  }
-
-  // Single source of truth for the FlashForge online badge HTML — used in
-  // both the grid card and the side-card. Reuses the same `.printer-online`
-  // classes as Snapmaker so styling stays consistent.
-  function renderFfgOnlineBadge(printer, where) {
-    if (!printer || printer.brand !== "flashforge") return "";
-    const online = ffgIsOnline(printer);
-    const cls = online === true ? "is-online" : (online === false ? "is-offline" : "is-checking");
-    const lbl = online === true ? t("snapStatusOnline")
-              : online === false ? t("snapStatusOffline")
-              : t("snapStatusConnecting");
-    const id  = where === "side" ? ` id="ppOnlineRow"` : "";
-    return `<span class="printer-online printer-online--${esc(where)} ${cls}"${id}>
-              <span class="printer-online-dot"></span>
-              <span class="printer-online-lbl">${esc(lbl)}</span>
-            </span>`;
-  }
-
-  // Open or refresh the polling loop for a printer. Idempotent — calling
-  // again on the same printer with the same IP is a no-op.
-  function ffgConnect(printer) {
-    const key = ffgKey(printer);
-    const existing = _ffgConns.get(key);
-    if (existing && existing.intervalId && existing.ip === printer.ip) {
-      // Already polling the same target — refresh the printer ref so
-      // renames / credential edits reach the next poll without a tear-down.
-      existing.printer = printer;
-      return;
-    }
-    if (existing) ffgDisconnect(key);
-    const conn = {
-      key,
-      ip: printer.ip,
-      printer,                  // kept in sync with the live Firestore doc
-      status: "connecting",     // "connecting" | "connected" | "offline" | "error"
-      lastError: null,
-      lastPollAt: 0,
-      retry: 0,
-      retryTimer: null,
-      intervalId: null,
-      // Cache-buster stamped on every camera URL emitted during this
-      // session so the browser never reuses a held-open MJPEG connection
-      // from a previous open. The FlashForge MJPEG server (mjpg-streamer
-      // on port 8080) only serves ONE concurrent client — without a
-      // fresh URL the second open would attach to a stale connection
-      // (or the printer would refuse the stream because it still thinks
-      // the previous client is connected). Set ONCE per ffgConnect so
-      // partial re-renders during the same open keep the same URL and
-      // don't initiate a new GET on every poll tick.
-      camSession: Date.now(),
-      // Surface the camera fallback when the `<img>` errors out (most
-      // common cause: another client already streaming, since the
-      // printer's mjpg-streamer accepts only ONE concurrent viewer).
-      // Reset to false on every status transition into "connected" and
-      // when the user clicks the in-banner Retry button (which also
-      // bumps camSession to force a new GET).
-      camFailed: false,
-      // Flat shape — same field structure as the Snapmaker conn so the
-      // renderer can reuse format helpers across both brands.
-      data: {
-        temps: {},              // { e1_temp, e1_target, bed_temp, bed_target, chamber_temp }
-        filaments: [],          // up to 4 entries: { color, vendor, type, subType, official, slotId }
-        printState: null,       // "printing" | "idle" | "ready" | "complete" | …
-        printFilename: null,
-        printDuration: 0,
-        progress: 0,             // 0..1 (normalised from 0..100 if needed)
-        currentLayer: 0,
-        totalLayer: 0,
-        printPreviewUrl: null,
-        printEstimated: null,    // estimated time remaining, seconds
-        camera: { url: null, enabled: false },
-        snMismatch: false,
-        // Last raw /detail response — used by the request log (when added).
-        lastDetail: null
-      },
-      log: []
-    };
-    _ffgConns.set(key, conn);
-    // First poll right away so the side-card lights up without waiting 2s.
-    ffgPollOnce(conn);
-    conn.intervalId = setInterval(() => ffgPollOnce(conn), 2000);
-    ffgNotifyChange(conn, /*statusChanged*/ true);
-  }
-
-  function ffgDisconnect(key) {
-    const conn = _ffgConns.get(key);
-    if (!conn) return;
-    if (conn.intervalId) { clearInterval(conn.intervalId); conn.intervalId = null; }
-    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = null; }
-    _ffgConns.delete(key);
-  }
-
-  // Capped exponential backoff — used when the printer becomes unreachable
-  // mid-session. We pause the steady 2s polling loop and retry on growing
-  // delays (2s → 4s → 8s → 16s → 30s) until a poll succeeds, at which
-  // point ffgPollOnce restores the steady cadence.
-  function ffgScheduleReconnect(conn) {
-    if (conn.retryTimer) return;
-    if (!_ffgConns.has(conn.key)) return; // disposed
-    if (conn.intervalId) { clearInterval(conn.intervalId); conn.intervalId = null; }
-    conn.retry = Math.min(conn.retry + 1, 5);
-    const delay = Math.min(2000 * (1 << (conn.retry - 1)), 30000);
-    conn.retryTimer = setTimeout(() => {
-      conn.retryTimer = null;
-      if (!_ffgConns.has(conn.key)) return;
-      ffgPollOnce(conn);
-      // Restore steady polling — ffgPollOnce will move us back into
-      // backoff if the next call also fails.
-      if (!conn.intervalId && _ffgConns.has(conn.key)) {
-        conn.intervalId = setInterval(() => ffgPollOnce(conn), 2000);
-      }
-    }, delay);
-  }
-
-  /* ── Request log (debug-mode only) ────────────────────────────────
-     Mirrors the Snapmaker log block (snapLogPush / renderSnapmakerLogInner)
-     but tailored to HTTP polling: every poll pushes one outbound entry
-     (→ POST /detail) immediately followed by one inbound entry (← <json>).
-     Stored as `conn.log` — array of { dir, ts, summary, raw, expanded }.
-     The visible buffer is capped so memory stays bounded over hours of
-     polling. Surfaced via the collapsible Request log section under the
-     side-card body when state.debugEnabled is true. */
-  const FFG_LOG_MAX = 100;
-  // `summaryOverride` lets the outbound caller stamp the row head with
-  // "POST <url>" while keeping `raw` equal to the EXACT body that goes
-  // on the wire — that way the expanded JSON never shows a UI envelope
-  // the user could mistake for the real payload.
-  function ffgLogPush(conn, dir, raw, summaryOverride = null) {
-    if (!conn) return;
-    if (conn.logPaused) return;
-    if (!conn.log) conn.log = [];
-    let summary = summaryOverride || "";
-    if (!summary) {
-      try {
-        const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-        // Inbound /detail response — surface code + a couple of useful
-        // detail keys so you can see at a glance whether the printer
-        // returned a real status payload or an auth error.
-        if (obj && typeof obj === "object") {
-          if (typeof obj.code !== "undefined") {
-            summary = `code:${obj.code}`;
-            if (obj.message) summary += `  ${String(obj.message).slice(0, 40)}`;
-          }
-          if (obj.detail && typeof obj.detail === "object") {
-            const keys = Object.keys(obj.detail).slice(0, 4);
-            summary += (summary ? "  · " : "") + "detail · " + keys.join(", ");
-          }
-          if (!summary) summary = "(empty)";
-        } else {
-          summary = "(non-object)";
-        }
-      } catch { summary = "(non-json)"; }
-    }
-    const ts = new Date().toLocaleTimeString([], { hour12: false });
-    const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
-    conn.log.push({ dir, ts, summary, raw: rawStr });
-    if (conn.log.length > FFG_LOG_MAX) conn.log.splice(0, conn.log.length - FFG_LOG_MAX);
-  }
-
-  async function ffgPollOnce(conn) {
-    if (!conn || !_ffgConns.has(conn.key)) return;
-    const printer = conn.printer;
-    const base = ffgBaseUrl(printer?.ip);
-    if (!base) {
-      conn.status = "error";
-      conn.lastError = "no IP";
-      ffgNotifyChange(conn, true);
-      return;
-    }
-    conn.lastPollAt = Date.now();
-    // Outbound frame — `wireBody` is the EXACT body main-process fetch()
-    // will serialise. The HTTP verb + URL go in the row-head summary so
-    // the expanded JSON in the log matches what's on the wire byte for
-    // byte (no nested envelope to confuse the user).
-    const wireBody = ffgAuthBody(printer);
-    ffgLogPush(conn, "→", wireBody, `POST ${base}/detail`);
-    // Bridge through main: the renderer can't POST application/json
-    // cross-origin to the printer (CORS preflight blocked by firmware).
-    // Wrap every failure mode into the same `{ code:-2, message }`
-    // envelope the FlashForge driver already understands — preload
-    // missing, IPC handler not registered (e.g. partial reload before
-    // main restart), main process throwing, all surface uniformly so
-    // the inbound log row always renders and polling keeps going.
-    let resp;
-    try {
-      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
-      if (typeof bridge !== "function") {
-        resp = { code: -2, message: "Network error: ffgHttpPost bridge unavailable (full app restart required)" };
-      } else {
-        resp = await bridge(`${base}/detail`, wireBody);
-      }
-    } catch (e) {
-      resp = { code: -2, message: `Network error: IPC failed — ${e?.message || e}` };
-    }
-    if (!resp || typeof resp !== "object") {
-      resp = { code: -2, message: "Network error: empty response from bridge" };
-    }
-    // Stash for the request log + debug overlay.
-    conn.data.lastDetail = resp;
-    // Inbound frame — log every response (success, auth error, network
-    // failure) so the user can pinpoint where a connection breaks down.
-    ffgLogPush(conn, "←", resp);
-    ffgMergeStatus(conn, resp);
-  }
-
-  /* ── Status parser ─────────────────────────────────────────────────
-     Flatten a FlashForge /detail response into our common `conn.data`
-     shape, picking the same keys we use for Snapmaker so the renderer
-     in F3 can branch on data, not on protocol. We accept liberal input
-     types because firmware revisions return numbers as strings ("220")
-     or sentinels ("--") interchangeably. */
-
-  // Parse FlashForge / Creality "#RRGGBB" colour strings to a normalised
-  // upper-case hex. Returns null when the input isn't a recognisable hex.
-  function ffgParseHexColor(s) {
-    let v = String(s || "").trim();
-    if (!v) return null;
-    if (v.startsWith("#")) v = v.slice(1);
-    if (v.length === 3) v = v.split("").map(c => c + c).join(""); // "abc" → "aabbcc"
-    if (v.length === 8) v = v.slice(0, 6); // drop alpha if present
-    if (!/^[0-9a-f]{6}$/i.test(v)) return null;
-    return "#" + v.toUpperCase();
-  }
-
-  // Coerce "220" / 220 / "--" / null → number | null.
-  function ffgNum(v) {
-    if (v === null || v === undefined) return null;
-    if (typeof v === "number") return isFinite(v) ? v : null;
-    const s = String(v).trim();
-    if (!s || s === "--" || /^-+$/.test(s)) return null;
-    const n = parseFloat(s);
-    return isFinite(n) ? n : null;
-  }
-
-  // The Flutter UI surfaces these errors as a top-of-screen Flushbar.
-  // We do the equivalent with toast() but throttle to one notification
-  // per session per printer so a user with a misconfigured printer
-  // doesn't get spammed every 2 seconds.
-  const _ffgErrSeen = new Set(); // Set<`${key}:${kind}`>
-  function ffgWarnOnce(conn, kind, message) {
-    const sig = `${conn.key}:${kind}`;
-    if (_ffgErrSeen.has(sig)) return;
-    _ffgErrSeen.add(sig);
-    try { toast(message, "error"); } catch (_) { /* toast may not be ready during very first poll */ }
-  }
-  // Reset the throttle when the user toggles the side-card so the next
-  // open after fixing credentials in the printer surfaces the toast again.
-  function ffgClearWarnings(key) {
-    for (const sig of Array.from(_ffgErrSeen)) {
-      if (sig.startsWith(key + ":")) _ffgErrSeen.delete(sig);
-    }
-  }
-
-  function ffgMergeStatus(conn, resp) {
-    if (!conn) return;
-    const code = resp?.code;
-    const msg  = String(resp?.message || "");
-    const msgLower = msg.toLowerCase();
-    // Track the previous status so we only flag statusChanged when a
-    // poll *actually* moves us to a different state. Without this, every
-    // failing poll re-flags `true` and triggers a full renderPrinterDetail()
-    // every 2s — which resets data-collapsed on every section (closing
-    // the user's open Request log) and makes the whole sidecard flicker.
-    const prev = conn.status;
-
-    // ── Error contract (lifted from the Flutter monolith) ─────────────
-    // Network error → mark offline + schedule reconnect.
-    if (code === -2 || /network error/.test(msgLower)) {
-      conn.status = "offline";
-      conn.lastError = msg || "network error";
-      ffgNotifyChange(conn, /*statusChanged*/ prev !== "offline");
-      ffgScheduleReconnect(conn);
-      return;
-    }
-    // SN mismatch — printer is reachable but the credentials don't match.
-    // Surface a toast once per session, keep polling so reconfiguration
-    // on the printer side recovers the link without a manual restart.
-    if (code === 1 && /sn is different/.test(msgLower)) {
-      conn.status = "error";
-      conn.lastError = msg;
-      conn.data.snMismatch = true;
-      ffgWarnOnce(conn, "sn", t("ffgErrSnMismatch"));
-      ffgNotifyChange(conn, prev !== "error");
-      return;
-    }
-    if (code === 1 && /access code is different/.test(msgLower)) {
-      conn.status = "error";
-      conn.lastError = msg;
-      ffgWarnOnce(conn, "pwd", t("ffgErrBadPassword"));
-      ffgNotifyChange(conn, prev !== "error");
-      return;
-    }
-    // Anything else with code !== 0 and no `detail` payload — stay silent
-    // but keep polling. Status drops back to "connecting" so the badge
-    // doesn't claim the printer is online when we got an unintelligible
-    // response.
-    const detail = resp?.detail;
-    if (!detail || typeof detail !== "object") {
-      if (code !== 0) {
-        conn.status = "connecting";
-        ffgNotifyChange(conn, prev !== "connecting");
-      }
-      return;
-    }
-
-    // ── Successful payload — extract every field we know about. We
-    // detect status changes (connecting → connected) so the renderer can
-    // do the more expensive full re-render only when needed.
-    const wasConnected = conn.status === "connected";
-    conn.status = "connected";
-    conn.lastError = null;
-    conn.retry = 0;
-    // Status is freshly back online — give the camera another shot. If
-    // the previous open hit the 1-stream limit and we showed the fallback,
-    // a successful poll suggests the printer is reachable again so the
-    // viewer should re-attempt automatically. The user can still
-    // manually clear an error via the in-banner Retry button.
-    if (!wasConnected) {
-      conn.camFailed = false;
-    }
-    const d = conn.data;
-
-    // Temperatures — `rightTemp` is the active extruder; on dual-extruder
-    // models `leftTemp` is reported separately. The bed lives at `platTemp`,
-    // chamber at `chamberTemp`. FlashForge does not surface target temps
-    // in the obvious places — leave targets null so the renderer
-    // gracefully renders just "26°C" instead of "26/0°C".
-    const nozzle  = ffgNum(detail.rightTemp ?? detail.leftTemp);
-    const bed     = ffgNum(detail.platTemp);
-    const chamber = ffgNum(detail.chamberTemp);
-    if (nozzle  !== null) d.temps.e1_temp    = nozzle;
-    if (bed     !== null) d.temps.bed_temp   = bed;
-    if (chamber !== null) d.temps.chamber_temp = chamber;
-    // We deliberately DON'T write the *_target keys — the renderer
-    // checks for their presence with `typeof === "number"` and falls
-    // back to the no-target display when they're absent.
-
-    // Filament — two layouts:
-    //   1. matlStation (multi-tray) → matlStationInfo.slotInfos[1..4]
-    //   2. independent (single)     → root materialName / materialColor
-    //                              OR detail.indepMatlInfo.materialName/Color
-    // We prefer matlStation when hasMatlStation is true.
-    const hasMs = detail.hasMatlStation === true || detail.hasMatlStation === 1;
-    if (hasMs && detail.matlStationInfo && typeof detail.matlStationInfo === "object") {
-      const ms = detail.matlStationInfo;
-      const currentSlot = (typeof ms.currentSlot === "number") ? ms.currentSlot : 0;
-      const slots = Array.isArray(ms.slotInfos) ? ms.slotInfos : [];
-      // 5-slot layout: [Ext.] + [1A 1B 1C 1D].
-      //   • Ext.  = indepMatlInfo  → ipdMsConfig_cmd on save
-      //   • 1A-D = matlStationInfo → msConfig_cmd with slot 1-4
-      // Each entry carries `slotKind` ("ext" | "ms") so the renderer
-      // can pick the right tag and the edit sheet can dispatch the
-      // right /control command WITHOUT relying on array length tricks.
-      // Ext is always rendered (even with no material assigned) so the
-      // user has a fixed entry point to configure the indep extruder
-      // without needing to hunt through the matlStation slots.
-      const indep = (detail.indepMatlInfo && typeof detail.indepMatlInfo === "object")
-                    ? detail.indepMatlInfo : {};
-      const indepName  = String(indep.materialName || "").trim();
-      const indepColor = ffgParseHexColor(indep.materialColor);
-      // Ext is "live" only when the matlStation isn't actively feeding
-      // (currentSlot === 0) AND the extruder reports filament loaded.
-      // Otherwise the active feed is via matlStation, Ext is
-      // configured-but-not-active.
-      const anyExtruderHas = (detail.hasLeftFilament === true || detail.hasLeftFilament === 1)
-                          || (detail.hasRightFilament === true || detail.hasRightFilament === 1);
-      const extActive = currentSlot === 0 && anyExtruderHas;
-      const merged = [];
-      merged.push({
-        slotId: 0,
-        slotKind: "ext",
-        hasFilament: extActive,       // only "loaded" when currentSlot===0 + extruder reports filament
-        color: indepColor,
-        vendor: null,
-        type: indepName || null,
-        subType: null,
-        official: false,
-        isActive: extActive
-      });
-      for (let i = 1; i <= 4; i++) {
-        const s = slots.find(x => x && x.slotId === i) || {};
-        const has = s.hasFilament === true || s.hasFilament === 1;
-        const name = String(s.materialName || "").trim();
-        const colorHex = ffgParseHexColor(s.materialColor);
-        // KEEP the slot's assigned color + material even when
-        // hasFilament is false. The AD5X firmware always reports the
-        // last configured `materialColor` / `materialName` per slot;
-        // surfacing them lets the user see at a glance which filament
-        // is *intended* for each bay so they can refill the right one.
-        // Vendor stays null — /detail doesn't carry brand info.
-        merged.push({
-          slotId: i,
-          slotKind: "ms",
-          hasFilament: has,
-          color: colorHex,            // preserved across has/!has
-          vendor: null,               // unknown — not in /detail
-          type: name || null,         // preserved across has/!has
-          subType: null,              // not exposed by /detail
-          official: false,            // FlashForge slots are always editable
-          isActive: has && (i === currentSlot)
-        });
-      }
-      d.filaments = merged;
-    } else {
-      // Independent-extruder fallback — single-slot inventory.
-      const indep = detail.indepMatlInfo;
-      const indepName  = (indep && typeof indep === "object" ? indep.materialName  : null) ?? detail.materialName;
-      const indepColor = (indep && typeof indep === "object" ? indep.materialColor : null) ?? detail.materialColor;
-      const name = String(indepName || "").trim();
-      const colorHex = ffgParseHexColor(indepColor);
-      if (name || colorHex) {
-        // Same rationale as the matlStation branch — vendor isn't in
-        // the payload, so we leave it null rather than mislabel it.
-        d.filaments = [{
-          slotId: 1,
-          slotKind: "ext",             // no matlStation → indep extruder is the only path
-          hasFilament: true,           // single-extruder only renders when loaded
-          color: colorHex,
-          vendor: null,
-          type: name || null,
-          subType: null,
-          official: false,
-          isActive: true
-        }];
-      } else {
-        d.filaments = [];
-      }
-    }
-
-    // Print job state. FlashForge `status` strings include: "ready",
-    // "preparing", "heating", "printing", "paused", "completed",
-    // "cancelled", "busy", "idle". We map them onto our internal
-    // vocabulary so the renderer can branch on isActive uniformly.
-    const rawState = String(detail.status || "").toLowerCase().trim();
-    d.printState = rawState || "idle";
-    // `printProgress` may be reported as 0..1 OR as 0..100 depending on
-    // firmware. Detect via magnitude.
-    let progressRaw = ffgNum(detail.printProgress);
-    if (progressRaw === null) progressRaw = 0;
-    if (progressRaw > 1.0001) progressRaw = progressRaw / 100; // 0..100 → 0..1
-    progressRaw = Math.max(0, Math.min(1, progressRaw));
-    d.progress = progressRaw;
-    // Layer counters
-    const cur = ffgNum(detail.printLayer);
-    const tot = ffgNum(detail.targetPrintLayer);
-    d.currentLayer = cur != null ? Math.round(cur) : 0;
-    d.totalLayer   = tot != null ? Math.round(tot) : 0;
-    // Estimated time remaining — surface as `printEstimated` to align with
-    // the Snapmaker conn shape (where the field carries metadata-derived
-    // total estimated time). The renderer treats both as "time hint".
-    const eta = ffgNum(detail.estimatedTime);
-    d.printEstimated = (eta != null && eta > 0) ? eta : null;
-    // Filename — FlashForge exposes either `printFileName` or `printJobName`
-    // depending on firmware. We accept either.
-    const fn = String(detail.printFileName || detail.printJobName || "").trim();
-    d.printFilename = fn || null;
-    // Slicer thumbnail — already a fully-qualified URL, just stash it.
-    const thumb = String(detail.printFileThumbUrl || "").trim();
-    d.printPreviewUrl = thumb || null;
-
-    // Camera — multiple field aliases used across firmware versions.
-    const camUrl = String(
-      detail.cameraStreamUrl
-      || detail.cameraUrl
-      || detail.camera_url
-      || detail.streamUrl
-      || ""
-    ).trim();
-    const camFlag = (
-      detail.camera === true || detail.camera === 1 || detail.camera === "1" ||
-      detail.hasCamera === true || detail.hasCamera === 1 ||
-      detail.cameraEnabled === true || detail.cameraEnabled === 1 || detail.cameraEnabled === "1" ||
-      detail.camera_enabled === true || detail.camera_enabled === 1 || detail.camera_enabled === "1"
-    );
-    d.camera = {
-      url: camUrl || null,
-      enabled: !!camUrl || !!camFlag
-    };
-
-    // The FlashForge `status` string drives our "is the printer actively
-    // printing?" decision — used by the renderer to show / hide the
-    // print-job card. We keep it on `d.printState` so it stays alongside
-    // the Snapmaker equivalent.
-
-    ffgNotifyChange(conn, /*statusChanged*/ !wasConnected);
-  }
-
-  // Coalesce burst of poll-driven updates into a single rAF re-render.
-  // Mirror of snapNotifyChange — full re-render on status change so the
-  // hero camera + badge can swap, otherwise just the data block.
-  let _ffgRenderRaf = null;
-  let _ffgRenderStatusFlag = false;
-  function ffgNotifyChange(conn, statusChanged = false) {
-    if (!_activePrinter) return;
-    if (ffgKey(_activePrinter) !== conn.key) return;
-    if (statusChanged) _ffgRenderStatusFlag = true;
-    if (_ffgRenderRaf) return;
-    _ffgRenderRaf = requestAnimationFrame(() => {
-      _ffgRenderRaf = null;
-      const fullRerender = _ffgRenderStatusFlag;
-      _ffgRenderStatusFlag = false;
-      if (fullRerender) {
-        renderPrinterDetail();
-      } else {
-        const liveHost = $("ffgLive");
-        if (liveHost && typeof renderFlashforgeLiveInner === "function") {
-          liveHost.innerHTML = renderFlashforgeLiveInner(_activePrinter);
-        }
-        // Request log — incremental update so the section's open /
-        // closed state survives every poll tick. Mirrors the Snapmaker
-        // partial-render path at L6492.
-        const logHost = $("ffgLog");
-        if (logHost) logHost.innerHTML = renderFlashforgeLogInner(_activePrinter);
-        const countEl = $("ffgLogCount");
-        if (countEl) countEl.textContent = String(conn.log?.length || 0);
-      }
-    });
-  }
-
-  /* ── Live block render ─────────────────────────────────────────────
-     Returns the inner HTML for the FlashForge live container. Layout
-     follows the Snapmaker live block exactly so the user sees the same
-     visual rhythm regardless of brand. Reuses the .snap-* CSS classes
-     since they're already brand-agnostic by name. */
-
-  // FlashForge does not expose target temperatures in the /detail
-  // response, so we render just the current value (e.g. "26°C") instead
-  // of the Snapmaker "26/0°C" pair. The trailing °C suffix matches.
-  function ffgFmtTempSolo(v) {
-    return (typeof v === "number" && isFinite(v)) ? `${Math.round(v)}°C` : "—";
-  }
-
-  // Print state mapping — FlashForge ships its own vocabulary that we
-  // surface with our own (i18n-able) labels. Active = the print-job
-  // card should render and progress / layer counters are meaningful.
-  const FFG_ACTIVE_STATES = new Set([
-    "printing", "preparing", "heating", "busy", "paused"
-  ]);
-  function ffgIsActiveState(s) {
-    return FFG_ACTIVE_STATES.has(String(s || "").toLowerCase().trim());
-  }
-  function ffgStateLabel(s) {
-    const norm = String(s || "").toLowerCase().trim();
-    // We deliberately reuse the snapState_* keys for shared states so the
-    // user reads the same label across brands. FlashForge introduces a
-    // few extras (preparing, heating, busy, ready) we map to bespoke
-    // ffgState_* keys.
-    const aliases = {
-      "printing":  "snapState_printing",
-      "paused":    "snapState_paused",
-      "complete":  "snapState_complete",
-      "completed": "snapState_complete",
-      "cancelled": "snapState_cancelled",
-      "canceled":  "snapState_cancelled",
-      "error":     "snapState_error",
-      "standby":   "snapState_standby",
-      "idle":      "snapState_standby",
-      "ready":     "ffgState_ready",
-      "preparing": "ffgState_preparing",
-      "heating":   "ffgState_heating",
-      "busy":      "ffgState_busy"
-    };
-    const key = aliases[norm];
-    if (!key) return norm || "—";
-    const lbl = t(key);
-    return lbl && lbl !== key ? lbl : (norm || "—");
-  }
-
-  // Render the inner contents of the FlashForge camera banner. Two
-  // branches:
-  //   1. healthy   → MJPEG `<img>` streaming the printer's view
-  //   2. fallback  → static product photo overlaid with the error
-  //                  message + a Retry button (used when the `<img>`'s
-  //                  load fails — typically because mjpg-streamer is
-  //                  already serving its 1 allowed client elsewhere)
-  // The host wrapper (#ffgCamHost) is created by the caller; this
-  // helper only produces what goes INSIDE so we can swap it in place
-  // on error / retry without rebuilding the whole sidecard body.
-  function ffgRenderCamBannerInner(p, busted, heroUrl, modelName) {
-    const conn = _ffgConns.get(ffgKey(p));
-    if (conn?.camFailed) {
-      const photo = heroUrl
-        ? `<img class="ffg-cam-fallback-img" src="${esc(heroUrl)}"
-                alt="${esc(modelName || "")}"
-                onerror="this.style.opacity='.15'"/>`
-        : `<div class="ffg-cam-fallback-img ffg-cam-fallback-img--placeholder"></div>`;
-      return `
-        <div class="ffg-cam-fallback">
-          ${photo}
-          <div class="ffg-cam-fallback-overlay">
-            <div class="ffg-cam-fallback-icon icon icon-warn icon-18" aria-hidden="true"></div>
-            <div class="ffg-cam-fallback-msg">${esc(t("ffgCamFailMsg"))}</div>
-            <button type="button" class="ffg-cam-fallback-retry" data-ffg-cam-retry="1">
-              <span class="icon icon-refresh icon-13" aria-hidden="true"></span>
-              <span>${esc(t("ffgCamRetry"))}</span>
-            </button>
-          </div>
-        </div>`;
-    }
-    return `
-      <img class="snap-camera-frame ffg-camera-img"
-           src="${esc(busted)}"
-           alt="${esc(t("ffgCameraAlt"))}"
-           loading="lazy"
-           referrerpolicy="no-referrer"/>`;
-  }
-
-  // Swap the inner of #ffgCamHost in place — used by the error/retry
-  // handlers so toggling between healthy / fallback doesn't rebuild
-  // the whole panel body (which would blow away the Request log open
-  // state, the inline edits, etc.).
-  function ffgRefreshCamBanner() {
-    if (!_activePrinter || _activePrinter.brand !== "flashforge") return;
-    const host = $("ffgCamHost");
-    if (!host) return;
-    const conn = _ffgConns.get(ffgKey(_activePrinter));
-    const url = conn?.data?.camera?.url || null;
-    const enabled = !!(conn?.data?.camera?.enabled);
-    if (!url || !enabled || conn?.status !== "connected") {
-      host.style.display = "none";
-      return;
-    }
-    host.style.display = "";
-    const busted = (url && conn?.camSession)
-      ? (url + (url.includes("?") ? "&" : "?") + "_=" + conn.camSession)
-      : url;
-    const meta = PRINTER_BRAND_META[_activePrinter.brand] || {};
-    const heroUrl = printerImageUrlFor(_activePrinter.brand, _activePrinter.printerModelId)
-                 || printerImageUrl(findPrinterModel(_activePrinter.brand, "0"));
-    const modelName = printerModelName(_activePrinter.brand, _activePrinter.printerModelId);
-    void meta;
-    host.innerHTML = ffgRenderCamBannerInner(_activePrinter, busted, heroUrl, modelName);
-  }
-
-  // Format an estimated-time-remaining count (seconds) into "Hh MMm".
-  // Same shape as snapFmtDuration so both renderers feel identical.
-  function ffgFmtDuration(seconds) {
-    const s = Math.max(0, Math.floor(seconds || 0));
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m.toString().padStart(2, "0")}m` : `${m}m`;
-  }
-
-  function renderFlashforgeLiveInner(p) {
-    const conn = _ffgConns.get(ffgKey(p));
-    if (!conn) {
-      return `
-        <div class="snap-empty">
-          <span class="icon icon-cloud icon-18"></span>
-          <span>${esc(t("snapNoConnection"))}</span>
-        </div>`;
-    }
-    const d = conn.data;
-    const isConnected = conn.status === "connected";
-
-    // Camera lives in the side-card hero — see F4 wiring in
-    // renderPrinterDetail. The live block proper starts at the print job.
-
-    // ── Print-job card — only rendered when actively printing. ──────
-    let jobHtml = "";
-    if (isConnected) {
-      const jobState  = d.printState || "idle";
-      const isActive  = ffgIsActiveState(jobState);
-      const pct       = isActive ? Math.round((d.progress || 0) * 100) : 0;
-      const leafName  = isActive && d.printFilename
-                      ? String(d.printFilename).split("/").pop()
-                      : "";
-      const fallbackImg = printerImageUrlFor(p.brand, p.printerModelId)
-                       || printerImageUrl(findPrinterModel(p.brand, "0"));
-      const thumbUrl  = (isActive && d.printPreviewUrl) ? d.printPreviewUrl : (fallbackImg || "");
-      const layerText = isActive && (d.currentLayer || d.totalLayer)
-                      ? `${d.currentLayer || 0}/${d.totalLayer || 0}` : "";
-      // FlashForge's `estimatedTime` is the time REMAINING (not elapsed),
-      // so we show it as a countdown on the right of the time row.
-      const timeText = isActive
-                     ? (d.printEstimated ? ffgFmtDuration(d.printEstimated) : "—")
-                     : "0m";
-      const stateLabel = ffgStateLabel(jobState);
-      const nameLine = leafName
-        ? `<div class="snap-job-name" title="${esc(leafName)}">${esc(leafName)}</div>`
-        : `<div class="snap-job-name snap-job-name--idle">${esc(t("snapJobNoActive") || "—")}</div>`;
-      jobHtml = `
-        <div class="snap-job snap-job--${esc(jobState)}">
-          <div class="snap-job-thumb"${thumbUrl ? ` style="background-image:url('${esc(thumbUrl)}')"` : ""}></div>
-          <div class="snap-job-info">
-            ${nameLine}
-            <div class="snap-job-stats">
-              <span class="snap-job-pct">${pct}%</span>
-              <span class="snap-job-time">${SNAP_ICON_CLOCK} <span>${esc(timeText)}</span></span>
-            </div>
-            <div class="snap-job-bar"><span style="width:${pct}%"></span></div>
-            <div class="snap-job-foot">
-              <span class="snap-job-state snap-job-state--${esc(jobState)}">${esc(stateLabel)}</span>
-              ${layerText ? `<span class="snap-job-layers">${esc(layerText)}</span>` : ""}
-            </div>
-          </div>
-        </div>`;
-    }
-
-    // ── Temperature row ──────────────────────────────────────────────
-    // FlashForge reports current values only — no target. We render a
-    // solo pill ("26°C") with the same icon + class as the Snapmaker
-    // pair pill so styling stays consistent.
-    const tempPills = [];
-    if (typeof d.temps.e1_temp === "number") {
-      tempPills.push(`
-        <div class="snap-temp">
-          ${SNAP_ICON_NOZZLE}
-          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.e1_temp))}</span>
-        </div>`);
-    }
-    if (typeof d.temps.bed_temp === "number") {
-      tempPills.push(`
-        <div class="snap-temp snap-temp--bed">
-          ${SNAP_ICON_BED}
-          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.bed_temp))}</span>
-        </div>`);
-    }
-    if (typeof d.temps.chamber_temp === "number") {
-      // No dedicated chamber icon yet — reuse the bed icon, distinguish
-      // via a different class so CSS can style it later if needed.
-      tempPills.push(`
-        <div class="snap-temp snap-temp--chamber">
-          ${SNAP_ICON_BED}
-          <span class="snap-temp-val">${esc(ffgFmtTempSolo(d.temps.chamber_temp))}</span>
-        </div>`);
-    }
-    const tempsHtml = tempPills.length
-      ? `<section class="snap-block">
-           <h4 class="snap-block-title">${esc(t("snapTemperatureTitle"))}</h4>
-           <div class="snap-temps">${tempPills.join("")}</div>
-         </section>`
-      : "";
-
-    // ── Filament grid — colored squares with material centred ────────
-    // matlStation rigs emit FIVE entries: [Ext.] + [1A 1B 1C 1D].
-    // Single-extruder rigs emit one entry (slotKind="ext").
-    //
-    // Three visual states (matlStation slots — single-extruder is binary):
-    //   1. FILLED       (hasFilament + color)  → solid fill, contrasting text
-    //   2. CONFIGURED   (!hasFilament + color) → bold coloured ring drawn
-    //                                            INSIDE the square (inset
-    //                                            shadow), "Empty" label inside,
-    //                                            material printed below — the
-    //                                            slot is *assigned* to a
-    //                                            specific filament so the
-    //                                            user knows what to refill
-    //                                            this bay with.
-    //   3. UNCONFIGURED (!hasFilament + no color) → existing gray --empty style
-    const filCards = [];
-    const fils = Array.isArray(d.filaments) ? d.filaments : [];
-    for (let i = 0; i < fils.length; i++) {
-      const fil  = fils[i] || {};
-      const has  = !!fil.hasFilament;
-      const color = fil.color || null;
-      const hasMeta = !!(color || fil.type);   // either color or material is set
-      // For multi-slot rigs (matlStation, fils.length>1) we always render
-      // every tile so the layout stays stable and editable. For
-      // single-extruder we only render when there IS something to show.
-      const isMulti = fils.length > 1;
-      if (!has && !hasMeta && !isMulti) continue;
-      const fg    = (has && color) ? snapTextColor(color) : "var(--text)";
-      const slotId = fil.slotId || (i + 1);
-      // Filled slot → show the material name in the square. Configured
-      // empty slot → say "Empty" in the square (the material name still
-      // appears in the meta row below). Unconfigured empty matlStation
-      // slot → fall back to the existing "no filament" placeholder.
-      const squareLabel = has
-        ? (fil.type || t("snapNoFilament"))
-        : (hasMeta ? (t("ffgSlotEmpty") || "Empty") : t("snapNoFilament"));
-      const typeAndSub = fil.type || "—";
-      // CSS modifier classes:
-      //   --empty       → unconfigured (gray hatch — current behavior)
-      //   --configured  → empty but assigned (solid colored border, no fill)
-      let squareCls = "snap-fil-square";
-      let squareStyle = "";
-      if (has && color) {
-        // Filled: full colour background, no visible outer border or
-        // inset blue glow (`--filled` class clears both at the CSS
-        // level so the colour reads as a clean rectangle, not as a
-        // colour-on-colour rim that draws attention to the seam).
-        squareCls += " snap-fil-square--filled";
-        squareStyle = `background:${esc(color)};color:${esc(fg)};`;
-      } else if (hasMeta && color) {
-        // Configured but empty: thick coloured ring drawn INSIDE the
-        // square's existing box (inset box-shadow). The element's
-        // `border` is forced transparent by the .--configured class
-        // so the outer dimensions stay identical to a filled tile —
-        // toggling between states doesn't shift neighbouring slots.
-        // 4px is thick enough to read as a deliberate "ring of
-        // colour" but doesn't crowd the centred "Empty" label.
-        squareCls += " snap-fil-square--configured";
-        squareStyle = `box-shadow: inset 0 0 0 4px ${esc(color)};`;
-      } else {
-        // Unconfigured (no color, no material) → fallback hatch.
-        squareCls += " snap-fil-square--empty";
-      }
-      // Vendor is not surfaced by the FlashForge /detail API, so we
-      // skip the vendor row entirely when null. The material line
-      // (snap-fil-sub) becomes the primary text below the edit icon —
-      // matches what the user sees when there's truly no vendor data
-      // to honour, rather than displaying a misleading placeholder.
-      const vendorRow = fil.vendor
-        ? `<div class="snap-fil-vendor">${esc(fil.vendor)}</div>`
-        : "";
-      // Slot tag mapping:
-      //   • slotKind "ext"  → "Ext."  (always leftmost)
-      //   • slotKind "ms"   → "1A" / "1B" / "1C" / "1D" (1 + A..D for slot 1..4)
-      // `1` is the matlStation index — single-station printers always
-      // report it as 1; future multi-station rigs would reuse this
-      // numbering. Falls back to "E1" if a future driver path emits a
-      // slot without a kind (defensive — shouldn't happen in practice).
-      const slotTag = fil.slotKind === "ext"
-        ? "Ext."
-        : fil.slotKind === "ms"
-        ? `1${"ABCD"[(slotId - 1) | 0] || ""}`
-        : "E1";
-      filCards.push(`
-        <div class="snap-fil snap-fil--editable${fil.isActive ? " snap-fil--active" : ""}"
-             data-ffg-fil-edit="1"
-             data-extruder-idx="${i}"
-             data-slot-id="${slotId}"
-             data-slot-kind="${esc(fil.slotKind || "ext")}"
-             title="${esc(t("snapFilEditableTip"))}">
-          <div class="snap-fil-tag">${esc(slotTag)}</div>
-          <div class="${squareCls}" style="${squareStyle}">
-            <span class="snap-fil-main">${esc(squareLabel)}</span>
-          </div>
-          <div class="snap-fil-meta">
-            <span class="snap-fil-status icon icon-edit icon-13" aria-hidden="true"></span>
-            ${vendorRow}
-            <div class="snap-fil-sub">${esc(typeAndSub)}</div>
-          </div>
-        </div>`);
-    }
-    const filamentsHtml = filCards.length
-      ? `<section class="snap-block">
-           <h4 class="snap-block-title">${esc(t("snapFilamentTitle"))}</h4>
-           <div class="snap-fil-grid">${filCards.join("")}</div>
-         </section>`
-      : "";
-
-    return `
-      ${jobHtml}
-      ${tempsHtml}
-      ${filamentsHtml}`;
-  }
-
-  /* ── Request log render ──────────────────────────────────────────
-     Inner contents of the #ffgLog container — replaced on every poll
-     tick (incremental, no full side-card rebuild). Mirrors
-     renderSnapmakerLogInner so the UI feels identical across brands.
-     Each row click toggles the pretty-printed JSON detail panel. */
-  function renderFlashforgeLogInner(p) {
-    const conn = _ffgConns.get(ffgKey(p));
-    const log = conn?.log || [];
-    if (!log.length) {
-      return `<div class="snap-log-empty">${esc(t("snapLogEmpty"))}</div>`;
-    }
-    const rows = log.slice().reverse().map((e, i) => {
-      let pretty = e.raw;
-      try { pretty = JSON.stringify(JSON.parse(e.raw), null, 2); } catch (_) {}
-      const expanded = !!e.expanded;
-      return `
-        <div class="snap-log-row snap-log-row--${e.dir === "→" ? "out" : "in"}${expanded ? " snap-log-row--expanded" : ""}"
-             data-log-idx="${log.length - 1 - i}">
-          <button type="button" class="snap-log-row-head" data-row-toggle="1">
-            <span class="snap-log-dir">${esc(e.dir)}</span>
-            <span class="snap-log-ts">${esc(e.ts)}</span>
-            <span class="snap-log-summary">${esc(e.summary)}</span>
-            <span class="snap-log-row-chev icon icon-chevron-r icon-13"></span>
-          </button>
-          <div class="snap-log-detail"${expanded ? "" : " hidden"}>
-            <button type="button" class="snap-log-detail-copy" data-copy="${esc(pretty)}" title="${esc(t("copyLabel"))}">
-              <span class="icon icon-copy icon-13"></span>
-              <span>${esc(t("copyLabel"))}</span>
-            </button>
-            <pre class="snap-log-detail-pre">${esc(pretty)}</pre>
-          </div>
-        </div>`;
-    }).join("");
-    return `<div class="snap-log">${rows}</div>`;
-  }
-
-  /* ── Manual filament edit — bottom sheet ──────────────────────────
-     Click on a colour square in the FlashForge live block opens a
-     bottom-sheet pre-filled with the slot's current filament data.
-     On Apply we POST /control with the FlashForge command:
-       • matlStation (4-bay): { cmd: "msConfig_cmd",   args: { slot, mt, rgb } }
-       • independent extruder: { cmd: "ipdMsConfig_cmd", args: { mt, rgb } }
-     Sheet structure mirrors the Snapmaker `.sfe-*` sheet (we even
-     reuse its CSS classes); IDs are `ffg*` / `ffgFilEdit*` so both
-     flows coexist. */
-
-  // Vendor → materials catalogue. FlashForge accepts arbitrary `mt`
-  // strings, but we surface a curated list mirroring the Snapmaker
-  // chooser so the user picks documented values (PLA / PETG / …) by
-  // default. Custom material names still flow through via the typed
-  // input hooks.
-  // The vendor isn't sent to the printer (the /control payload only
-  // carries `mt` + `rgb`), so we keep the catalogue intentionally tiny:
-  // "Generic" first as the safe default, then "FlashForge" for users
-  // who specifically want to track that. Other brands were removed —
-  // they were mislabelling slots without changing what reaches the
-  // wire.
-  const FFG_FIL_VENDOR_MATERIALS = {
-    "Generic":    ["PLA", "PETG", "ABS", "TPU", "ASA", "PA", "PC", "PVA", "HIPS", "Wood"],
-    "FlashForge": ["PLA", "PETG", "ABS", "TPU", "ASA"]
-  };
-  const FFG_FIL_BRANDS = Object.keys(FFG_FIL_VENDOR_MATERIALS);
-  const FFG_FIL_PRIORITY = ["PLA", "PETG", "ABS", "TPU"];
-
-  // Same 24-colour preset palette as the Snapmaker sheet so the user
-  // visually recognises the colour grid across brands.
-  const FFG_FIL_COLOR_PRESETS = SNAP_FIL_COLOR_PRESETS;
-
-  function ffgSortMaterials(list) {
-    const upper = list.map(s => s.toUpperCase());
-    const used = new Set();
-    const priority = [];
-    for (const p of FFG_FIL_PRIORITY) {
-      const idx = upper.findIndex((u, i) => !used.has(i) && u === p);
-      if (idx >= 0) { priority.push(list[idx]); used.add(idx); }
-    }
-    const rest = list.filter((_, i) => !used.has(i))
-                     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-    return [...priority, ...rest];
-  }
-
-  // FlashForge expects the colour as "#RRGGBB" upper-case (per the
-  // Flutter monolith's _ffgSetMsSlot / _ffgSetExtMaterial calls). The
-  // existing ffgParseHexColor already returns that exact shape.
-  function ffgColorToHash(hex) {
-    return ffgParseHexColor(hex) || "#000000";
-  }
-
-  let _ffgFilEdit = null;             // { brand, deviceId, key, slotId, isMatlStation }
-  let _ffeSelectedBrand = "";
-  let _ffeSelectedMaterial = "";
-
-  function ffgFilRenderVendorList(selected) {
-    return FFG_FIL_BRANDS.map(v => {
-      const isSel = v.toLowerCase() === (selected || "").toLowerCase();
-      return `<button type="button" class="sfe-fil-row${isSel ? " is-selected" : ""}"
-                      data-val="${esc(v)}">${esc(v)}</button>`;
-    }).join("");
-  }
-  function ffgFilRenderMaterialList(vendor, selectedMat) {
-    const list = (FFG_FIL_VENDOR_MATERIALS[vendor]?.length
-                  ? FFG_FIL_VENDOR_MATERIALS[vendor]
-                  : FFG_FIL_VENDOR_MATERIALS["Generic"]);
-    const sorted = ffgSortMaterials(list);
-    return sorted.map(m => {
-      const isSel = m.toLowerCase() === (selectedMat || "").toLowerCase();
-      return `<button type="button" class="sfe-fil-row${isSel ? " is-selected" : ""}" data-val="${esc(m)}">
-                <span class="sfe-fil-row-text">${esc(m)}</span>
-                ${isSel ? `<span class="sfe-fil-row-check">✓</span>` : ""}
-              </button>`;
-    }).join("");
-  }
-
-  function ffeRenderColorGrid(currentColor) {
-    const grid = $("ffgColorGrid");
-    if (!grid) return;
-    const cur = (currentColor || "").toLowerCase();
-    const presetCells = FFG_FIL_COLOR_PRESETS.map(c => {
-      const isSel = c.toLowerCase() === cur;
-      return `<button type="button" class="sfe-color-cell${isSel ? " is-selected" : ""}"
-                      data-color="${esc(c)}"
-                      style="background:${esc(c)}"
-                      title="${esc(c)}"></button>`;
-    }).join("");
-    const safeColor = currentColor && /^#[0-9a-f]{6}$/i.test(currentColor) ? currentColor : "#888888";
-    const customCell = `
-      <div class="sfe-color-cell sfe-color-cell--custom" id="ffgColorCustomBtn"
-           style="background:${esc(safeColor)}"
-           title="${esc(t("snapFilEditCustomColor") || "Custom")}">
-        <span class="icon icon-edit icon-13"></span>
-        <input type="color" class="sfe-color-cell-native" id="ffgColorPickerInline"
-               value="${esc(safeColor)}" aria-label="Custom color"/>
-      </div>`;
-    grid.innerHTML = presetCells + customCell;
-  }
-
-  function ffeOpenFilamentSheet() {
-    $("ffgFilamentSheet")?.classList.add("open");
-    $("ffgFilamentSheet")?.setAttribute("aria-hidden", "false");
-  }
-  function ffeCloseFilamentSheet() {
-    $("ffgFilamentSheet")?.classList.remove("open");
-    $("ffgFilamentSheet")?.setAttribute("aria-hidden", "true");
-  }
-  function ffeOpenColorSheet() {
-    $("ffgColorSheet")?.classList.add("open");
-    $("ffgColorSheet")?.setAttribute("aria-hidden", "false");
-  }
-  function ffeCloseColorSheet() {
-    $("ffgColorSheet")?.classList.remove("open");
-    $("ffgColorSheet")?.setAttribute("aria-hidden", "true");
-  }
-
-  function ffeUpdateSummary() {
-    // The vendor isn't sent on the wire (printer only stores `mt` +
-    // `rgb`), so the summary header just shows the material the user
-    // is selecting — no brand prefix. Keeps the bottom-sheet visually
-    // honest about what will actually reach the printer.
-    const m = _ffeSelectedMaterial || "—";
-    const valEl = $("ffgFilSummaryVal");
-    if (valEl) valEl.textContent = m;
-    const dot = $("ffgColorSummaryDot");
-    if (dot) dot.style.background = $("ffgColorInput")?.value || "#888";
-  }
-
-  function openFlashforgeFilamentEdit(printer, extruderIndex) {
-    const conn = _ffgConns.get(ffgKey(printer));
-    const fil = (conn?.data?.filaments?.[extruderIndex]) || {};
-    // Derive the dispatch flag from the slot's own `slotKind` instead
-    // of the array length — the array is now 5-long for matlStation
-    // rigs (Ext + 1A-D), so the old `length === 4` heuristic would
-    // mis-dispatch every slot. "ms" → msConfig_cmd with slot 1-4;
-    // "ext" → ipdMsConfig_cmd (no slot).
-    const isMatlStation = fil.slotKind === "ms";
-    const slotId = fil.slotId || (extruderIndex + 1);
-    _ffgFilEdit = {
-      brand: printer.brand,
-      deviceId: printer.id,
-      key: ffgKey(printer),
-      slotId,
-      slotKind: fil.slotKind || "ext",
-      isMatlStation,
-      printer
-    };
-    // The driver no longer stamps `fil.vendor` (the /detail payload
-    // doesn't carry one and we won't make one up). Default to Generic
-    // — first in FFG_FIL_BRANDS — so the picker has a valid selection
-    // even when we genuinely don't know the brand.
-    _ffeSelectedBrand    = (fil.vendor && FFG_FIL_BRANDS.includes(fil.vendor))
-                            ? fil.vendor
-                            : "Generic";
-    _ffeSelectedMaterial = fil.type   || "PLA";
-
-    const colorInp = $("ffgColorInput");
-    if (colorInp) colorInp.value = (fil.color && /^#[0-9a-f]{6}/i.test(fil.color))
-                                    ? fil.color.slice(0, 7) : "#FF5722";
-
-    $("ffgFilEditSub").textContent = "";
-    $("ffgError").hidden = true;
-
-    const initialColor = (fil.color && /^#[0-9a-f]{6}/i.test(fil.color))
-                       ? fil.color.slice(0, 7) : "#FF5722";
-    ffeRenderColorGrid(initialColor);
-
-    const vendorList = $("ffgVendorList");
-    const matList    = $("ffgMaterialList");
-    if (vendorList) {
-      const vendorMatch = FFG_FIL_BRANDS.find(b => b.toLowerCase() === _ffeSelectedBrand.toLowerCase())
-                       || FFG_FIL_BRANDS[0];
-      _ffeSelectedBrand = vendorMatch;
-      vendorList.innerHTML = ffgFilRenderVendorList(vendorMatch);
-    }
-    if (matList) {
-      matList.innerHTML = ffgFilRenderMaterialList(_ffeSelectedBrand, _ffeSelectedMaterial);
-    }
-
-    ffeCloseFilamentSheet();
-    ffeCloseColorSheet();
-    ffeUpdateSummary();
-
-    $("ffgFilEditSheet").classList.add("open");
-    $("ffgFilEditSheet").setAttribute("aria-hidden", "false");
-    $("ffgFilEditBackdrop").classList.add("open");
-  }
-
-  function closeFlashforgeFilamentEdit() {
-    $("ffgFilEditSheet")?.classList.remove("open");
-    $("ffgFilEditSheet")?.setAttribute("aria-hidden", "true");
-    $("ffgFilEditBackdrop")?.classList.remove("open");
-    ffeCloseFilamentSheet();
-    ffeCloseColorSheet();
-    _ffgFilEdit = null;
-  }
-
-  // ── Wiring (delegated where useful so re-rendered nodes stay live) ──
-  $("ffgFilEditClose")?.addEventListener("click", closeFlashforgeFilamentEdit);
-  $("ffgFilEditBackdrop")?.addEventListener("click", closeFlashforgeFilamentEdit);
-
-  $("ffgOpenFilament")?.addEventListener("click", () => {
-    ffeOpenFilamentSheet();
-    setTimeout(() => {
-      const sel = $("ffgVendorList")?.querySelector(".is-selected");
-      if (sel) sel.scrollIntoView({ block: "center", behavior: "auto" });
-    }, 0);
-  });
-  $("ffgOpenColor")?.addEventListener("click", () => {
-    ffeOpenColorSheet();
-  });
-
-  $("ffgFilamentBack")?.addEventListener("click", () => {
-    ffeUpdateSummary();
-    ffeCloseFilamentSheet();
-  });
-  $("ffgFilamentClose")?.addEventListener("click", () => {
-    ffeUpdateSummary();
-    ffeCloseFilamentSheet();
-  });
-  $("ffgColorBack")?.addEventListener("click", () => {
-    ffeUpdateSummary();
-    ffeCloseColorSheet();
-  });
-  $("ffgColorClose")?.addEventListener("click", () => {
-    ffeUpdateSummary();
-    ffeCloseColorSheet();
-  });
-
-  $("ffgVendorList")?.addEventListener("click", e => {
-    const row = e.target.closest(".sfe-fil-row");
-    if (!row) return;
-    _ffeSelectedBrand = row.dataset.val || "";
-    $("ffgVendorList").querySelectorAll(".sfe-fil-row").forEach(r =>
-      r.classList.toggle("is-selected", r === row));
-    const matList = $("ffgMaterialList");
-    if (matList) matList.innerHTML = ffgFilRenderMaterialList(_ffeSelectedBrand, _ffeSelectedMaterial);
-    const v = $("ffgVendor"); if (v) v.value = "";
-  });
-  $("ffgMaterialList")?.addEventListener("click", e => {
-    const row = e.target.closest(".sfe-fil-row");
-    if (!row) return;
-    _ffeSelectedMaterial = row.dataset.val || "";
-    const m = $("ffgMaterial"); if (m) m.value = "";
-    $("ffgMaterialList").innerHTML = ffgFilRenderMaterialList(_ffeSelectedBrand, _ffeSelectedMaterial);
-    setTimeout(() => {
-      ffeUpdateSummary();
-      ffeCloseFilamentSheet();
-    }, 180);
-  });
-
-  $("ffgColorGrid")?.addEventListener("click", e => {
-    if (e.target.closest("#ffgColorPickerInline")) return;
-    const cell = e.target.closest(".sfe-color-cell:not(.sfe-color-cell--custom)");
-    if (!cell) return;
-    const c = cell.dataset.color;
-    if (!c) return;
-    $("ffgColorInput").value = c;
-    ffeRenderColorGrid(c);
-    setTimeout(() => {
-      ffeUpdateSummary();
-      ffeCloseColorSheet();
-    }, 150);
-  });
-  $("ffgColorGrid")?.addEventListener("input", e => {
-    if (!e.target.matches?.("#ffgColorPickerInline")) return;
-    const c = e.target.value;
-    $("ffgColorInput").value = c;
-    const wrap = e.target.closest(".sfe-color-cell--custom");
-    if (wrap) wrap.style.background = c;
-  });
-  $("ffgColorGrid")?.addEventListener("change", e => {
-    if (!e.target.matches?.("#ffgColorPickerInline")) return;
-    const c = e.target.value;
-    $("ffgColorInput").value = c;
-    ffeRenderColorGrid(c);
-    setTimeout(() => {
-      ffeUpdateSummary();
-      ffeCloseColorSheet();
-    }, 100);
-  });
-
-  // Apply → POST /control with the right cmd shape based on whether
-  // the printer is a matlStation (slot-based) or single-extruder.
-  $("ffgFilEditSave")?.addEventListener("click", async () => {
-    if (!_ffgFilEdit) return;
-    const conn = _ffgConns.get(_ffgFilEdit.key);
-    const printer = _ffgFilEdit.printer;
-    const errEl = $("ffgError");
-    errEl.hidden = true;
-
-    // Vendor never reaches the wire (the /control payload only
-    // carries `mt` + `rgb`), but we still resolve it locally so the
-    // optimistic state and any future TigerTag tagging has a value.
-    // Default Generic — same first-in-list logic as the picker.
-    const vendor   = String($("ffgVendor").value || _ffeSelectedBrand   || "Generic").trim();
-    const material = String($("ffgMaterial").value || _ffeSelectedMaterial || "PLA").trim();
-    const rgb      = ffgColorToHash($("ffgColorInput").value);
-
-    // The FlashForge protocol takes the material name in `mt` directly —
-    // no vendor field is sent (per the Flutter _ffgSetMsSlot /
-    // _ffgSetExtMaterial calls). We keep the vendor in our local state
-    // so the UI summary stays in sync, but the wire payload is just
-    // the material + colour pair.
-    const _vendorUnused = vendor; // retained for future extension; suppresses lint
-    void _vendorUnused;
-
-    const base = ffgBaseUrl(printer.ip);
-    if (!base) {
-      errEl.textContent = t("ffgErrNetwork");
-      errEl.hidden = false;
-      return;
-    }
-    const payload = _ffgFilEdit.isMatlStation
-      ? {
-          ...ffgAuthBody(printer),
-          payload: { cmd: "msConfig_cmd",   args: { slot: _ffgFilEdit.slotId, mt: material, rgb } }
-        }
-      : {
-          ...ffgAuthBody(printer),
-          payload: { cmd: "ipdMsConfig_cmd", args: { mt: material, rgb } }
-        };
-
-    const btn = $("ffgFilEditSave");
-    btn.classList.add("loading");
-    btn.disabled = true;
-    try {
-      // Bridge through main process — same CORS bypass story as /detail.
-      // Defensive shape: bridge missing → user-friendly error.
-      const bridge = window.electronAPI && window.electronAPI.ffgHttpPost;
-      if (typeof bridge !== "function") {
-        errEl.textContent = "Bridge unavailable — restart Tiger Studio Manager";
-        errEl.hidden = false;
-        return;
-      }
-      const resp = await bridge(`${base}/control`, payload);
-      if (resp && resp.code !== 0 && resp.code !== undefined) {
-        // Surface the printer's own message verbatim — varies a lot
-        // between firmware revisions and is the most actionable hint.
-        const m = String(resp.message || "").trim();
-        errEl.textContent = m || t("ffgErrNetwork");
-        errEl.hidden = false;
-        return;
-      }
-      // Optimistic local update: the printer will echo the new values
-      // on the next /detail poll (≤ 2 s), but we patch conn.data right
-      // away so the user sees instant feedback.
-      if (conn) {
-        const idx = (_ffgFilEdit.slotId - 1) | 0;
-        const fils = Array.isArray(conn.data.filaments) ? conn.data.filaments.slice() : [];
-        if (fils[idx]) {
-          // Don't stamp a vendor — the printer doesn't store one, and
-          // the next /detail poll will reset vendor to null anyway.
-          // Setting "FlashForge" here would briefly mislabel the slot.
-          // For matlStation slots, hasFilament:true is wrong if the
-          // user just *configured* the bay without loading filament —
-          // the next /detail poll corrects this within ≤2s. For Ext,
-          // editing IS the act of assignment (no physical "load"
-          // step), so we treat it the same way and let the poll fix
-          // any drift.
-          fils[idx] = {
-            ...fils[idx],
-            color: rgb,
-            type: material,
-            vendor: null
-          };
-          conn.data.filaments = fils;
-          ffgNotifyChange(conn, false);
-        }
-      }
-      closeFlashforgeFilamentEdit();
-    } catch (e) {
-      console.warn("[ffg] filament edit send failed:", e?.message);
-      errEl.textContent = t("ffgErrNetwork");
-      errEl.hidden = false;
-    } finally {
-      btn.classList.remove("loading");
-      btn.disabled = false;
-    }
-  });
-
-  /* ── End FlashForge HTTP integration ─────────────────────────── */
-
-  /* ══════════════════════════════════════════════════════════════════════
-     Creality Live integration (WebSocket polling on port 9999)
-     ══════════════════════════════════════════════════════════════════════
-     Ported from the Flutter `creality_websocket_page.dart`.
-     Creality K-series / Ender-3 V4 (and similar) expose a WebSocket on
-     port 9999. Unlike Moonraker (push subscriptions) or FlashForge (HTTP
-     poll), this protocol is request/response over a persistent socket:
-       → {"method":"get","params":{"boxsInfo":1,"boxConfig":1,"reqGcodeFile":1,"reqGcodeList":1}}
-       ← flat JSON object with all printer state fields at root level
-     We keep the socket open and re-send the query every 2 s.
-     Print state: 0 = idle, 1 = printing, 2 = finished.
-     CFS slots are in `materialBoxs` (absent on single-extruder models).
-     ══════════════════════════════════════════════════════════════════════ */
-
-  // Per-printer live state. Keyed by `${brand}:${id}` (same as snap/ffg).
-  const _creConns = new Map();
-  // Reachability cache for the Online/Offline grid dot (30 s TTL).
-  const _crePings = new Map(); // key -> { online: bool|null, lastChecked: number }
-
-  // Reusable poll payload — sent on open and every 2 s to get updated state.
-  const CRE_POLL_QUERY = JSON.stringify({
-    method: "get",
-    params: { boxsInfo: 1, boxConfig: 1, reqGcodeFile: 1, reqGcodeList: 1 }
-  });
-
-  function creKey(p) { return `${p.brand}:${p.id}`; }
-
-  // Authoritative "is this Creality printer reachable?" reading.
-  // Prefers live WebSocket state; falls back to the HTTP ping cache.
-  function creIsOnline(printer) {
-    if (printer?.brand !== "creality") return null;
-    const k = creKey(printer);
-    const conn = _creConns.get(k);
-    if (conn) return conn.status === "connected";
-    const ping = _crePings.get(k);
-    return ping ? ping.online : null;
-  }
-
-  // Quick reachability probe — opens a WS, marks online on open, then
-  // closes it. 2 s timeout. Used for the grid card dot when no live
-  // connection is active (panel closed).
-  async function crePingPrinter(printer) {
-    if (!printer || printer.brand !== "creality" || !printer.ip) return;
-    const k = creKey(printer);
-    const cached = _crePings.get(k);
-    const now = Date.now();
-    if (cached && now - cached.lastChecked < 30_000) return;
-    _crePings.set(k, { online: cached?.online ?? null, lastChecked: now });
-    let resolved = false;
-    const done = (online) => {
-      if (resolved) return; resolved = true;
-      _crePings.set(k, { online, lastChecked: now });
-      creRefreshOnlineUI(k);
-    };
-    let ws;
-    try { ws = new WebSocket(`ws://${printer.ip}:9999`); } catch { done(false); return; }
-    const tm = setTimeout(() => { done(false); try { ws.close(); } catch {} }, 2000);
-    ws.addEventListener("open",  () => { done(true);  clearTimeout(tm); try { ws.close(); } catch {} });
-    ws.addEventListener("error", () => { done(false); clearTimeout(tm); });
-    ws.addEventListener("close", () => { if (!resolved) { done(false); clearTimeout(tm); } });
-  }
-
-  function crePingAllPrinters() {
-    for (const p of state.printers) {
-      if (p.brand === "creality" && p.ip) crePingPrinter(p);
-    }
-  }
-  setInterval(crePingAllPrinters, 30_000);
-
-  // Surgical DOM update — replace just the online dot without full re-render.
-  function creRefreshOnlineUI(key) {
-    document.querySelectorAll(`[data-printer-key="${key}"] .printer-online`).forEach(el => {
-      const p = state.printers.find(x => creKey(x) === key);
-      el.outerHTML = renderCreOnlineBadge(p, "card");
-    });
-    if (_activePrinter && creKey(_activePrinter) === key) {
-      const host = $("ppOnlineRow");
-      if (host) host.outerHTML = renderCreOnlineBadge(_activePrinter, "side");
-    }
-  }
-
-  // Online badge HTML — mirrors renderSnapOnlineBadge in shape.
-  function renderCreOnlineBadge(printer, where) {
-    if (!printer || printer.brand !== "creality") return "";
-    const online = creIsOnline(printer);
-    const cls = online === true ? "is-online" : (online === false ? "is-offline" : "is-checking");
-    const lbl = online === true  ? t("snapStatusOnline")
-              : online === false ? t("snapStatusOffline")
-              :                    t("snapStatusConnecting");
-    const id  = where === "side" ? ` id="ppOnlineRow"` : "";
-    return `<span class="printer-online printer-online--${esc(where)} ${cls}"${id}>
-              <span class="printer-online-dot"></span>
-              <span class="printer-online-lbl">${esc(lbl)}</span>
-            </span>`;
-  }
-
-  // ── WebSocket lifecycle ──────────────────────────────────────────────
-
-  function creConnect(printer) {
-    const key = creKey(printer);
-    const existing = _creConns.get(key);
-    if (existing && existing.ws &&
-        (existing.ws.readyState === WebSocket.OPEN ||
-         existing.ws.readyState === WebSocket.CONNECTING)) {
-      if (existing.ip === printer.ip) return; // already connected to same IP
-      creDisconnect(key);
-    }
-    const conn = {
-      ip:         printer.ip,
-      key,
-      ws:         null,
-      status:     "connecting", // "connecting" | "connected" | "offline" | "error"
-      lastError:  null,
-      retry:      0,
-      retryTimer: null,
-      pollTimer:  null,
-      log:        [],
-      logPaused:  false,
-      logExpanded: false,
-      data: {
-        nozzleTemp:    null,  nozzleTarget: null,
-        bedTemp:       null,  bedTarget:    null,
-        boxTemp:       null,
-        state:         0,     // 0=idle, 1=printing, 2=finished
-        printProgress: 0,     // 0-100
-        printFileName: null,
-        printJobTime:  0,     // elapsed seconds
-        printLeftTime: 0,     // remaining seconds
-        layer:         0,
-        totalLayer:    0,
-        cfsConnect:    0,
-        materialBoxs:  [],    // CFS/extruder slots (empty on single-head models)
-        hostname:      null,
-        webrtcSupport: 0,
-        video:         0
-      }
-    };
-    _creConns.set(key, conn);
-    creOpenSocket(conn);
-  }
-
-  function creOpenSocket(conn) {
-    if (!conn.ip) { conn.status = "error"; conn.lastError = "no IP"; return; }
-    let ws;
-    try { ws = new WebSocket(`ws://${conn.ip}:9999`); }
-    catch (e) {
-      conn.status = "error"; conn.lastError = String(e?.message || e);
-      creNotifyChange(conn); creScheduleReconnect(conn); return;
-    }
-    conn.ws = ws;
-    conn.status = "connecting";
-    creNotifyChange(conn);
-
-    const sendQuery = () => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      creLogPush(conn, "→", CRE_POLL_QUERY);
-      ws.send(CRE_POLL_QUERY);
-    };
-
-    ws.addEventListener("open", () => {
-      conn.status = "connected"; conn.lastError = null; conn.retry = 0;
-      sendQuery();
-      // Creality WS is request/response — poll every 2 s for live updates.
-      conn.pollTimer = setInterval(sendQuery, 2000);
-      creNotifyChange(conn, /*statusChanged*/ true);
-    });
-
-    ws.addEventListener("message", ev => {
-      creLogPush(conn, "←", ev.data);
-      let obj; try { obj = JSON.parse(ev.data); } catch { return; }
-      creMergeStatus(conn, obj);
-      creNotifyChange(conn);
-    });
-
-    ws.addEventListener("close", () => {
-      clearInterval(conn.pollTimer); conn.pollTimer = null;
-      conn.status = "offline";
-      creNotifyChange(conn, /*statusChanged*/ true);
-      creScheduleReconnect(conn);
-    });
-
-    ws.addEventListener("error", () => { conn.lastError = "websocket error"; });
-  }
-
-  function creScheduleReconnect(conn) {
-    if (conn.retryTimer) return;
-    if (!_creConns.has(conn.key)) return; // disposed
-    conn.retry = Math.min(conn.retry + 1, 5);
-    const delay = Math.min(2000 * (1 << (conn.retry - 1)), 30000);
-    conn.retryTimer = setTimeout(() => {
-      conn.retryTimer = null;
-      if (!_creConns.has(conn.key)) return;
-      creOpenSocket(conn);
-    }, delay);
-  }
-
-  function creDisconnect(key) {
-    const conn = _creConns.get(key);
-    if (!conn) return;
-    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = null; }
-    clearInterval(conn.pollTimer); conn.pollTimer = null;
-    if (conn.ws) { try { conn.ws.close(); } catch {} conn.ws = null; }
-    _creConns.delete(key);
-  }
-
-  // ── Status merger ─────────────────────────────────────────────────────
-  // Creality response is a flat JSON object at root level (no nesting).
-
-  function creMergeStatus(conn, obj) {
-    const d = conn.data;
-    if (typeof obj.nozzleTemp    !== "undefined") d.nozzleTemp    = parseFloat(obj.nozzleTemp)    || 0;
-    if (typeof obj.targetNozzleTemp !== "undefined") d.nozzleTarget = Number(obj.targetNozzleTemp) || 0;
-    if (typeof obj.bedTemp0      !== "undefined") d.bedTemp       = parseFloat(obj.bedTemp0)      || 0;
-    if (typeof obj.targetBedTemp0 !== "undefined") d.bedTarget    = Number(obj.targetBedTemp0)    || 0;
-    if (typeof obj.boxTemp       !== "undefined") d.boxTemp       = parseFloat(obj.boxTemp)       || 0;
-    if (typeof obj.state         !== "undefined") d.state         = Number(obj.state);
-    if (typeof obj.printProgress !== "undefined") d.printProgress = Number(obj.printProgress)     || 0;
-    if (typeof obj.printFileName !== "undefined") {
-      // Strip full filesystem path — keep basename only.
-      const raw = String(obj.printFileName || "");
-      d.printFileName = raw ? raw.split("/").pop() : null;
-    }
-    if (typeof obj.printJobTime  !== "undefined") d.printJobTime  = Number(obj.printJobTime)  || 0;
-    if (typeof obj.printLeftTime !== "undefined") d.printLeftTime = Number(obj.printLeftTime) || 0;
-    if (typeof obj.layer         !== "undefined") d.layer         = Number(obj.layer)         || 0;
-    if (typeof obj.TotalLayer    !== "undefined") d.totalLayer    = Number(obj.TotalLayer)    || 0;
-    if (typeof obj.cfsConnect    !== "undefined") d.cfsConnect    = Number(obj.cfsConnect)    || 0;
-    if (Array.isArray(obj.materialBoxs))          d.materialBoxs  = obj.materialBoxs;
-    if (typeof obj.hostname      !== "undefined") d.hostname      = String(obj.hostname       || "");
-    if (typeof obj.webrtcSupport !== "undefined") d.webrtcSupport = Number(obj.webrtcSupport) || 0;
-    if (typeof obj.video         !== "undefined") d.video         = Number(obj.video)         || 0;
-  }
-
-  // ── rAF-coalesced re-renders ─────────────────────────────────────────
-
-  let _creRafPending   = false;
-  let _creStatusChanged = false;
-
-  function creNotifyChange(conn, statusChanged = false) {
-    if (statusChanged) _creStatusChanged = true;
-    if (_creRafPending) return;
-    _creRafPending = true;
-    requestAnimationFrame(() => {
-      _creRafPending = false;
-      const sc = _creStatusChanged; _creStatusChanged = false;
-      if (!_activePrinter || _activePrinter.brand !== "creality") return;
-      if (creKey(_activePrinter) !== conn.key) return;
-      if (sc) {
-        renderPrinterDetail();
-      } else {
-        const host = $("creLive");
-        if (host) host.innerHTML = renderCrealityLiveInner(_activePrinter);
-        const logHost = $("creLog");
-        if (logHost) logHost.innerHTML = renderCreLogInner(_activePrinter);
-      }
-      // Keep the ping cache in sync with the live WS state.
-      _crePings.set(conn.key, { online: conn.status === "connected", lastChecked: Date.now() });
-      creRefreshOnlineUI(conn.key);
-    });
-  }
-
-  // ── Live block render ─────────────────────────────────────────────────
-
-  function creStateLabel(state) {
-    if (state === 1) return t("snapState_printing") || "Printing";
-    if (state === 2) return t("snapState_complete")  || "Finished";
-    return t("snapState_standby") || "Idle";
-  }
-
-  function renderCrealityLiveInner(p) {
-    const conn = _creConns.get(creKey(p));
-    if (!conn) return `<div class="snap-connecting">${esc(t("snapConnecting"))}</div>`;
-    const d = conn.data;
-
-    // Connection header
-    const statusLabel = {
-      connected:  t("snapStatusOnline"),
-      connecting: t("snapStatusConnecting"),
-      offline:    t("snapStatusOffline"),
-      error:      t("snapStatusOffline")
-    }[conn.status] || conn.status;
-    const statusCls = conn.status === "connected" ? "snap-head-status--online" : "snap-head-status--offline";
-    const headHtml = `
-      <div class="snap-head">
-        <div class="snap-head-info">
-          ${d.hostname ? `<div class="snap-head-hostname">${esc(d.hostname)}</div>` : ""}
-          <div class="snap-head-status ${esc(statusCls)}">${esc(statusLabel)}</div>
-        </div>
-      </div>`;
-
-    const isConnected = conn.status === "connected";
-
-    // ── Print-job card (only when connected) ────────────────────────
-    let jobHtml = "";
-    if (isConnected) {
-      const isPrinting = d.state === 1;
-      const isFinished = d.state === 2;
-      const pct       = isPrinting ? Math.round(d.printProgress) : (isFinished ? 100 : 0);
-      const leafName  = d.printFileName || "";
-      const stateLabel = creStateLabel(d.state);
-      const fallbackImg = printerImageUrlFor(p.brand, p.printerModelId)
-                       || printerImageUrl(findPrinterModel(p.brand, "0"));
-      // Creality saves a snapshot at this fixed path during/after the print.
-      const thumbUrl  = (d.printFileName && (isPrinting || isFinished))
-        ? `http://${conn.ip}/downloads/original/current_print_image.png`
-        : (fallbackImg || "");
-      const layerText = isPrinting && d.totalLayer ? `${d.layer}/${d.totalLayer}` : "";
-      const durationText = isPrinting ? snapFmtDuration(d.printJobTime)  : "";
-      const leftText     = isPrinting && d.printLeftTime > 0 ? snapFmtDuration(d.printLeftTime) : "";
-      const jobStateCls  = isPrinting ? "printing" : (isFinished ? "complete" : "standby");
-      const nameLine = leafName
-        ? `<div class="snap-job-name" title="${esc(leafName)}">${esc(leafName)}</div>`
-        : `<div class="snap-job-name snap-job-name--idle">${esc(t("snapJobNoActive") || "—")}</div>`;
-      jobHtml = `
-        <div class="snap-job snap-job--${esc(jobStateCls)}">
-          <div class="snap-job-thumb"${thumbUrl ? ` style="background-image:url('${esc(thumbUrl)}')"` : ""}></div>
-          <div class="snap-job-info">
-            ${nameLine}
-            <div class="snap-job-stats">
-              <span class="snap-job-pct">${pct}%</span>
-              ${durationText ? `<span class="snap-job-time">${SNAP_ICON_CLOCK}<span>${esc(durationText)}</span></span>` : ""}
-              ${leftText     ? `<span class="snap-job-time snap-job-time--left">⏳ <span>${esc(leftText)}</span></span>` : ""}
-            </div>
-            <div class="snap-job-bar"><span style="width:${pct}%"></span></div>
-            <div class="snap-job-foot">
-              <span class="snap-job-state snap-job-state--${esc(jobStateCls)}">${esc(stateLabel)}</span>
-              ${layerText ? `<span class="snap-job-layers">${esc(layerText)}</span>` : ""}
-            </div>
-          </div>
-        </div>`;
-    }
-
-    // ── Temperature row ──────────────────────────────────────────────
-    const tempPills = [];
-    if (typeof d.nozzleTemp === "number") {
-      const heating = d.nozzleTarget > 0 && d.nozzleTemp < d.nozzleTarget - 1;
-      tempPills.push(`
-        <div class="snap-temp${heating ? " snap-temp--heating" : ""}">
-          ${SNAP_ICON_NOZZLE}
-          <span class="snap-temp-val">${esc(snapFmtTempPair(d.nozzleTemp, d.nozzleTarget))}</span>
-        </div>`);
-    }
-    if (typeof d.bedTemp === "number") {
-      const heating = d.bedTarget > 0 && d.bedTemp < d.bedTarget - 1;
-      tempPills.push(`
-        <div class="snap-temp snap-temp--bed${heating ? " snap-temp--heating" : ""}">
-          ${SNAP_ICON_BED}
-          <span class="snap-temp-val">${esc(snapFmtTempPair(d.bedTemp, d.bedTarget))}</span>
-        </div>`);
-    }
-    if (d.boxTemp > 0) {
-      tempPills.push(`
-        <div class="snap-temp snap-temp--box">
-          ${SNAP_ICON_BED}
-          <span class="snap-temp-val snap-temp-val--box">${esc(Math.round(d.boxTemp) + "°C")} 📦</span>
-        </div>`);
-    }
-    const tempsHtml = tempPills.length
-      ? `<section class="snap-block">
-           <h4 class="snap-block-title">${esc(t("snapTemperatureTitle"))}</h4>
-           <div class="snap-temps">${tempPills.join("")}</div>
-         </section>`
-      : "";
-
-    // ── CFS material slots ────────────────────────────────────────────
-    // Rendered only when the CFS unit is connected (cfsConnect=1) and
-    // the printer reports at least one materialBoxs entry.
-    let cfsHtml = "";
-    if (d.cfsConnect && d.materialBoxs && d.materialBoxs.length) {
-      const slots = [];
-      for (const box of d.materialBoxs) {
-        const materials = Array.isArray(box.materials) ? box.materials : [];
-        for (const mat of materials) {
-          const raw    = String(mat.color || "").replace(/^#/, "");
-          const color  = raw.length === 6 ? `#${raw}` : null;
-          const type   = mat.type   || "—";
-          const vendor = mat.vendor || "—";
-          const active = mat.state === 1;
-          const fg     = color ? snapTextColor(color) : "var(--text)";
-          slots.push(`
-            <div class="snap-fil${active ? " snap-fil--active" : ""}">
-              <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
-                   style="${color ? `background:${esc(color)};color:${esc(fg)};border-color:${esc(color)};` : ""}">
-                <span class="snap-fil-main">${esc(type)}</span>
-              </div>
-              <div class="snap-fil-meta">
-                <div class="snap-fil-vendor">${esc(vendor)}</div>
-              </div>
-            </div>`);
-        }
-      }
-      if (slots.length) {
-        cfsHtml = `
-          <section class="snap-block">
-            <h4 class="snap-block-title">${esc(t("snapFilamentTitle"))}</h4>
-            <div class="snap-fil-grid">${slots.join("")}</div>
-          </section>`;
-      }
-    }
-
-    return `${headHtml}${jobHtml}${tempsHtml}${cfsHtml}`;
-  }
-
-  // ── Request log ──────────────────────────────────────────────────────
-  // Per-session ring buffer mirroring the Snapmaker log.
-
-  const CRE_LOG_MAX = 100;
-
-  function creLogPush(conn, dir, raw) {
-    if (conn.logPaused) return;
-    if (!conn.log) conn.log = [];
-    let summary = "";
-    try {
-      const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (obj?.method) summary = obj.method;
-      else {
-        const keys = Object.keys(obj).slice(0, 4);
-        summary = keys.join(", ");
-      }
-    } catch { summary = "(non-json)"; }
-    const ts = new Date().toLocaleTimeString([], { hour12: false });
-    const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
-    conn.log.push({ dir, ts, summary, raw: rawStr });
-    if (conn.log.length > CRE_LOG_MAX) conn.log.splice(0, conn.log.length - CRE_LOG_MAX);
-  }
-
-  function renderCreLogInner(p) {
-    const conn = _creConns.get(creKey(p));
-    const log = conn?.log || [];
-    if (!log.length) return `<div class="snap-log-empty">${esc(t("snapLogEmpty"))}</div>`;
-    const rows = log.slice().reverse().map((e, i) => {
-      let pretty = e.raw;
-      try { pretty = JSON.stringify(JSON.parse(e.raw), null, 2); } catch {}
-      const expanded = !!e.expanded;
-      return `
-        <div class="snap-log-row snap-log-row--${e.dir === "→" ? "out" : "in"}${expanded ? " snap-log-row--expanded" : ""}"
-             data-log-idx="${log.length - 1 - i}">
-          <button type="button" class="snap-log-row-head" data-row-toggle="1">
-            <span class="snap-log-dir">${esc(e.dir)}</span>
-            <span class="snap-log-ts">${esc(e.ts)}</span>
-            <span class="snap-log-summary">${esc(e.summary)}</span>
-            <span class="snap-log-row-chev icon icon-chevron-r icon-13"></span>
-          </button>
-          <div class="snap-log-detail"${expanded ? "" : " hidden"}>
-            <button type="button" class="snap-log-detail-copy" data-copy="${esc(pretty)}" title="${esc(t("copyLabel"))}">
-              <span class="icon icon-copy icon-13"></span>
-              <span>${esc(t("copyLabel"))}</span>
-            </button>
-            <pre class="snap-log-detail-pre">${esc(pretty)}</pre>
-          </div>
-        </div>`;
-    }).join("");
-    return `<div class="snap-log">${rows}</div>`;
-  }
-
-  /* ── End Creality WebSocket integration ─────────────────────────── */
 
   /* ── Add a printer — two-step flow ─────────────────────────────────────
      Step 1 — brand picker: a small modal listing the 5 supported brands
@@ -11359,92 +8294,6 @@
        users/{uid}/printers/{brand}/devices/{auto-id}
      with serverTimestamp updatedAt and a sortIndex equal to the current
      printer count (so the new card lands at the end).                     */
-  // Per-brand form definition. Each schema is grouped into named sections
-  // so the rendered form reads like a guided wizard rather than a flat
-  // list of inputs. The `helperKey` block at the top is brand-specific
-  // pre-flight guidance (where to find the credentials, how to enable LAN
-  // mode, etc.) — this is what makes each modal feel native to the brand
-  // even though they share a layout.
-  //
-  // Field options:
-  //   • `secret: true`   → password input + eye toggle
-  //   • `mono: true`     → monospace input (IPs, SNs, codes)
-  //   • `hintKey`        → small grey hint under the input
-  //   • `optional: true` → renders the "(optional)" suffix instead of "*"
-  const PRINTER_ADD_SCHEMA = {
-    bambulab: {
-      docsUrl: "https://wiki.bambulab.com/en/x1/manual/lan-mode",
-      sections: [
-        { titleKey: "printerSecConnection", fields: [
-          { key: "broker", labelKey: "printerLblIP", hintKey: "printerHintBambuIP", placeholder: "192.168.1.42", mono: true, required: true }
-        ]},
-        { titleKey: "printerSecCredentials", fields: [
-          { key: "password",     labelKey: "printerLblAccessCode", hintKey: "printerHintBambuCode",   placeholder: "12345678",     mono: true, required: true, secret: true },
-          { key: "serialNumber", labelKey: "printerLblSerial",     hintKey: "printerHintBambuSerial", placeholder: "01S00C123456", mono: true, required: true }
-        ]}
-      ]
-    },
-    creality: {
-      docsUrl: "https://wiki.creality.com/",
-      sections: [
-        { titleKey: "printerSecConnection", fields: [
-          { key: "ip", labelKey: "printerLblIP", hintKey: "printerHintCrealityIP", placeholder: "192.168.1.50", mono: true, required: true }
-        ]},
-        // "Root" is a fixed brand-side username on Creality K-series — it is
-        // never translated. The labelText override bypasses i18n. It sits
-        // before the password by design (matches Creality's own UI order).
-        { titleKey: "printerSecCredentials", fields: [
-          { key: "account",  labelText: "Root",              hintKey: "printerHintCrealityAccount",  placeholder: "Root",     mono: true, required: true },
-          { key: "password", labelKey: "printerLblPassword", hintKey: "printerHintCrealityPassword", placeholder: "••••••••", mono: true, required: true, secret: true }
-        ]}
-      ]
-    },
-    elegoo: {
-      docsUrl: null,
-      sections: [
-        { titleKey: "printerSecConnection", fields: [
-          { key: "ip", labelKey: "printerLblIP",     hintKey: "printerHintElegooIP",     placeholder: "192.168.1.51", mono: true, required: true },
-          { key: "sn", labelKey: "printerLblSerial", hintKey: "printerHintElegooSerial", placeholder: "0CCN201XXXX",  mono: true, required: true }
-        ]},
-        { titleKey: "printerSecCredentialsOptional", fields: [
-          { key: "mqttPassword", labelKey: "printerLblMqttPassword", hintKey: "printerHintElegooMqtt", placeholder: "—", mono: true, required: false, secret: true, optional: true }
-        ]}
-      ]
-    },
-    flashforge: {
-      docsUrl: null,
-      sections: [
-        { titleKey: "printerSecConnection", fields: [
-          { key: "ip", labelKey: "printerLblIP", hintKey: "printerHintFFGIP", placeholder: "192.168.1.52", mono: true, required: true }
-        ]},
-        { titleKey: "printerSecCredentials", fields: [
-          { key: "serialNumber", labelKey: "printerLblSerial",   hintKey: "printerHintFFGSerial",   placeholder: "FF-AD5X-XXXX", mono: true, required: true },
-          { key: "password",     labelKey: "printerLblPassword", hintKey: "printerHintFFGPassword", placeholder: "••••••••",     mono: true, required: true, secret: true }
-        ]}
-      ]
-    },
-    snapmaker: {
-      docsUrl: null,
-      sections: [
-        { titleKey: "printerSecConnection", fields: [
-          { key: "ip", labelKey: "printerLblIP", hintKey: "printerHintSnapIP", placeholder: "192.168.1.53", mono: true, required: true }
-        ]}
-      ]
-    }
-  };
-
-  // Brand-specific helper banner shown above the form. The label is the
-  // i18n key for a short title; bullets is the array of step keys.
-  // Together they tell the user where to find each credential before
-  // they start typing.
-  const PRINTER_ADD_HELPER = {
-    bambulab:   { titleKey: "printerHelperBambuTitle",   bulletsKey: "printerHelperBambuBullets" },
-    creality:   { titleKey: "printerHelperCrealityTitle",bulletsKey: "printerHelperCrealityBullets" },
-    elegoo:     { titleKey: "printerHelperElegooTitle",  bulletsKey: "printerHelperElegooBullets" },
-    flashforge: { titleKey: "printerHelperFFGTitle",     bulletsKey: "printerHelperFFGBullets" },
-    snapmaker:  { titleKey: "printerHelperSnapTitle",    bulletsKey: "printerHelperSnapBullets" }
-  };
-
   let _printerAddBrand = null;        // brand selected in step 1, used by step 2
   let _printerEditContext = null;     // { brand, deviceId } when editing an existing printer (gear button)
   // Pending discovery payload captured by the Snapmaker scan / manual probe,
@@ -13015,28 +9864,23 @@
   // shape `{ ip?, printerName?, modelId? }`. It seeds the empty add form
   // with the values we just learned from the printer so the user only has
   // to confirm + add. Ignored when `editPrinter` is set (edit takes over).
+  // ── Printer settings modal — shell ───────────────────────────────────────
+  // The modal has a fixed header (title + brand label) and footer
+  // (Back / Save / Delete). The body is delegated entirely to each brand's
+  // renderSettingsWidget(), registered in the brands registry.
+  // This keeps the orchestrator thin and lets brands diverge freely.
   function openPrinterAddForm(brand, editPrinter = null, prefill = null) {
-    if (!brand || !PRINTER_ADD_SCHEMA[brand]) return;
-    _printerAddBrand = brand;
+    const brandEntry = brands.get(brand);
+    if (!brand || !brandEntry?.renderSettingsWidget) return;
+    _printerAddBrand    = brand;
     _printerEditContext = editPrinter ? { brand, deviceId: editPrinter.id } : null;
-    // Stash the discovery payload (if any) — the form's submit handler
-    // will pull this out and write it to the Firestore doc. Edit mode
-    // doesn't get a new discovery (we never overwrite an existing one
-    // from the edit form), so we only set it on the add path.
-    _printerAddDiscovery = (!editPrinter && prefill && prefill.discovery) ? prefill.discovery : null;
-    const meta   = PRINTER_BRAND_META[brand];
-    const schema = PRINTER_ADD_SCHEMA[brand];
-    const helper = PRINTER_ADD_HELPER[brand];
+    _printerAddDiscovery = (!editPrinter && prefill?.discovery) ? prefill.discovery : null;
     const isEdit = !!editPrinter;
 
-    // Title is fixed ("Printers Settings") via the data-i18n attribute on
-    // .pba-title; the sub keeps the brand label so the user still sees
-    // which workflow they're in.
-    $("printerAddSub").textContent = meta.label;
+    // ── Shell: header sub-label (brand name) ────────────────────────────────
+    $("printerAddSub").textContent = PRINTER_BRAND_META[brand].label;
 
-    // Adjust footer for edit mode: hide Back, swap save label, reveal
-    // the hold-to-confirm Delete (icon-only trash button) — same pattern
-    // and 1.5s hold duration as the Rack delete in the storage view.
+    // ── Shell: footer — back / save / delete ────────────────────────────────
     const backBtn = $("printerAddBack");
     if (backBtn) backBtn.style.display = isEdit ? "none" : "";
     const saveLabel = $("printerAddSave")?.querySelector(".label");
@@ -13044,270 +9888,45 @@
     const delBtn = $("printerAddDelete");
     if (delBtn) {
       delBtn.classList.toggle("hidden", !isEdit);
-      delBtn.title = t("printerEditDeleteHint")
-                   || "Hold 1.5s to delete this printer";
+      delBtn.title = t("printerEditDeleteHint") || "Hold 1.5s to delete this printer";
     }
 
-    // Per-brand model catalog. We KEEP the id="0" placeholder (the "Select
-    // Printer" entry shipped in every brand JSON) and pin it to the top so
-    // it acts as a visible "no model yet" choice. The picker still uses
-    // the entry's image (no_printer.png) — this matches the convention
-    // used elsewhere in the TigerTag stack.
-    const allModels = state.db.printerModels?.[brand] || [];
+    // ── Widget context ───────────────────────────────────────────────────────
+    // Model list: placeholder (id=0) pinned first so it always shows as the
+    // top option. Edit mode resolves the current model; discovery prefill
+    // resolves the scanned model; plain add defaults to the placeholder.
+    const allModels        = state.db.printerModels?.[brand] || [];
     const placeholderModel = allModels.find(m => String(m.id) === "0");
-    const otherModels = allModels.filter(m => String(m.id) !== "0");
-    const models = placeholderModel ? [placeholderModel, ...otherModels] : otherModels;
+    const otherModels      = allModels.filter(m => String(m.id) !== "0");
+    const models           = placeholderModel ? [placeholderModel, ...otherModels] : otherModels;
 
-    // Render a single field. Supports labelText (raw, never i18n'd) for
-    // protocol-mandated literals like Creality's "Root".
-    const renderField = f => {
-      const labelHtml = f.labelText ? esc(f.labelText) : esc(t(f.labelKey));
-      const reqMark = f.optional ? `<span class="pba-field-opt">${esc(t("printerOptional"))}</span>`
-                                 : (f.required ? '<span class="pba-field-req">*</span>' : "");
-      const hint = f.hintKey ? `<span class="pba-field-hint">${esc(t(f.hintKey))}</span>` : "";
-      // Secret fields get an eye toggle on the right of the input.
-      // Both icons (eye-on + eye-off) are pre-rendered stacked so the
-      // toggle is purely a class flip — no DOM swap, no layout jump.
-      if (f.secret) {
-        return `
-          <label class="pba-field">
-            <span class="pba-field-label">${labelHtml} ${reqMark}</span>
-            <span class="pba-input-wrap pba-input-wrap--secret">
-              <input type="password"
-                     class="pba-input${f.mono ? " pba-input--mono" : ""}"
-                     name="${esc(f.key)}"
-                     placeholder="${esc(f.placeholder)}"
-                     autocomplete="off" autocapitalize="off" spellcheck="false"
-                     ${f.required ? "required" : ""}/>
-              <button type="button" class="pba-input-eye" data-eye-target="${esc(f.key)}" title="${esc(t("printerSecretShow"))}">
-                <span class="pba-eye-stack">
-                  <span class="pba-eye-icon pba-eye-icon--on  icon icon-eye-on  icon-14"></span>
-                  <span class="pba-eye-icon pba-eye-icon--off icon icon-eye-off icon-14"></span>
-                </span>
-              </button>
-            </span>
-            ${hint}
-          </label>`;
-      }
-      return `
-        <label class="pba-field">
-          <span class="pba-field-label">${labelHtml} ${reqMark}</span>
-          <input type="text"
-                 class="pba-input${f.mono ? " pba-input--mono" : ""}"
-                 name="${esc(f.key)}"
-                 placeholder="${esc(f.placeholder)}"
-                 autocomplete="off" autocapitalize="off" spellcheck="false"
-                 ${f.required ? "required" : ""}/>
-          ${hint}
-        </label>`;
+    const prefillModel = (!isEdit && prefill?.modelId)
+      ? findPrinterModel(brand, prefill.modelId) : null;
+    const editModel    = isEdit
+      ? findPrinterModel(brand, editPrinter.printerModelId) : null;
+    const defaultModel = editModel || prefillModel || placeholderModel || models[0] || null;
+
+    const widgetCtx = {
+      models, defaultModel, isEdit, prefill,
+      brand, t, esc, printerImageUrl, findPrinterModel,
     };
 
-    // Render a section with a small caps header.
-    const renderSection = (s) => `
-      <section class="pba-section">
-        <header class="pba-section-head">${esc(t(s.titleKey))}</header>
-        ${s.fields.map(renderField).join("")}
-      </section>`;
+    // ── Delegate body to brand widget ────────────────────────────────────────
+    const bodyEl = $("printerAddBody");
+    brandEntry.renderSettingsWidget(editPrinter, bodyEl, widgetCtx);
 
-    const sectionsHtml = schema.sections.map(renderSection).join("");
-
-    // Helper banner removed — the per-field hints already give all the
-    // setup context the user needs. Keeping `helper` referenced via
-    // PRINTER_ADD_HELPER + the bullets translations in case we want to
-    // reintroduce it elsewhere (e.g. a "?" tooltip).
-    const helperHtml = "";
-
-    // Custom model picker — a select element can't render thumbnails, so
-    // we build a button + popup list. A hidden <input> stores the chosen
-    // model id so the form-collection step keeps working unchanged.
-    const modelPickerOptions = models.map(m => {
-      const imgUrl = printerImageUrl(m);
-      const imgHtml = imgUrl ? `<img src="${esc(imgUrl)}" alt="" onerror="this.style.opacity='.15'"/>` : "";
-      return `
-        <button type="button" class="pba-mp-opt" data-id="${esc(m.id)}" data-name="${esc(m.name)}">
-          <span class="pba-mp-thumb">${imgHtml}</span>
-          <span class="pba-mp-name">${esc(m.name)}</span>
-        </button>`;
-    }).join("");
-
-    // Pre-select either the printer's current model (in edit mode), the
-    // model derived from a discovery probe (Snapmaker scan / manual), or
-    // the placeholder "Select Printer" entry (id 0) so the dropdown
-    // always opens with a meaningful state.
-    const prefillModel = (!isEdit && prefill && prefill.modelId)
-      ? findPrinterModel(brand, prefill.modelId)
-      : null;
-    const editModel = isEdit
-      ? findPrinterModel(brand, editPrinter.printerModelId)
-      : null;
-    const defaultModel    = editModel || prefillModel || placeholderModel || models[0] || null;
-    const defaultModelId  = defaultModel ? String(defaultModel.id) : "";
-    const defaultModelName= defaultModel ? defaultModel.name : t("printerAddModelPh");
-    const defaultModelImg = defaultModel ? printerImageUrl(defaultModel) : null;
-    const defaultThumbHtml= defaultModelImg
-      ? `<img src="${esc(defaultModelImg)}" alt="" onerror="this.style.opacity='.15'"/>`
-      : "";
-
-    $("printerAddBody").innerHTML = `
-      ${helperHtml}
-
-      <section class="pba-section">
-        <header class="pba-section-head">${esc(t("printerSecIdentity"))}</header>
-
-        <div class="pba-field">
-          <span class="pba-field-label">${esc(t("printerLblModel"))} <span class="pba-field-req">*</span></span>
-          <div class="pba-modelpicker" id="pbaModelPicker">
-            <button type="button" class="pba-mp-trigger" id="pbaMpTrigger" aria-haspopup="listbox" aria-expanded="false">
-              <span class="pba-mp-thumb pba-mp-thumb--trigger" id="pbaMpTriggerThumb">${defaultThumbHtml}</span>
-              <span class="pba-mp-trigger-text" id="pbaMpTriggerText">${esc(defaultModelName)}</span>
-              <span class="icon icon-chevron-r icon-13 pba-mp-chev"></span>
-            </button>
-            <input type="hidden" name="printerModelId" id="pbaMpValue" value="${esc(defaultModelId)}" />
-            <div class="pba-mp-list" id="pbaMpList" role="listbox" hidden>
-              ${modelPickerOptions}
-            </div>
-          </div>
-        </div>
-
-        <label class="pba-field">
-          <span class="pba-field-label">${esc(t("printerLblName"))} <span class="pba-field-req">*</span></span>
-          <input type="text" class="pba-input" name="printerName" placeholder="${esc(t("printerAddNamePh"))}" required />
-        </label>
-      </section>
-
-      ${sectionsHtml}
-
-      <div class="pba-error" id="printerAddError" hidden></div>`;
-
-    wireModelPicker(brand, models);
-    wirePasswordEyes($("printerAddBody"));
-
-    // Pre-fill every field with the existing printer's values when in
-    // edit mode. We iterate the schema explicitly (rather than dumping
-    // the whole `editPrinter` object into the DOM) so that fields the
-    // form doesn't expose — id, sortIndex, isActive, deleted, etc.
-    // remain untouched on the doc.
-    if (isEdit) {
-      const body = $("printerAddBody");
-      const setVal = (name, v) => {
-        const el = body.querySelector(`input[name="${name}"]`);
-        if (el && v != null) el.value = String(v);
-      };
-      setVal("printerName", editPrinter.printerName);
-      schema.sections.forEach(sec => {
-        sec.fields.forEach(f => setVal(f.key, editPrinter[f.key]));
-      });
-    } else if (prefill) {
-      // Discovery flow (Snapmaker scan / manual probe): seed only the
-      // values we learned from the network. We DON'T touch the model id
-      // here — that's already wired through `defaultModel` above so the
-      // trigger button + thumbnail render correctly on first paint.
-      const body = $("printerAddBody");
-      const setVal = (name, v) => {
-        const el = body.querySelector(`input[name="${name}"]`);
-        if (el && v != null && v !== "") el.value = String(v);
-      };
-      if (prefill.printerName) setVal("printerName", prefill.printerName);
-      if (prefill.ip)          setVal("ip",          prefill.ip);
-    }
-
+    // ── Open + initial focus ─────────────────────────────────────────────────
     $("printerAddOverlay").classList.add("open");
     setTimeout(() => {
-      // In edit mode focus the printer name (the most likely thing the
-      // user wants to tweak); in prefill mode (discovery) the user has
-      // already picked the IP/model, so focus the name input so they can
-      // rename if they want; in plain add mode keep focus on the model picker.
-      const body = $("printerAddBody");
       if (isEdit || prefill) {
-        const ni = body.querySelector("input[name=printerName]");
-        ni?.focus();
-        ni?.select();
+        const ni = bodyEl.querySelector("input[name=printerName]");
+        ni?.focus(); ni?.select();
       } else {
-        $("pbaMpTrigger")?.focus();
+        bodyEl.querySelector("#pbaMpTrigger")?.focus();
       }
     }, 50);
   }
 
-  /* ── Custom model picker — opens a list of models with thumbnails.
-     Selecting a model:
-       1. Updates the hidden input `printerModelId` (form payload key)
-       2. Updates the visible trigger label + thumbnail
-       3. Pre-fills the empty-or-not `printerName` field with the model
-          name as a courtesy (the user can still override it).            */
-  function wireModelPicker(brand, models) {
-    const trigger = $("pbaMpTrigger");
-    const list    = $("pbaMpList");
-    const value   = $("pbaMpValue");
-    const text    = $("pbaMpTriggerText");
-    const thumb   = $("pbaMpTriggerThumb");
-    if (!trigger || !list) return;
-
-    const open = () => {
-      list.hidden = false;
-      trigger.setAttribute("aria-expanded", "true");
-      trigger.classList.add("pba-mp-trigger--open");
-    };
-    const close = () => {
-      list.hidden = true;
-      trigger.setAttribute("aria-expanded", "false");
-      trigger.classList.remove("pba-mp-trigger--open");
-    };
-    trigger.addEventListener("click", e => {
-      e.stopPropagation();
-      list.hidden ? open() : close();
-    });
-    // Outside-click closes the popup.
-    document.addEventListener("click", e => {
-      if (!list.hidden && !list.contains(e.target) && e.target !== trigger) close();
-    });
-
-    list.querySelectorAll(".pba-mp-opt").forEach(opt => {
-      opt.addEventListener("click", () => {
-        const id   = opt.dataset.id;
-        const name = opt.dataset.name;
-        const m    = models.find(x => String(x.id) === id);
-        const url  = printerImageUrl(m);
-        value.value = id;
-        text.textContent = name;
-        thumb.innerHTML = url ? `<img src="${esc(url)}" alt="" onerror="this.style.opacity='.15'"/>` : "";
-        // Pre-fill printerName when empty so the user keeps moving forward.
-        // We skip the placeholder entry (id=="0", "Select Printer") since
-        // its name is a meta-label, not an actual model name. When the
-        // user picks the placeholder we leave printerName empty so they
-        // type something meaningful themselves.
-        const nameInput = $("printerAddBody").querySelector("input[name=printerName]");
-        if (nameInput && id !== "0" && !nameInput.value.trim()) nameInput.value = name;
-        close();
-        nameInput?.focus();
-        nameInput?.select();
-      });
-    });
-  }
-
-  // For each <input type=password> wrapped in .pba-input-wrap--secret,
-  // wire the eye button to toggle the type between "password" and "text".
-  // The icon flips between eye-on (hidden) and eye-off (revealed) so the
-  // visual matches the current state.
-  function wirePasswordEyes(scope) {
-    scope.querySelectorAll(".pba-input-eye").forEach(btn => {
-      btn.addEventListener("click", e => {
-        e.preventDefault();
-        e.stopPropagation();
-        const wrap = btn.closest(".pba-input-wrap--secret");
-        const inp  = wrap?.querySelector("input");
-        if (!inp) return;
-        const showing = inp.type === "text";
-        inp.type = showing ? "password" : "text";
-        btn.title = showing ? t("printerSecretShow") : t("printerSecretHide");
-        btn.classList.toggle("pba-input-eye--on", !showing);
-        const iconSpan = btn.querySelector(".icon");
-        if (iconSpan) {
-          iconSpan.classList.toggle("icon-eye-on", showing);
-          iconSpan.classList.toggle("icon-eye-off", !showing);
-        }
-      });
-    });
-  }
   function closePrinterAddForm() {
     $("printerAddOverlay")?.classList.remove("open");
     _printerAddBrand = null;
@@ -15880,7 +12499,7 @@
         state.racks = [];
       }
       state.invLoading = false;
-      sortRows(); renderStats(); renderInventory();
+      sortStateRows(); renderStats(); renderInventory();
     } catch (e) {
       console.error("[FriendView] read failed:", e.code, e.message, e);
       if (state.friendView?.uid !== friendUid) return;
@@ -16766,4 +13385,3 @@
     // Clear log
     $("td1sClearBtn").addEventListener("click", () => { td1sLogEl.innerHTML = ''; });
   }
-})();

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- Bulb globe -->
+  <path d="M12 2a7 7 0 0 0-4.2 12.6c.7.6 1.2 1.4 1.2 2.4v1h6v-1c0-1 .5-1.8 1.2-2.4A7 7 0 0 0 12 2z"/>
+  <!-- Socket rings -->
+  <rect x="9" y="18.5" width="6" height="1.5" rx="0.5"/>
+  <rect x="9.5" y="20.5" width="5" height="1" rx="0.5"/>
+</svg>

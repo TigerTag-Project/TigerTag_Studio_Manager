@@ -1,0 +1,26 @@
+/* ── Creality printer sidecard styles ────────────────────────────────────
+   Loaded after 50-snapmaker.css so Creality-specific rules can safely
+   reference the shared .pp-cam-full container defined there.
+   Nothing in this file is used outside the Creality brand context.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Camera — <video> element fed by RTCPeerConnection directly in the
+   renderer. The Creality WebRTC page (port 8000) has no responsive CSS —
+   its <video> takes the stream's intrinsic dimensions — so we bypass the
+   iframe approach and control the video element ourselves.
+
+   object-fit:contain keeps the full camera frame visible with letterbox
+   bars rather than cropping. Use "cover" if you prefer edge-to-edge fill
+   at the cost of slight cropping on non-16:9 streams. */
+.cre-cam-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #000;
+  border-radius: 0;
+  object-fit: contain;
+}

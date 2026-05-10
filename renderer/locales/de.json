@@ -676,5 +676,17 @@
   "colorCountDual": "Dual",
   "colorCountTri": "Tri",
   "colorCountRainbow": "Regenbogen",
-  "filterAllVersions": "Alle Versionen"
+  "filterAllVersions": "Alle Versionen",
+  "snapStateHeating": "Aufheizen",
+  "crePause": "Pause",
+  "creResume": "Fortsetzen",
+  "creStop": "Abbrechen",
+  "creStopConfirm": "Bestätigen?",
+  "creLedOnTip": "LED ausschalten",
+  "creLedOffTip": "LED einschalten",
+  "creFilesTitle": "Dateien",
+  "crePrintFile": "Drucken",
+  "creDeleteFile": "Löschen",
+  "creFilesEmpty": "Keine Dateien",
+  "creFilesLoading": "Laden…"
 }

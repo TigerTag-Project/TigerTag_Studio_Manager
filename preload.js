@@ -55,7 +55,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setMigrationInFlight: (inFlight) => ipcRenderer.send('migration:set-in-flight', !!inFlight),
 
   // ── App info (version / platform — used by the diagnostic report) ──────
-  getAppInfo: () => ipcRenderer.invoke('app:info'),
+  getAppInfo:      () => ipcRenderer.invoke('app:info'),
+  // Absolute path to renderer/ dir — used to build file:// preload paths
+  // for <webview> elements (e.g. Creality camera preload script).
+  getRendererPath: () => ipcRenderer.invoke('app:renderer-path'),
 
   // ── Local network — list active /24 LAN subnets (e.g. "192.168.1") so
   // the renderer can scan them for Snapmaker / Moonraker printers. Falls

@@ -139,6 +139,20 @@
     color: var(--primary);
     border: 1px solid rgba(56, 110, 207, .24);
   }
+  /* Printing — spinner ring before label text */
+  .snap-job-state--printing::before {
+    content: "";
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    animation: snap-state-spin .7s linear infinite;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
+  @keyframes snap-state-spin { to { transform: rotate(360deg); } }
+
   /* Standby / Complete / Cancelled — neutral grey since nothing's running. */
   .snap-job-state--standby,
   .snap-job-state--cancelled {
@@ -168,10 +182,23 @@
     color: #b91c1c;
     border-color: rgba(239,68,68,.3);
   }
+  .snap-job-state--heating {
+    background: rgba(249,115,22,.12);
+    color: #c2410c;
+    border-color: rgba(249,115,22,.3);
+  }
   .snap-job-layers {
     font-size: 14px; font-weight: 700;
     color: var(--text);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* Debug state codes badge — s:N · d:N · f:N (Creality) */
+  .snap-job-codes {
+    font-size: 10px; font-weight: 500;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.02em;
+    opacity: .75;
   }
 
   /* Section block — used for both Temperature and Filament titled groups */
@@ -218,8 +245,9 @@
      row; with fewer the squares grow to take the slack. ───────────── */
   .snap-fil-grid {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
-    align-items: stretch;
+    align-items: flex-start;
   }
   .snap-fil {
     flex: 1 1 0;
@@ -233,7 +261,7 @@
     letter-spacing: .4px;
   }
   .snap-fil-square {
-    width: 72%;
+    width: 80%;
     aspect-ratio: 1 / 1;
     border-radius: 12px;
     border: 2px solid var(--border);
@@ -318,11 +346,47 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     line-height: 1.2;
   }
+  /* Slot identifier label: "Ext." / "1A" / "1B" … */
+  .snap-fil-label {
+    width: 100%;
+    font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.2; text-transform: uppercase;
+  }
   .snap-fil-sub {
     width: 100%;
     font-size: 11px; color: var(--muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     line-height: 1.2;
+  }
+
+  /* Creality filament layout:
+     row 1 = EXT + CFS-module-1 slots side by side,
+     row N = CFS-module-N slots (for N ≥ 2).
+     All slots identical size, filling the row width equally. */
+  .cre-fil-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .cre-fil-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .cre-fil-row .snap-fil {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .cre-fil-row .snap-fil-square {
+    aspect-ratio: 1 / 1;
+  }
+  /* Invisible placeholder that holds the EXT column width so
+     extra CFS rows (2A–2D…) align under 1A–1D, not under EXT. */
+  .cre-fil-spacer {
+    visibility: hidden;
+    pointer-events: none;
   }
 
   /* Camera embed — full-width above the temp / filament blocks */
@@ -332,35 +396,49 @@
     overflow: hidden;
     background: #000;
   }
-  .snap-camera-frame {
+  /* Full-width camera banner container — shared by all printer brands.
+     Establishes a 16:9 box; overflow:hidden clips any child that
+     overflows (e.g. an iframe whose inner page has a fixed-width layout). */
+  .pp-cam-full {
+    position: relative;
     width: 100%;
     aspect-ratio: 16 / 9;
-    border: none;
-    display: block;
-    background: #000;
-  }
-  /* Full-width camera banner — sits at the very top of the printer side
-     card, edge-to-edge with no border-radius. Replaces the static
-     product photo when the Snapmaker WebSocket is online. */
-  .pp-cam-full {
-    width: 100%;
     margin: 0;
     padding: 0;
     background: #000;
     line-height: 0;
-    /* No border-bottom — the camera blends straight into the next
-       section without a hard horizontal separator. */
+    overflow: hidden;
   }
-  .pp-cam-full .snap-camera-frame {
+
+  /* Snapmaker — WebRTC iframe (Crowsnest player, port 80 /webcam/webrtc).
+     Crowsnest is responsive: its page fills the iframe viewport naturally.
+     Positioned absolute so it covers the full .pp-cam-full box. */
+  .snap-camera-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    height: 100%;
     border: none;
     display: block;
     background: #000;
     border-radius: 0;
-    /* `object-fit: cover` only takes effect when the element is an <img>
-       (MJPEG) — it's a no-op on <iframe> (WebRTC player). Keeping it so
-       both code paths render correctly. */
+  }
+
+  /* FlashForge — raw MJPEG stream served as <img>.
+     object-fit:cover fills the 16:9 box and crops the stream edges if
+     the camera aspect ratio differs. Self-contained: no dependency on
+     .snap-camera-frame. */
+  .ffg-camera-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    background: #000;
+    border-radius: 0;
     object-fit: cover;
   }
 
@@ -953,6 +1031,31 @@
     display: flex; flex-direction: column; gap: 14px;
     overflow-y: auto;
   }
+  /* File explorer sheet body — tighter padding, scroll, full list */
+  .sfe-body--files {
+    padding: 8px 12px 16px;
+    gap: 0;
+    flex: 1; min-height: 0;
+  }
+  .sfe-body--files .cre-files { display: flex; flex-direction: column; }
+
+  /* File sheet height — taller than filament sheet to show the list */
+  .sfe-sheet--files { max-height: 75vh; }
+
+  /* Hold-to-confirm on delete buttons inside the file sheet */
+  .cre-file-btn--del {
+    position: relative; overflow: hidden;
+  }
+  .cre-file-btn--del .hold-progress {
+    position: absolute; left: 0; top: 0;
+    width: 0; height: 100%;
+    background: rgba(239,68,68,.3);
+    pointer-events: none;
+  }
+  .cre-file-btn--del .icon { position: relative; z-index: 1; }
+  .cre-file-btn--del.is-holding { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.4); }
+  .cre-file-btn--del.is-confirming { background: #ef4444; border-color: #ef4444; }
+  .cre-file-btn--del.is-confirming .icon { background-color: #fff; }
   .sfe-field {
     display: flex; flex-direction: column; gap: 6px;
   }
@@ -1172,4 +1275,208 @@
     max-height: 280px;
     overflow-y: auto;
   }
+
+  /* ── Creality — action bar (LED toggle + print controls) ───────────── */
+  .cre-actions {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px;
+  }
+  .cre-action-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .cre-action-btn:hover  { background: var(--surface-3); }
+  .cre-action-btn .icon  { background-color: var(--muted); flex-shrink: 0; }
+
+  /* Icon-only variant — files, LED, pause, stop are all square icon-only buttons */
+  .cre-action-btn--files,
+  .cre-action-btn--led,
+  .cre-action-btn--pause,
+  .cre-action-btn--stop {
+    width: 32px; height: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  /* Files — opens the file explorer sheet */
+  .cre-action-btn--files { margin-left: auto; }
+  .cre-action-btn--files .icon { background-color: var(--muted); }
+  .cre-action-btn--files:hover .icon { background-color: var(--text); }
+  .cre-action-btn--led-on {
+    background: rgba(234,179,8,.12);
+    border-color: rgba(234,179,8,.45);
+    color: #92400e;
+  }
+  .cre-action-btn--led-on .icon { background-color: #d97706; }
+
+  /* Pause / Resume */
+  .cre-action-btn--pause {
+    position: relative; overflow: hidden;
+    background: rgba(56,110,207,.08);
+    border-color: rgba(56,110,207,.28);
+    color: var(--primary);
+  }
+  .cre-action-btn--pause .icon { background-color: var(--primary); position: relative; z-index: 1; }
+  .cre-action-btn--pause:hover { background: rgba(56,110,207,.16); }
+  .cre-action-btn--pause.is-holding { background: rgba(56,110,207,.18); }
+  .cre-action-btn--pause.is-confirming { background: var(--primary); }
+  .cre-action-btn--pause.is-confirming .icon { background-color: #fff; }
+
+  /* Cancel print */
+  .cre-action-btn--stop {
+    position: relative; overflow: hidden;
+    background: rgba(239,68,68,.08);
+    border-color: rgba(239,68,68,.28);
+    color: #b91c1c;
+  }
+  .cre-action-btn--stop .icon { background-color: #ef4444; position: relative; z-index: 1; }
+  .cre-action-btn--stop:hover { background: rgba(239,68,68,.16); }
+  .cre-action-btn--stop.is-holding { background: rgba(239,68,68,.18); }
+  .cre-action-btn--stop.is-confirming { background: #ef4444; }
+  .cre-action-btn--stop.is-confirming .icon { background-color: #fff; }
+
+  /* Hold-to-confirm progress fill (shared) */
+  .cre-action-btn--pause .hold-progress,
+  .cre-action-btn--stop  .hold-progress {
+    position: absolute; left: 0; top: 0;
+    width: 0; height: 100%;
+    pointer-events: none;
+  }
+  .cre-action-btn--pause .hold-progress { background: rgba(56,110,207,.25); }
+  .cre-action-btn--stop  .hold-progress { background: rgba(239,68,68,.25); }
+
+  /* ── Creality — file explorer ───────────────────────────────────────── */
+  .cre-files-head {
+    display: flex; align-items: center;
+    margin-bottom: 6px;
+  }
+  .cre-files-head .snap-block-title { margin-bottom: 0; flex: 1; }
+
+  .cre-file-refresh {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .cre-file-refresh .icon { background-color: var(--muted); }
+  .cre-file-refresh:hover { background: var(--surface-3); }
+  .cre-file-refresh--loading .icon {
+    animation: cre-spin .7s linear infinite;
+  }
+  @keyframes cre-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .cre-files { display: flex; flex-direction: column; gap: 2px; }
+
+  .cre-files-empty {
+    font-size: 12px; color: var(--muted);
+    padding: 8px 0;
+    text-align: center;
+    font-style: italic;
+  }
+  .cre-files-empty--err { color: var(--danger, #ef4444); font-style: normal; }
+
+  .cre-file-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    transition: background .12s;
+  }
+  .cre-file-row:hover { background: var(--surface-2); }
+  .cre-file-row--active {
+    background: rgba(56,110,207,.07);
+    border-color: rgba(56,110,207,.2);
+  }
+
+  /* Thumbnail — 52×52 square, rounded, shows background-image set inline */
+  .cre-file-thumb {
+    flex-shrink: 0;
+    width: 52px; height: 52px;
+    border-radius: 8px;
+    background-color: var(--surface-2);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border: 1px solid var(--border);
+  }
+
+  .cre-file-info {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .cre-file-name {
+    font-size: 12px; font-weight: 600;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cre-file-row--active .cre-file-name { color: var(--primary); }
+  .cre-file-meta {
+    font-size: 10px; color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* Pills row — duration, swatches, weight, material, temps */
+  .cre-file-pills {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  }
+  .cre-file-pill {
+    font-size: 10px; line-height: 1;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .cre-file-pill--dim { color: var(--muted); }
+
+  /* Color swatches */
+  .cre-file-swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,.18);
+    flex-shrink: 0;
+  }
+
+  .cre-file-btns { display: flex; gap: 4px; flex-shrink: 0; }
+
+  .cre-file-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: background .13s, border-color .13s;
+  }
+  .cre-file-btn .icon { flex-shrink: 0; }
+
+  .cre-file-btn--print .icon  { background-color: #22c55e; }
+  .cre-file-btn--print:hover  { background: rgba(34,197,94,.15); border-color: rgba(34,197,94,.4); }
+
+  .cre-file-btn--del .icon { background-color: var(--muted); }
+  .cre-file-btn--del:hover { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.35); }
+  .cre-file-btn--del:hover .icon { background-color: #ef4444; }
+
+  .cre-file-btn--armed {
+    background: rgba(239,68,68,.18);
+    border-color: #ef4444;
+    animation: cre-arm-pulse .55s ease-in-out infinite;
+  }
+  .cre-file-btn--armed .icon { background-color: #ef4444; }
 

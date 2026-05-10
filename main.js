@@ -111,6 +111,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,    // required for <webview> Creality camera (cross-origin JS injection)
     },
   });
 
@@ -947,6 +948,10 @@ ipcMain.handle('app:info', () => ({
   arch:           process.arch,
   osRelease:      require('os').release(),
 }));
+
+// Expose the absolute renderer directory path so the renderer can build
+// a file:// preload path for <webview> elements (e.g. Creality camera).
+ipcMain.handle('app:renderer-path', () => path.join(__dirname, 'renderer'));
 
 // ── DB IPC handlers ──────────────────────────────────────────────────────────
 ipcMain.handle('db:getLabel',                (_, cat, id) => db.getLabel(cat, id));

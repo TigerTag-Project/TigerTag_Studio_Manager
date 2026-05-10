@@ -688,5 +688,17 @@
   "colorCountDual": "Duplo",
   "colorCountTri": "Triplo",
   "colorCountRainbow": "Arco-íris",
-  "filterAllVersions": "Todos os protocolos"
+  "filterAllVersions": "Todos os protocolos",
+  "snapStateHeating": "A aquecer",
+  "crePause": "Pausar",
+  "creResume": "Retomar",
+  "creStop": "Cancelar",
+  "creStopConfirm": "Confirmar?",
+  "creLedOnTip": "Apagar LED",
+  "creLedOffTip": "Ligar LED",
+  "creFilesTitle": "Ficheiros",
+  "crePrintFile": "Imprimir",
+  "creDeleteFile": "Eliminar",
+  "creFilesEmpty": "Sem ficheiros",
+  "creFilesLoading": "A carregar…"
 }

@@ -687,5 +687,17 @@
   "colorCountDual": "Podwójny",
   "colorCountTri": "Potrójny",
   "colorCountRainbow": "Tęcza",
-  "filterAllVersions": "Wszystkie wersje"
+  "filterAllVersions": "Wszystkie wersje",
+  "snapStateHeating": "Nagrzewanie",
+  "crePause": "Pauza",
+  "creResume": "Wznów",
+  "creStop": "Anuluj",
+  "creStopConfirm": "Potwierdź?",
+  "creLedOnTip": "Wyłącz LED",
+  "creLedOffTip": "Włącz LED",
+  "creFilesTitle": "Pliki",
+  "crePrintFile": "Drukuj",
+  "creDeleteFile": "Usuń",
+  "creFilesEmpty": "Brak plików",
+  "creFilesLoading": "Ładowanie…"
 }

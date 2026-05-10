@@ -673,5 +673,17 @@
   "colorCountDual": "Dual",
   "colorCountTri": "Tri",
   "colorCountRainbow": "Rainbow",
-  "filterAllVersions": "All versions"
+  "filterAllVersions": "All versions",
+  "snapStateHeating": "Heating",
+  "crePause": "Pause",
+  "creResume": "Resume",
+  "creStop": "Cancel",
+  "creStopConfirm": "Confirm?",
+  "creLedOnTip": "Turn off LED",
+  "creLedOffTip": "Turn on LED",
+  "creFilesTitle": "Files",
+  "crePrintFile": "Print",
+  "creDeleteFile": "Delete",
+  "creFilesEmpty": "No files on printer",
+  "creFilesLoading": "Loading files…"
 }

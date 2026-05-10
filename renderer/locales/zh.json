@@ -676,5 +676,17 @@
   "colorCountDual": "双色",
   "colorCountTri": "三色",
   "colorCountRainbow": "彩虹",
-  "filterAllVersions": "所有版本"
+  "filterAllVersions": "所有版本",
+  "snapStateHeating": "加热中",
+  "crePause": "暂停",
+  "creResume": "恢复",
+  "creStop": "取消",
+  "creStopConfirm": "确认?",
+  "creLedOnTip": "关闭灯带",
+  "creLedOffTip": "打开灯带",
+  "creFilesTitle": "文件",
+  "crePrintFile": "打印",
+  "creDeleteFile": "删除",
+  "creFilesEmpty": "暂无文件",
+  "creFilesLoading": "加载中…"
 }

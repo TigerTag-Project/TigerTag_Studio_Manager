@@ -64,7 +64,10 @@ Grouped by domain. Versions in parentheses are the release that landed the featu
 - ✅ **Per-brand model picker** with thumbnails (`data/printers/<brand>_printer_models.json`)
 - ✅ Printer side panel · drag-drop reorder · inline edit · online/offline indicator (HTTP ping) (v1.4.7)
 - ✅ **Snapmaker Live integration** (Moonraker WebSocket) — live temperatures, filament per slot, print job card with thumbnail + progress + state + layer counter (v1.4.7)
-- ✅ **WebRTC camera** stream embed in printer hero
+- ✅ **Camera banner architecture** — per-brand `widget_camera.js` widgets; `inventory.js` calls `renderCamBanner(p)` dispatch only, never builds camera HTML inline
+  - ✅ **Snapmaker** — iframe Crowsnest WebRTC player (port 80 `/webcam/webrtc`)
+  - ✅ **FlashForge** — MJPEG `<img>` with single-stream error overlay + Retry (port 8898)
+  - ✅ **Creality** — direct `RTCPeerConnection` + `<video>` (port 8000); probed on real Ender-3 V4 hardware; CSS in `55-creality.css`
 - ✅ **Snapmaker LAN discovery** — mDNS browse + parallel port-scan + per-source batch sizing + brand-confirm filter + one-click add (v1.4.8)
 - ✅ **Add by IP** collapsible widget — live IPv4 validation + Validate probe (v1.4.8)
 - ✅ **Manual filament edit bottom-sheet** — Filament + Color sub-pickers (v1.4.8)

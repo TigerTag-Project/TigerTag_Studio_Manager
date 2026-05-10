@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="css/30-racks.css" />
 <link rel="stylesheet" href="css/40-printers.css" />
 <link rel="stylesheet" href="css/50-snapmaker.css" />
+<link rel="stylesheet" href="css/55-creality.css" />
 <link rel="stylesheet" href="css/60-modals.css" />
 <link rel="stylesheet" href="css/70-detail-misc.css" />
 </head>
@@ -551,6 +552,95 @@
   </header>
   <div class="sfe-body sfe-body--picker">
     <div class="sfe-color-grid" id="ffgColorGrid"></div>
+  </div>
+</aside>
+
+<!-- ─── Creality file-explorer bottom sheet ──────────────────────── -->
+<div class="sfe-backdrop" id="creFileSheetBackdrop"></div>
+<aside class="sfe-sheet sfe-sheet--files" id="creFileSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head sfe-screen-head--right">
+    <div class="sfe-screen-head-text">
+      <div class="sfe-title" data-i18n="creFilesTitle">Files</div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button type="button" class="cre-file-refresh" id="creFileSheetRefresh" title="">
+        <span class="icon icon-refresh icon-13"></span>
+      </button>
+      <button class="modal-close" id="creFileSheetClose">✕</button>
+    </div>
+  </header>
+  <div class="sfe-body sfe-body--files" id="creFileSheetBody"></div>
+</aside>
+
+<!-- ─── Creality filament-edit bottom sheet ─────────────────────── -->
+<div class="sfe-backdrop" id="creFilEditBackdrop"></div>
+<aside class="sfe-sheet" id="creFilEditSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <section class="sfe-screen sfe-screen--summary" id="creScreenSummary">
+    <header class="sfe-screen-head sfe-screen-head--right">
+      <div class="sfe-screen-head-text">
+        <div class="sfe-title" id="creFilEditTitle" data-i18n="snapFilEditTitle">Edit filament</div>
+        <div class="sfe-sub" id="creFilEditSub"></div>
+      </div>
+      <button class="modal-close" id="creFilEditClose">✕</button>
+    </header>
+    <div class="sfe-body">
+      <button type="button" class="sfe-line" id="creOpenFilament">
+        <span class="sfe-line-lbl" data-i18n="snapFilEditPickFilament">Filaments</span>
+        <span class="sfe-line-val" id="creFilSummaryVal">—</span>
+        <span class="sfe-line-chev icon icon-chevron-r icon-13"></span>
+      </button>
+      <button type="button" class="sfe-line" id="creOpenColor">
+        <span class="sfe-line-lbl" data-i18n="snapFilEditColor">Color</span>
+        <span class="sfe-line-color-dot" id="creColorSummaryDot"></span>
+        <span class="sfe-line-chev icon icon-chevron-r icon-13"></span>
+      </button>
+      <input type="hidden" id="creVendor"/>
+      <input type="hidden" id="creMaterial"/>
+      <input type="hidden" id="creColorInput" value="#ff5722"/>
+      <div class="sfe-error" id="creError" hidden></div>
+    </div>
+    <div class="sfe-footer">
+      <button class="adf-btn adf-btn--primary sfe-apply" id="creFilEditSave">
+        <span class="label" data-i18n="ffgFilEditApply">Apply</span>
+        <span class="spinner"></span>
+      </button>
+    </div>
+  </section>
+</aside>
+
+<!-- Creality filament-picker sheet (stacks ON TOP of summary) -->
+<aside class="sfe-sheet sfe-sheet--filament" id="creFilamentSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head">
+    <button type="button" class="sfe-back" id="creFilamentBack" aria-label="Back">
+      <span class="icon icon-chevron-l icon-14"></span>
+    </button>
+    <span class="sfe-title" data-i18n="snapFilSelectFilament">Select Filament</span>
+    <button class="modal-close" id="creFilamentClose">✕</button>
+  </header>
+  <div class="sfe-body sfe-body--picker">
+    <div class="sfe-fil-picker">
+      <div class="sfe-fil-vendors"  id="creVendorList"   role="listbox" aria-label="Vendors"></div>
+      <div class="sfe-fil-divider"  aria-hidden="true"></div>
+      <div class="sfe-fil-materials" id="creMaterialList" role="listbox" aria-label="Materials"></div>
+    </div>
+  </div>
+</aside>
+
+<!-- Creality colour-picker sheet (stacks ON TOP of summary) -->
+<aside class="sfe-sheet sfe-sheet--color" id="creColorSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head">
+    <button type="button" class="sfe-back" id="creColorBack" aria-label="Back">
+      <span class="icon icon-chevron-l icon-14"></span>
+    </button>
+    <span class="sfe-title" data-i18n="snapFilSelectColor">Select Color</span>
+    <button class="modal-close" id="creColorClose">✕</button>
+  </header>
+  <div class="sfe-body sfe-body--picker">
+    <div class="sfe-color-grid" id="creColorGrid"></div>
   </div>
 </aside>
 
@@ -1939,6 +2029,6 @@
 <script src="lib/firebase/firebase-auth-compat.js"></script>
 <script src="lib/firebase/firebase-firestore-compat.js"></script>
 <script src="firebase.js"></script>
-<script src="inventory.js"></script>
+<script type="module" src="inventory.js"></script>
 </body>
 </html>

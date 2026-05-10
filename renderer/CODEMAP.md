@@ -137,7 +137,7 @@ L…            Add-printer flow (mDNS → port-scan → Add by IP → manual pr
 | 5216-5224 | Brand metadata (label + accent + connection hint) | |
 | 5225-5361 | Render 3D printers in main panel | `renderPrintersView` |
 | 5362-5462 | Printer drag & drop reordering (writes `sortIndex`) | |
-| 5463-5532 | **Printer detail side panel** | `openPrinterDetail`, `closePrinterDetail`, `refreshOpenPrinterDetail` |
+| 5463-5532 | **Printer detail side panel** — open/close lifecycle, `renderCamBanner(p)` dispatch to per-brand `widget_camera.js` | `openPrinterDetail`, `closePrinterDetail`, `refreshOpenPrinterDetail`, `renderCamBanner` |
 
 ---
 
@@ -158,7 +158,8 @@ Big section divider at L5533. Ported from the Flutter `SnapmakerWebSocketPage`. 
 | 6487-6519 | Text-color contrast picker for color squares | `snapTextColor` |
 | 6520-6680 | **Live block render** — `renderSnapmakerLiveInner()`: connection header, camera, print-job card, temperature row, **filament grid (big colored squares)** | `renderSnapmakerLiveInner` |
 | 6681-7130 | **WS request log** — push, custom JSON send, render | `snapLogPush`, `snapSendCustomJson`, `renderSnapmakerLogInner` |
-| 6798-7130 | `renderPrinterDetail()` — composes hero + camera + status + live block + log | `renderPrinterDetail` |
+| 7580-7590 | `renderCamBanner(p)` — dispatch to per-brand camera widget (`renderSnapCamBanner` / `renderCreCamBanner` / `renderFfgCamBanner`). Camera HTML never built inline here. | `renderCamBanner` |
+| 7589-8050 | `renderPrinterDetail()` — composes hero + camera banner + status + live block + log | `renderPrinterDetail` |
 | 7131-7216 | **Inline edit** for printer name / IP / port (pencil hint, click to edit, Enter/Escape) | `startInlineEdit` |
 
 ---
@@ -325,5 +326,9 @@ Most common navigation tasks → start here:
 - **State** is at L71. Read it first when reasoning about anything cross-cutting.
 - **Selectors**: `$` is `document.getElementById`. Many DOM nodes have IDs that match the section (e.g. `#detailPanel`, `#snapScanPanel`, `#friendsPanel`).
 - **i18n**: 9 locales (en/fr/de/es/it/zh/pt/pt-pt/pl) under `renderer/locales/`. Never hand-edit — use `npm run i18n:add`. The `npm run i18n:check` pre-commit hook blocks drift.
-- **CSS**: split into 8 themed files under `renderer/css/` (`00-base.css` → `70-detail-misc.css`). When this file references a UI section, the corresponding styles live in the matching CSS module.
+- **CSS**: split into 9 themed files under `renderer/css/` (`00-base.css` → `70-detail-misc.css`, plus `55-creality.css`). When this file references a UI section, the corresponding styles live in the matching CSS module.
+- **Per-brand camera widgets**: each printer folder has a `widget_camera.js` that owns all camera HTML + lifecycle for that brand. `inventory.js` calls `renderCamBanner(p)` which dispatches to the right widget — it never builds camera HTML inline. To add a new brand: create `printers/<brand>/widget_camera.js`, export `render<Brand>CamBanner(p)`, add a `case` in `renderCamBanner`. CSS goes in a matching `renderer/css/5X-<brand>.css`.
+  - `printers/snapmaker/widget_camera.js` → `renderSnapCamBanner` — iframe Crowsnest WebRTC (port 80)
+  - `printers/creality/widget_camera.js` → `renderCreCamBanner`, `startCreCam`, `stopCreCam` — direct RTCPeerConnection + `<video>` (port 8000); CSS in `55-creality.css`
+  - `printers/flashforge/widget_camera.js` → `renderFfgCamBanner`, `ffgRefreshCamBanner` — MJPEG `<img>` with error/retry (port 8898)
 - **Line numbers will drift** as the file changes. If a range looks wrong, grep for the anchor function name rather than trusting the L-number.
