@@ -133,14 +133,44 @@ export function renderElegooFilamentCard(p, conn) {
   const d = conn.data;
   const fils = Array.isArray(d.filaments) ? d.filaments : [];
   if (!fils.length) return '';
+
+  // ── Mono-extruder mode ────────────────────────────────────────────────────
+  // Canvas hub absent → single "Ext." square (same pattern as Creality / FFG).
+  // Detect via explicit flag OR single-entry filament list (robust fallback).
+  const isMono = d._canvasConnected === false || fils.length === 1;
+  if (isMono) {
+    const fil        = fils[0] || {};
+    const color      = fil.color || null;
+    const fg         = color ? ctx.snapTextColor(color) : 'var(--text)';
+    const typeLbl    = fil.type || '—';
+    const squareCls  = 'snap-fil-square' + (color ? ' snap-fil-square--filled' : ' snap-fil-square--empty');
+    const squareStyle = color ? `background:${ctx.esc(color)};color:${ctx.esc(fg)};` : '';
+    return `
+      <section class="snap-block">
+        <h4 class="snap-block-title">${ctx.esc(ctx.t('snapFilamentTitle'))}</h4>
+        <div class="snap-fil-grid">
+          <div class="snap-fil${color ? ' snap-fil--active' : ''}">
+            <div class="snap-fil-tag">Ext.</div>
+            <div class="${squareCls}" style="${squareStyle}">
+              <span class="snap-fil-main">${ctx.esc(typeLbl)}</span>
+            </div>
+            <div class="snap-fil-meta">
+              ${fil.vendor ? `<div class="snap-fil-vendor">${ctx.esc(fil.vendor)}</div>` : ''}
+              <div class="snap-fil-sub">${ctx.esc(typeLbl)}</div>
+            </div>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  // ── Canvas mode — 4-slot grid ─────────────────────────────────────────────
   const filCards = [];
   for (let i = 0; i < 4; i++) {
     const fil   = fils[i] || {};
     const color = fil.color || null;
     const type  = fil.type  || null;
-    const hasMeta = !!(color || type);
     const isActive = !!fil.active;
-    const fg = (color) ? ctx.snapTextColor(color) : 'var(--text)';
+    const fg = color ? ctx.snapTextColor(color) : 'var(--text)';
     const slotTag = `S${i + 1}`;
     const squareLabel = type || ctx.t('snapNoFilament');
     let squareCls = 'snap-fil-square';
