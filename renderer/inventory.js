@@ -489,12 +489,53 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
   }
 
   async function loadLookups() {
-    // Load reference tables from main process (assets/db/ → userData/db/ after sync)
+    // 1. Try IPC (main process — userData/db/tigertag/ → assets/db/tigertag/ fallback)
+    let ipcOk = false;
     try {
-      const lookups = await window.electronAPI.db.getLookups();
-      if (lookups) Object.assign(state.db, lookups);
+      const lookups = await window.electronAPI?.db?.getLookups?.();
+      if (lookups && Object.values(lookups).some(v => Array.isArray(v) && v.length > 0)) {
+        Object.assign(state.db, lookups);
+        ipcOk = true;
+        console.log('[loadLookups] IPC OK — brand:', state.db.brand.length, 'material:', state.db.material.length);
+      } else {
+        console.warn('[loadLookups] IPC returned empty or null:', lookups);
+      }
     } catch (e) {
       console.warn('[loadLookups] IPC failed:', e);
+    }
+
+    // 2. Fallback: fetch directly from the embedded assets (always present on disk)
+    if (!ipcOk) {
+      console.warn('[loadLookups] falling back to direct fetch from assets/db/tigertag/');
+      const files = [
+        ["id_brand.json",        "brand"],
+        ["id_material.json",     "material"],
+        ["id_aspect.json",       "aspect"],
+        ["id_type.json",         "type"],
+        ["id_diameter.json",     "diameter"],
+        ["id_measure_unit.json", "unit"],
+        ["id_version.json",      "version"],
+      ];
+      await Promise.all(files.map(async ([f, key]) => {
+        try {
+          const r = await fetch(`../assets/db/tigertag/${f}`);
+          if (r.ok) {
+            state.db[key] = await r.json();
+            console.log(`[loadLookups] fetch OK — ${key}: ${state.db[key].length} entries`);
+          } else {
+            console.warn(`[loadLookups] fetch failed ${f}: HTTP ${r.status}`);
+          }
+        } catch (e) {
+          console.warn(`[loadLookups] fetch error ${f}:`, e);
+        }
+      }));
+    }
+
+    // Diagnostic: log the first brand ID so we can compare with Firestore
+    if (state.db.brand.length) {
+      console.log('[loadLookups] brand[0]:', JSON.stringify(state.db.brand[0]));
+    } else {
+      console.error('[loadLookups] state.db.brand is EMPTY after all attempts');
     }
     try {
       const r = await fetch('../data/container_spool/spools_filament.json');
