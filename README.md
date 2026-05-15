@@ -2,6 +2,8 @@
 
 # Tiger Studio Manager
 
+<img src="assets/svg/logos/logo_tigertag_contouring.svg" width="140" alt="TigerTag logo" />
+
 **Desktop companion for the [TigerTag](https://tigertag.io) RFID filament-tracking ecosystem.**<br>
 Manage your spool inventory, connect your 3D printers, and keep everything in sync — across devices, accounts, and friends.
 
