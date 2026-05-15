@@ -13,7 +13,7 @@ Manage your spool inventory, connect your 3D printers, and keep everything in sy
 
 [![Latest release](https://img.shields.io/github/v/release/TigerTag-Project/TigerTag-Studio-Manager?label=Latest&color=FF6B00)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
 
-*Intel + Apple Silicon · Signed & Notarized on macOS · No installation knowledge required.*
+*Intel + Apple Silicon · macOS: Signed & Notarized · No installation knowledge required.*
 
 <br>
 
@@ -154,7 +154,7 @@ npm start
 | Auto-update | [electron-updater](https://www.electron.build/auto-update) via GitHub Releases |
 | Build & packaging | [electron-builder](https://www.electron.build/) |
 | macOS signing | Apple Developer ID + `notarytool` (App Store Connect API Key) |
-| Windows signing | Microsoft Trusted Signing (Azure) |
+| Windows signing | Not yet signed (planned — Microsoft Trusted Signing) |
 | CI / Releases | GitHub Actions — triggered on `v*` tag push |
 
 ---
@@ -172,7 +172,7 @@ git push origin v1.7.0
 |---|---|---|---|
 | macOS (signed) | `npm run build:mac` | `.dmg` + `.zip` (x64 + arm64) | ✅ Developer ID + Notarized |
 | macOS (fast, local) | `npm run build:mac:unsigned` | `.dmg` | ❌ |
-| Windows | `npm run build:win` | `.exe` NSIS | ✅ Azure Trusted Signing |
+| Windows | `npm run build:win` | `.exe` NSIS | ❌ Not yet signed |
 | Linux | `npm run build:linux` | `.AppImage` | N/A |
 | All | `npm run build:all` | All three | — |
 
