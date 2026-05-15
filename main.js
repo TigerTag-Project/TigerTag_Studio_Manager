@@ -1117,8 +1117,10 @@ ipcMain.handle('app:info', () => ({
 ipcMain.handle('app:renderer-path', () => path.join(__dirname, 'renderer'));
 
 // ── DB IPC handlers ──────────────────────────────────────────────────────────
+ipcMain.handle('db:getLookups',              ()           => db.getLookups());
 ipcMain.handle('db:getLabel',                (_, cat, id) => db.getLabel(cat, id));
 ipcMain.handle('db:getMaterialLabel',        (_, id)      => db.getMaterialLabel(id));
+ipcMain.handle('db:getBambuMaterials',       ()           => db.getBambuMaterials());
 ipcMain.handle('db:getPublicKeyForId',       (_, id)      => db.getPublicKeyForId(id));
 ipcMain.handle('db:getAllLastUpdateTimestamps', ()         => db.getAllLastUpdateTimestamps());
 ipcMain.handle('db:isUpdateAvailable',       ()           => db.isUpdateAvailable());

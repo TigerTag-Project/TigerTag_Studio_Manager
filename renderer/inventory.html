@@ -684,7 +684,7 @@
   <section class="sfe-screen sfe-screen--summary" id="elgScreenSummary">
     <header class="sfe-screen-head sfe-screen-head--no-close">
       <div class="sfe-screen-head-text">
-        <div class="sfe-title" id="elgFilEditTitle" data-i18n="elgFilEditTitle">Change filament</div>
+        <div class="sfe-title" id="elgFilEditTitle" data-i18n="snapFilEditTitle">Edit filament</div>
         <div class="sfe-sub" id="elgFilEditSub"></div>
       </div>
     </header>
@@ -727,7 +727,14 @@
     <div class="sfe-fil-picker">
       <div class="sfe-fil-vendors" id="elgVendorList" role="listbox" aria-label="Vendors"></div>
       <div class="sfe-fil-divider" aria-hidden="true"></div>
-      <div class="sfe-fil-materials" id="elgMaterialList" role="listbox" aria-label="Materials"></div>
+      <div class="sfe-fil-mat-col">
+        <div class="sfe-fil-mat-search">
+          <span class="icon icon-search icon-13 sfe-fil-mat-search-icon" aria-hidden="true"></span>
+          <input type="search" id="elgMatSearch" class="sfe-fil-mat-search-input"
+                 placeholder="Search…" autocomplete="off" spellcheck="false"/>
+        </div>
+        <div class="sfe-fil-materials" id="elgMaterialList" role="listbox" aria-label="Materials"></div>
+      </div>
     </div>
   </div>
 </aside>
@@ -744,6 +751,80 @@
   </header>
   <div class="sfe-body sfe-body--picker">
     <div class="sfe-color-grid" id="elgColorGrid"></div>
+  </div>
+</aside>
+
+<!-- ── Bambu Lab — filament edit sheet ──────────────────────────────────── -->
+<div class="sfe-backdrop" id="bblFilEditBackdrop"></div>
+<aside class="sfe-sheet" id="bblFilEditSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head sfe-screen-head--no-close">
+    <div class="sfe-screen-head-text">
+      <div class="sfe-title" id="bblFilEditTitle" data-i18n="snapFilEditTitle">Edit filament</div>
+      <div class="sfe-sub" id="bblFilEditSub"></div>
+    </div>
+  </header>
+  <div class="sfe-body">
+    <!-- Line 1: Material -->
+    <button type="button" class="sfe-line" id="bblMaterialTrigger">
+      <span class="sfe-line-lbl" data-i18n="snapFilEditPickFilament">Filament</span>
+      <span class="sfe-line-val" id="bblMaterialTriggerVal">—</span>
+      <span class="sfe-line-chev icon icon-chevron-r icon-13"></span>
+    </button>
+    <!-- Line 2: Color -->
+    <button type="button" class="sfe-line" id="bblColorTrigger">
+      <span class="sfe-line-lbl" data-i18n="snapFilEditColor">Color</span>
+      <span class="sfe-line-color-dot" id="bblColorTriggerVal"></span>
+      <span class="sfe-line-chev icon icon-chevron-r icon-13"></span>
+    </button>
+  </div>
+  <div class="sfe-footer">
+    <button class="adf-btn adf-btn--primary sfe-apply" id="bblFilEditSave">
+      <span class="label" data-i18n="snapFilEditApply">Apply</span>
+      <span class="spinner"></span>
+    </button>
+  </div>
+</aside>
+
+<!-- Bambu — color sub-sheet -->
+<div class="sfe-backdrop" id="bblColorBackdrop"></div>
+<aside class="sfe-sheet sfe-sheet--color" id="bblColorSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head">
+    <button type="button" class="sfe-back" id="bblColorBack" aria-label="Back">
+      <span class="icon icon-chevron-l icon-14"></span>
+    </button>
+    <span class="sfe-title" data-i18n="snapFilSelectColor">Select Color</span>
+    <button class="modal-close" id="bblColorClose">✕</button>
+  </header>
+  <div class="sfe-body sfe-body--picker">
+    <div class="sfe-color-grid" id="bblColorGrid"></div>
+    <input type="color" id="bblColorInput" style="opacity:0;position:absolute;pointer-events:none" tabindex="-1"/>
+  </div>
+</aside>
+
+<!-- Bambu — filament (material) sub-sheet -->
+<div class="sfe-backdrop" id="bblFilamentBackdrop"></div>
+<aside class="sfe-sheet sfe-sheet--filament" id="bblFilamentSheet" aria-hidden="true">
+  <div class="sfe-grip" aria-hidden="true"></div>
+  <header class="sfe-screen-head">
+    <button type="button" class="sfe-back" id="bblFilamentBack" aria-label="Back">
+      <span class="icon icon-chevron-l icon-14"></span>
+    </button>
+    <span class="sfe-title" data-i18n="snapFilSelectFilament">Select Filament</span>
+    <button class="modal-close" id="bblFilamentClose">✕</button>
+  </header>
+  <div class="sfe-body sfe-body--picker">
+    <div class="sfe-fil-picker sfe-fil-picker--solo">
+      <div class="sfe-fil-mat-col" style="flex:1">
+        <div class="sfe-fil-mat-search">
+          <span class="icon icon-search icon-13 sfe-fil-mat-search-icon" aria-hidden="true"></span>
+          <input type="search" id="bblMatSearch" class="sfe-fil-mat-search-input"
+                 placeholder="Search…" autocomplete="off" spellcheck="false"/>
+        </div>
+        <div class="sfe-fil-materials" id="bblMaterialList" role="listbox" aria-label="Filament"></div>
+      </div>
+    </div>
   </div>
 </aside>
 

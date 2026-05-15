@@ -129,8 +129,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Local DB (main-process side) ─────────────────────────────────────────
   db: {
+    getLookups:               ()             => ipcRenderer.invoke('db:getLookups'),
     getLabel:                 (category, id) => ipcRenderer.invoke('db:getLabel', category, id),
     getMaterialLabel:         (id)           => ipcRenderer.invoke('db:getMaterialLabel', id),
+    getBambuMaterials:        ()             => ipcRenderer.invoke('db:getBambuMaterials'),
     getPublicKeyForId:        (id)           => ipcRenderer.invoke('db:getPublicKeyForId', id),
     getAllLastUpdateTimestamps: ()            => ipcRenderer.invoke('db:getAllLastUpdateTimestamps'),
     isUpdateAvailable:        ()             => ipcRenderer.invoke('db:isUpdateAvailable'),

@@ -107,14 +107,9 @@ const ELG_MATERIAL_PRESETS = {
   'PPS':           { main: 'PPS',   tempMin: 300, tempMax: 340 },
 };
 
-// Full sorted list — priority materials first, rest alphabetical
-const ELG_MATERIAL_LIST = (() => {
-  const priority = ['PLA', 'PLA+', 'PETG', 'ABS', 'TPU 95A', 'ASA'];
-  const all = Object.keys(ELG_MATERIAL_PRESETS);
-  const rest = all.filter(k => !priority.includes(k))
-                  .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  return [...priority, ...rest];
-})();
+// Full alphabetically sorted list
+const ELG_MATERIAL_LIST = Object.keys(ELG_MATERIAL_PRESETS)
+  .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
 // Vendor names for the brand picker (unchanged)
 const ELG_VENDOR_NAMES = ['Generic', 'ELEGOO', 'Rosa3D', 'R3D', 'Landu', 'eSun', 'Sunlu', 'JamgHe'];
@@ -906,12 +901,18 @@ function _elgRenderVendorList(selected) {
   }).join('');
 }
 
-function _elgRenderMaterialList(_vendor, selectedMat) {
-  // All vendors share the same Elegoo-supported preset list.
-  const selLower = (selectedMat || '').toLowerCase();
-  return ELG_MATERIAL_LIST.map(m => {
-    const preset  = ELG_MATERIAL_PRESETS[m];
-    const isSel   = m.toLowerCase() === selLower;
+function _elgRenderMaterialList(_vendor, selectedMat, filter) {
+  const selLower    = (selectedMat || '').toLowerCase();
+  const filterLower = (filter || '').trim().toLowerCase();
+  const list = filterLower
+    ? ELG_MATERIAL_LIST.filter(m => m.toLowerCase().includes(filterLower))
+    : ELG_MATERIAL_LIST;
+  if (!list.length) {
+    return `<div class="sfe-fil-empty">${ctx.esc(ctx.t('noMatch') || 'No match')}</div>`;
+  }
+  return list.map(m => {
+    const preset   = ELG_MATERIAL_PRESETS[m];
+    const isSel    = m.toLowerCase() === selLower;
     const tempHint = preset ? `<span class="sfe-fil-row-temp">${preset.tempMin}–${preset.tempMax}°</span>` : '';
     return `<button type="button" class="sfe-fil-row${isSel ? ' is-selected' : ''}" data-val="${ctx.esc(m)}">
               <span class="sfe-fil-row-text">${ctx.esc(m)}</span>
@@ -994,8 +995,10 @@ export function openElegooFilamentEdit(printer, trayIdx) {
 
   const vendorList = $('elgVendorList');
   if (vendorList) vendorList.innerHTML = _elgRenderVendorList(_elgSelectedVendor);
+  const searchInp = $('elgMatSearch');
+  if (searchInp) searchInp.value = '';
   const matList = $('elgMaterialList');
-  if (matList) matList.innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial);
+  if (matList) matList.innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial, '');
 
   _elgCloseFilamentSheet();
   _elgCloseColorSheet();
@@ -1055,7 +1058,8 @@ $('elgVendorList')?.addEventListener('click', e => {
   $('elgVendorList').querySelectorAll('.sfe-fil-row').forEach(r =>
     r.classList.toggle('is-selected', r === row));
   const matList = $('elgMaterialList');
-  if (matList) matList.innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial);
+  const filter = $('elgMatSearch')?.value || '';
+  if (matList) matList.innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial, filter);
   const v = $('elgVendor'); if (v) v.value = '';
 });
 
@@ -1064,11 +1068,17 @@ $('elgMaterialList')?.addEventListener('click', e => {
   if (!row) return;
   _elgSelectedMaterial = row.dataset.val || 'PLA';
   const m = $('elgMaterial'); if (m) m.value = '';
-  $('elgMaterialList').innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial);
+  const filter = $('elgMatSearch')?.value || '';
+  $('elgMaterialList').innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial, filter);
   setTimeout(() => {
     _elgUpdateSummary();
     _elgCloseFilamentSheet();
   }, 180);
+});
+
+$('elgMatSearch')?.addEventListener('input', e => {
+  const matList = $('elgMaterialList');
+  if (matList) matList.innerHTML = _elgRenderMaterialList(_elgSelectedVendor, _elgSelectedMaterial, e.target.value);
 });
 
 $('elgColorGrid')?.addEventListener('click', e => {

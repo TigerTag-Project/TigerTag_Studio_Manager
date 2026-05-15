@@ -28,6 +28,7 @@ import {
   bambuConnect, bambuDisconnect, bambuStopCam,
   renderBambuOnlineBadge,
   renderBambuLiveInner, renderBambuLogInner,
+  openBambuFilamentEdit, closeBambuFilamentEdit,
 } from './printers/bambulab/index.js';
 import { renderBambuCamBanner } from './printers/bambulab/widget_camera.js';
 import {
@@ -488,14 +489,13 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
   }
 
   async function loadLookups() {
-    const files = ["id_brand","id_material","id_aspect","id_type","id_diameter","id_measure_unit","id_version"];
-    const keys  = ["brand",   "material",   "aspect",   "type",   "diameter",   "unit",            "version"];
-    await Promise.all(files.map(async (f, i) => {
-      try {
-        const r = await fetch(`../data/${f}.json`);
-        if (r.ok) state.db[keys[i]] = await r.json();
-      } catch {}
-    }));
+    // Load reference tables from main process (assets/db/ → userData/db/ after sync)
+    try {
+      const lookups = await window.electronAPI.db.getLookups();
+      if (lookups) Object.assign(state.db, lookups);
+    } catch (e) {
+      console.warn('[loadLookups] IPC failed:', e);
+    }
     try {
       const r = await fetch('../data/container_spool/spools_filament.json');
       if (r.ok) state.db.containers = await r.json();
@@ -7361,6 +7361,10 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
     // valid while the panel is open. The WebSocket (port 9999) stays alive for
     // live telemetry. startCreCam() is called again when the panel reopens.
     if (_activePrinter?.brand === "creality") stopCreCam();
+    // Bambu Lab — close filament-edit sheet if open.
+    if ($("bblFilEditSheet")?.classList.contains("open")) {
+      try { closeBambuFilamentEdit(); } catch {}
+    }
     // Elegoo — close filament-edit / file-history sheets if open.
     // MQTT connection stays alive in background (disconnected only on logout).
     if ($("elgFilEditSheet")?.classList.contains("open")) {
@@ -8051,6 +8055,16 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
           const idx = parseInt(elgFilTrigger.dataset.trayIdx ?? "0", 10);
           if (_activePrinter?.brand === "elegoo") {
             openElegooFilamentEdit(_activePrinter, idx);
+          }
+          return;
+        }
+        // Bambu Lab — filament edit (AMS slot squares + Ext.)
+        const bblFilTrigger = e.target.closest("[data-bbl-fil-edit]");
+        if (bblFilTrigger) {
+          const amsId  = parseInt(bblFilTrigger.dataset.amsId  ?? "255", 10);
+          const trayId = parseInt(bblFilTrigger.dataset.trayId ?? "254", 10);
+          if (_activePrinter?.brand === "bambulab") {
+            openBambuFilamentEdit(_activePrinter, amsId, trayId);
           }
           return;
         }

@@ -775,6 +775,8 @@
   .snap-fil--editable { cursor: pointer; }
   .snap-fil--editable .snap-fil-square { transition: transform .12s, filter .12s; }
   .snap-fil--editable:hover .snap-fil-square { transform: translateY(-2px); filter: brightness(1.05); }
+  /* Slots vides : lift autorisé mais brightness désactivé — le hachage et le contour restent intacts */
+  .snap-fil--editable:hover .snap-fil-square--empty { filter: none; }
 
   /* Bottom-sheet — anchors to the right side of the screen behind the
      printer side card (same width + right alignment). Slides up from the
@@ -1193,10 +1195,13 @@
   .sfe-sheet--filament .sfe-screen-head .modal-close,
   .sfe-sheet--color .sfe-screen-head .modal-close { grid-column: 2; }
 
-  /* Change filament sheet — sans séparateurs horizontaux */
-  #elgFilEditSheet .sfe-screen-head { border-bottom: none; }
-  #elgFilEditSheet .sfe-line        { border-bottom: none; }
-  #elgFilEditSheet .sfe-footer      { border-top: none; }
+  /* Edit filament sheets — sans séparateurs horizontaux */
+  #elgFilEditSheet .sfe-screen-head,
+  #bblFilEditSheet .sfe-screen-head { border-bottom: none; }
+  #elgFilEditSheet .sfe-line,
+  #bblFilEditSheet .sfe-line        { border-bottom: none; }
+  #elgFilEditSheet .sfe-footer,
+  #bblFilEditSheet .sfe-footer      { border-top: none; }
 
 
   /* Two-column filament picker — iso to the mobile companion:
@@ -1216,7 +1221,50 @@
     gap: 4px;
   }
   .sfe-fil-vendors { flex: 4; }
-  .sfe-fil-materials { flex: 6; }
+  /* Column wrapper: search bar on top, scrollable list below */
+  .sfe-fil-mat-col {
+    flex: 6;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .sfe-fil-mat-col .sfe-fil-materials {
+    flex: 1;
+    min-height: 0;
+  }
+  /* Search bar */
+  .sfe-fil-mat-search {
+    position: relative;
+    padding: 6px 8px 4px;
+    flex-shrink: 0;
+  }
+  .sfe-fil-mat-search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: var(--muted);
+    pointer-events: none;
+  }
+  .sfe-fil-mat-search-input {
+    width: 100%;
+    padding: 5px 8px 5px 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .sfe-fil-mat-search-input:focus { border-color: var(--primary); }
+  /* Empty state when no match */
+  .sfe-fil-empty {
+    padding: 12px 8px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
   .sfe-fil-divider {
     width: 1px;
     background: var(--border);

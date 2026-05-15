@@ -108,20 +108,25 @@ export function renderBambuFilamentCard(_p, conn) {
   const amsMods = [...(d.ams || [])].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
 
   // ── slot renderer ──────────────────────────────────────────────────────
-  const makeSlot = (tag, t) => {
+  const makeSlot = (tag, t, amsId, trayId) => {
     const color  = t?.color ?? null;
     const fg     = color ? _bblTextColor(color) : "var(--text)";
     const active = t?.active ?? false;
     const isEmpty = !color && !t?.type;
-    const label  = isEmpty ? "" : (t?.type || "—");
+    const label  = isEmpty ? "?" : (t?.type || "—");
+    const editAttrs = `data-bbl-fil-edit="1" data-ams-id="${amsId ?? 255}" data-tray-id="${trayId ?? 254}"`;
     return `
-      <div class="snap-fil${active ? " snap-fil--active" : ""}">
+      <div class="snap-fil snap-fil--editable${active ? " snap-fil--active" : ""}" ${editAttrs}>
         <div class="snap-fil-tag">${ctx.esc(tag)}</div>
         <div class="snap-fil-square${color ? "" : " snap-fil-square--empty"}"
              style="${color ? `background:${ctx.esc(color)};color:${ctx.esc(fg)};border-color:${ctx.esc(color)};` : ""}">
           <span class="snap-fil-main">${ctx.esc(label)}</span>
         </div>
-        ${active ? `<div class="snap-fil-meta"><span class="snap-fil-status icon icon-play icon-13"></span></div>` : ""}
+        <div class="snap-fil-meta">
+          <span class="snap-fil-status icon icon-edit icon-13" aria-hidden="true"></span>
+          ${active ? `<span class="snap-fil-status icon icon-play icon-13"></span>` : ""}
+          ${t?.type ? `<div class="snap-fil-sub">${ctx.esc(t.type)}</div>` : ""}
+        </div>
       </div>`;
   };
 
@@ -136,21 +141,21 @@ export function renderBambuFilamentCard(_p, conn) {
   // Fixed count keeps every row at 5 flex children → columns stay aligned.
   const filSpacer = `<div class="snap-fil bbl-fil-spacer" aria-hidden="true"></div>`;
 
-  const makeAmsRow = (mod, rowLetter) => {
+  const makeAmsRow = (mod, rowLetter, modIdx) => {
     const byId = new Map((mod?.tray || []).map(t => [parseInt(t.id, 10), t]));
     const cells = [];
     for (let i = 0; i < 4; i++) {
       const t = byId.get(i);
-      cells.push(t ? makeSlot(`${rowLetter}${i + 1}`, t) : filSpacer);
+      cells.push(t ? makeSlot(`${rowLetter}${i + 1}`, t, modIdx, i) : filSpacer);
     }
     return cells.join("");
   };
 
   // ── Row 1: Ext. + first AMS module (or just Ext. if no AMS) ───────────
   {
-    const row1 = [makeSlot("Ext.", d.externalTray ?? null)];
+    const row1 = [makeSlot("Ext.", d.externalTray ?? null, 255, 254)];
     if (amsMods.length > 0) {
-      row1.push(makeAmsRow(amsMods[0], "A"));
+      row1.push(makeAmsRow(amsMods[0], "A", 0));
     }
     rows.push(`<div class="cre-fil-row">${row1.join("")}</div>`);
   }
@@ -158,7 +163,7 @@ export function renderBambuFilamentCard(_p, conn) {
   // ── Rows 2+: extra AMS modules, Ext. column stays empty (spacer) ──────
   for (let mi = 1; mi < amsMods.length; mi++) {
     const rowLetter = String.fromCharCode(65 + mi);        // 'B', 'C', …
-    rows.push(`<div class="cre-fil-row">${extSpacer}${makeAmsRow(amsMods[mi], rowLetter)}</div>`);
+    rows.push(`<div class="cre-fil-row">${extSpacer}${makeAmsRow(amsMods[mi], rowLetter, mi)}</div>`);
   }
 
   if (!rows.length) return "";

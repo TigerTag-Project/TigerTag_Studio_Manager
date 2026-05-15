@@ -498,6 +498,232 @@ export function renderBambuLogInner(p) {
   return `<div class="snap-log">${rows}</div>`;
 }
 
+// ── Filament edit sheet ────────────────────────────────────────────────────
+
+let _bblMatCache = null;   // loaded once via IPC, refreshed on sheet open
+let _bblFilEdit  = null;   // { printer, amsId, trayId }
+let _bblSelMat   = null;   // { label, tray_type, bambuID, tempMin, tempMax }
+let _bblSelColor = '#FF5722';
+
+async function _bblLoadMaterials() {
+  if (_bblMatCache) return _bblMatCache;
+  try {
+    const mats = await window.electronAPI?.db?.getBambuMaterials?.();
+    _bblMatCache = Array.isArray(mats) ? mats : [];
+  } catch (e) {
+    console.warn('[BBL] Could not load materials:', e);
+    _bblMatCache = [];
+  }
+  return _bblMatCache;
+}
+
+function _bblRenderMaterialList(filter) {
+  const mats = _bblMatCache || [];
+  const q = (filter || '').trim().toLowerCase();
+  const list = q ? mats.filter(m => m.label.toLowerCase().includes(q)) : mats;
+  if (!list.length) return `<div class="sfe-fil-empty">${ctx.esc(ctx.t('noMatch') || 'No match')}</div>`;
+  return list.map(m => {
+    const isSel = _bblSelMat?.bambuID === m.bambuID;
+    const tempHint = `<span class="sfe-fil-row-temp">${m.tempMin}–${m.tempMax}°</span>`;
+    return `<button type="button" class="sfe-fil-row${isSel ? ' is-selected' : ''}" data-bbl-mat='${JSON.stringify({label:m.label,tray_type:m.tray_type,bambuID:m.bambuID,tempMin:m.tempMin,tempMax:m.tempMax})}'>
+      <span class="sfe-fil-row-text">${ctx.esc(m.label)}</span>
+      ${tempHint}
+      ${isSel ? `<span class="sfe-fil-row-check">✓</span>` : ''}
+    </button>`;
+  }).join('');
+}
+
+function _bblRenderColorGrid(currentColor) {
+  const grid = $('bblColorGrid');
+  if (!grid) return;
+  const cur = (currentColor || '').toLowerCase();
+  const presetCells = ctx.SNAP_FIL_COLOR_PRESETS.map(c => {
+    const isSel = c.toLowerCase() === cur;
+    return `<button type="button"
+      class="sfe-color-cell${isSel ? ' is-selected' : ''}"
+      data-color="${ctx.esc(c)}"
+      style="background:${ctx.esc(c)}"></button>`;
+  }).join('');
+  const customStyle = `background:${currentColor || '#FF5722'}`;
+  const customCell = `<button type="button"
+    class="sfe-color-cell sfe-color-cell--custom" id="bblColorCustom"
+    style="${customStyle}" title="Custom color">
+    <span class="icon icon-edit icon-13" style="background:#fff;opacity:.8"></span>
+  </button>`;
+  grid.innerHTML = presetCells + customCell;
+}
+
+function _bblUpdateSummary() {
+  const label = _bblSelMat?.label || '—';
+  const matVal = $('bblMaterialTriggerVal');
+  if (matVal) matVal.textContent = label;
+  const colorDot = $('bblColorTriggerVal');
+  if (colorDot) colorDot.style.background = _bblSelColor || 'transparent';
+}
+
+function _bblOpenColorSheet() {
+  _bblRenderColorGrid(_bblSelColor);
+  const inp = $('bblColorInput'); if (inp) inp.value = _bblSelColor;
+  $('bblColorSheet')?.classList.add('open');
+  $('bblColorSheet')?.setAttribute('aria-hidden', 'false');
+}
+function _bblCloseColorSheet() {
+  $('bblColorSheet')?.classList.remove('open');
+  $('bblColorSheet')?.setAttribute('aria-hidden', 'true');
+}
+function _bblOpenFilamentSheet() {
+  const search = $('bblMatSearch'); if (search) search.value = '';
+  const matList = $('bblMaterialList');
+  if (matList) matList.innerHTML = _bblRenderMaterialList('');
+  $('bblFilamentSheet')?.classList.add('open');
+  $('bblFilamentSheet')?.setAttribute('aria-hidden', 'false');
+}
+function _bblCloseFilamentSheet() {
+  $('bblFilamentSheet')?.classList.remove('open');
+  $('bblFilamentSheet')?.setAttribute('aria-hidden', 'true');
+}
+
+export async function openBambuFilamentEdit(printer, amsId, trayId) {
+  const conn = _bambuConns.get(bambuKey(printer));
+  if (!conn) return;
+  _bblFilEdit = { printer, amsId, trayId };
+
+  // Find existing slot data to pre-fill color & material
+  let existingTray = null;
+  if (amsId === 255) {
+    existingTray = conn.data?.externalTray ?? null;
+  } else {
+    const mod = conn.data?.ams?.[amsId];
+    existingTray = mod?.tray?.find(t => parseInt(t.id, 10) === trayId) ?? null;
+  }
+
+  const rawColor = existingTray?.color
+    ? '#' + String(existingTray.color).slice(0, 6)
+    : '#FF5722';
+  _bblSelColor = rawColor;
+
+  await _bblLoadMaterials();
+
+  // Pre-select material by tray_type match
+  const trayType = existingTray?.type || '';
+  _bblSelMat = (_bblMatCache || []).find(m => m.label === trayType)
+            || (_bblMatCache || []).find(m => m.tray_type === trayType)
+            || _bblMatCache?.[0]
+            || null;
+
+  _bblCloseColorSheet();
+  _bblCloseFilamentSheet();
+  _bblUpdateSummary();
+
+  $('bblFilEditSheet')?.classList.add('open');
+  $('bblFilEditSheet')?.setAttribute('aria-hidden', 'false');
+  $('bblFilEditBackdrop')?.classList.add('open');
+}
+
+export function closeBambuFilamentEdit() {
+  $('bblFilEditSheet')?.classList.remove('open');
+  $('bblFilEditSheet')?.setAttribute('aria-hidden', 'true');
+  $('bblFilEditBackdrop')?.classList.remove('open');
+  _bblCloseColorSheet();
+  _bblCloseFilamentSheet();
+}
+
+// ── Filament sheet event listeners ────────────────────────────────────────
+
+$('bblFilEditBackdrop')?.addEventListener('click', closeBambuFilamentEdit);
+$('bblFilEditClose')?.addEventListener('click', closeBambuFilamentEdit);
+
+$('bblColorTrigger')?.addEventListener('click', _bblOpenColorSheet);
+$('bblMaterialTrigger')?.addEventListener('click', _bblOpenFilamentSheet);
+
+$('bblColorBack')?.addEventListener('click', () => { _bblUpdateSummary(); _bblCloseColorSheet(); });
+$('bblColorClose')?.addEventListener('click', () => { _bblUpdateSummary(); _bblCloseColorSheet(); });
+$('bblFilamentBack')?.addEventListener('click', () => { _bblUpdateSummary(); _bblCloseFilamentSheet(); });
+$('bblFilamentClose')?.addEventListener('click', () => { _bblUpdateSummary(); _bblCloseFilamentSheet(); });
+
+$('bblColorGrid')?.addEventListener('click', e => {
+  const custom = e.target.closest('#bblColorCustom');
+  if (custom) { $('bblColorInput')?.click(); return; }
+  const cell = e.target.closest('.sfe-color-cell:not(.sfe-color-cell--custom)');
+  if (!cell) return;
+  _bblSelColor = cell.dataset.color || _bblSelColor;
+  _bblRenderColorGrid(_bblSelColor);
+  // Auto-close after a brief visual confirmation (same as Snapmaker)
+  setTimeout(() => { _bblUpdateSummary(); _bblCloseColorSheet(); }, 150);
+});
+
+$('bblColorInput')?.addEventListener('change', e => {
+  // Native OS picker closed — commit and return to summary
+  _bblSelColor = e.target.value;
+  _bblRenderColorGrid(_bblSelColor);
+  _bblUpdateSummary();
+  _bblCloseColorSheet();
+});
+
+$('bblColorInput')?.addEventListener('input', e => {
+  // Live preview while dragging the OS picker
+  _bblSelColor = e.target.value;
+  _bblRenderColorGrid(_bblSelColor);
+  _bblUpdateSummary();
+});
+
+$('bblMaterialList')?.addEventListener('click', e => {
+  const row = e.target.closest('[data-bbl-mat]');
+  if (!row) return;
+  try { _bblSelMat = JSON.parse(row.dataset.bblMat); } catch (_) { return; }
+  const matList = $('bblMaterialList');
+  if (matList) matList.innerHTML = _bblRenderMaterialList($('bblMatSearch')?.value || '');
+  setTimeout(() => { _bblUpdateSummary(); _bblCloseFilamentSheet(); }, 180);
+});
+
+$('bblMatSearch')?.addEventListener('input', e => {
+  const matList = $('bblMaterialList');
+  if (matList) matList.innerHTML = _bblRenderMaterialList(e.target.value);
+});
+
+$('bblFilEditSave')?.addEventListener('click', () => {
+  if (!_bblFilEdit || !_bblSelMat) return;
+  const { printer, amsId, trayId } = _bblFilEdit;
+  const conn = _bambuConns.get(bambuKey(printer));
+  if (!conn) return;
+
+  // Color: RRGGBBAA uppercase (add FF alpha)
+  const hex6 = _bblSelColor.replace('#', '').toUpperCase().slice(0, 6);
+  const trayColor = hex6 + 'FF';
+
+  const isExt = amsId === 255;
+  _publish(conn, {
+    print: {
+      sequence_id: _nextSeq(),
+      command: 'ams_filament_setting',
+      ams_id:  isExt ? 255 : amsId,
+      tray_id: isExt ? 254 : trayId,
+      slot_id: isExt ? 0   : trayId,
+      tray_color:      trayColor,
+      nozzle_temp_min: _bblSelMat.tempMin,
+      nozzle_temp_max: _bblSelMat.tempMax,
+      tray_type:       _bblSelMat.tray_type,
+      tray_info_idx:   _bblSelMat.bambuID,
+    },
+  });
+
+  // Optimistic local update
+  const d = conn.data;
+  if (isExt) {
+    if (!d.externalTray) d.externalTray = {};
+    d.externalTray.color = trayColor;
+    d.externalTray.type  = _bblSelMat.label;
+  } else {
+    const mod = d.ams?.[amsId];
+    if (mod?.tray) {
+      const slot = mod.tray.find(t => parseInt(t.id, 10) === trayId);
+      if (slot) { slot.tray_color = trayColor; slot.type = _bblSelMat.label; }
+    }
+  }
+
+  closeBambuFilamentEdit();
+});
+
 // ── Self-registration ──────────────────────────────────────────────────────
 
 registerBrand('bambulab', {

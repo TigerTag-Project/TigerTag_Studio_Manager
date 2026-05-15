@@ -20,24 +20,25 @@ const path     = require('path');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const API_BASE = 'https://api.tigertag.io/api:tigertag';
+const API_BASE    = 'https://api.tigertag.io/api:tigertag';
+const GITHUB_BASE = 'https://raw.githubusercontent.com/TigerTag-Project/TigerTag-RFID-Guide/main/database';
 
 const DATASETS = {
-  versions:           { file: 'tigertag_ids.json', endpoint: '/version/get/all',           storeAll: true  },
-  filament_materials: { file: 'materials.json',    endpoint: '/material/filament/get/all', storeAll: true  },
-  aspects:            { file: 'aspects.json',       endpoint: '/aspect/get/all',            storeAll: false },
-  types:              { file: 'types.json',          endpoint: '/type/get/all',              storeAll: false },
-  filament_diameters: { file: 'diameters.json',      endpoint: '/diameter/filament/get/all', storeAll: false },
-  brands:             { file: 'brands.json',          endpoint: '/brand/get/all',             storeAll: false },
-  measure_units:      { file: 'units.json',           endpoint: '/measure_unit/get/all',      storeAll: false },
+  versions:           { file: 'id_version.json',      endpoint: '/version/get/all',           storeAll: true  },
+  filament_materials: { file: 'id_material.json',     endpoint: '/material/filament/get/all', storeAll: true  },
+  aspects:            { file: 'id_aspect.json',       endpoint: '/aspect/get/all',            storeAll: false },
+  types:              { file: 'id_type.json',         endpoint: '/type/get/all',              storeAll: false },
+  filament_diameters: { file: 'id_diameter.json',     endpoint: '/diameter/filament/get/all', storeAll: false },
+  brands:             { file: 'id_brand.json',        endpoint: '/brand/get/all',             storeAll: false },
+  measure_units:      { file: 'id_measure_unit.json', endpoint: '/measure_unit/get/all',      storeAll: false },
 };
 
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
-const dbDir      = () => path.join(app.getPath('userData'), 'db');
+const dbDir      = () => path.join(app.getPath('userData'), 'db', 'tigertag');
 const userFile   = (f) => path.join(dbDir(), f);
-const embeddedFile = (f) => path.join(app.getAppPath(), 'assets', 'db', f);
-const metaFile   = () => path.join(dbDir(), 'db_metadata.json');
+const embeddedFile = (f) => path.join(app.getAppPath(), 'assets', 'db', 'tigertag', f);
+const metaFile   = () => path.join(app.getPath('userData'), 'db', 'tigertag', 'db_metadata.json');
 
 // ── In-memory state ───────────────────────────────────────────────────────────
 
@@ -52,11 +53,33 @@ function ensureDbDir() {
 }
 
 function loadMetadata() {
+  // 1. Try userData/db/db_metadata.json (runtime, written after each sync)
   try {
     const f = metaFile();
-    if (fs.existsSync(f)) _metadata = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (fs.existsSync(f)) {
+      _metadata = JSON.parse(fs.readFileSync(f, 'utf8'));
+      return;
+    }
   } catch (e) {
     console.warn('[DB] Failed to load metadata:', e.message);
+  }
+
+  // 2. First launch — seed from embedded assets/db/last_update.json so the
+  //    service knows the bundled id_*.json files are already at a known
+  //    timestamp and won't re-download them unnecessarily.
+  try {
+    const embedded = embeddedFile('last_update.json');
+    if (fs.existsSync(embedded)) {
+      const raw = JSON.parse(fs.readFileSync(embedded, 'utf8'));
+      // last_update.json uses { versions: ts, brands: ts, … }
+      // _metadata expects { lastUpdate_versions: ts, lastUpdate_brands: ts, … }
+      _metadata = Object.fromEntries(
+        Object.entries(raw).map(([k, v]) => [`lastUpdate_${k}`, v])
+      );
+      console.log('[DB] Seeded metadata from embedded last_update.json');
+    }
+  } catch (e) {
+    console.warn('[DB] Failed to load embedded last_update.json:', e.message);
     _metadata = {};
   }
 }
@@ -149,12 +172,20 @@ function atomicWriteJson(filename, contents) {
 
 /**
  * fetchRemoteUpdateTimestamps — GET all/last_update.
- * Returns { versions: ts, brands: ts, ... } or throws.
+ * Tries the TigerTag API first; falls back to the GitHub mirror (≤6 h stale).
+ * Returns { versions: ts, brands: ts, ... } or throws if both fail.
  */
 async function fetchRemoteUpdateTimestamps() {
-  const res = await fetch(`${API_BASE}/all/last_update`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/all/last_update`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  } catch (apiErr) {
+    console.warn('[DB] API unreachable, falling back to GitHub mirror:', apiErr.message);
+    const res = await fetch(`${GITHUB_BASE}/last_update.json`);
+    if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+    return res.json();
+  }
 }
 
 /** Returns the locally stored timestamp for a dataset key (0 if unknown). */
@@ -285,9 +316,23 @@ async function initTigerTagDB() {
 async function _downloadDataset(key) {
   const def = DATASETS[key];
   if (!def) throw new Error(`Unknown dataset key: ${key}`);
-  const res = await fetch(`${API_BASE}${def.endpoint}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
+
+  let data;
+  try {
+    // 1. Try the TigerTag API
+    const res = await fetch(`${API_BASE}${def.endpoint}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+    console.log(`[DB] Downloaded ${def.file} from API`);
+  } catch (apiErr) {
+    // 2. Fall back to GitHub mirror (at most ~6 h stale)
+    console.warn(`[DB] API failed for ${key}, trying GitHub mirror:`, apiErr.message);
+    const res = await fetch(`${GITHUB_BASE}/${def.file}`);
+    if (!res.ok) throw new Error(`GitHub HTTP ${res.status}`);
+    data = await res.json();
+    console.log(`[DB] Downloaded ${def.file} from GitHub mirror`);
+  }
+
   atomicWriteJson(def.file, data); // validates before writing
 }
 
@@ -303,6 +348,39 @@ async function _buildCache() {
       );
     }
   }
+}
+
+/**
+ * getLookups — returns all reference arrays needed by the renderer's state.db.
+ * Reads raw JSON (userData/db/ → assets/db/ fallback) so full objects are returned.
+ * Keys match the renderer convention (brand, material, aspect, type, diameter, unit, version).
+ */
+function getLookups() {
+  return {
+    brand:    loadLocalJson('id_brand.json')        || [],
+    material: loadLocalJson('id_material.json')     || [],
+    aspect:   loadLocalJson('id_aspect.json')       || [],
+    type:     loadLocalJson('id_type.json')         || [],
+    diameter: loadLocalJson('id_diameter.json')     || [],
+    unit:     loadLocalJson('id_measure_unit.json') || [],
+    version:  loadLocalJson('id_version.json')      || [],
+  };
+}
+
+/** Returns all filament materials that have a Bambu Lab bambuID, sorted alphabetically by label. */
+function getBambuMaterials() {
+  const all = Object.values(_cache.filament_materials || {});
+  return all
+    .filter(m => m?.metadata?.bambuID)
+    .sort((a, b) => (a.label || '').localeCompare(b.label || ''))
+    .map(m => ({
+      id: m.id,
+      label: m.label || '',
+      tray_type: m.material_type || m.label || '',
+      bambuID: m.metadata.bambuID,
+      tempMin: m.recommended?.nozzleTempMin ?? 190,
+      tempMax: m.recommended?.nozzleTempMax ?? 240,
+    }));
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
@@ -321,4 +399,6 @@ module.exports = {
   getLabel,
   getMaterialLabel,
   getPublicKeyForId,
+  getBambuMaterials,
+  getLookups,
 };
