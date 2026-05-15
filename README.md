@@ -7,14 +7,13 @@ Manage your spool inventory, connect your 3D printers, and keep everything in sy
 
 <br>
 
-[![Download](https://img.shields.io/github/v/release/TigerTag-Project/TigerTag-Studio-Manager?label=Download%20latest&style=for-the-badge&color=FF6B00&logo=github)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
+[![Download for macOS](https://img.shields.io/badge/macOS-Download_.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
+[![Download for Windows](https://img.shields.io/badge/Windows-Download_.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
+[![Download for Linux](https://img.shields.io/badge/Linux-Download_.AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
 
-| 🍎 macOS | 🪟 Windows | 🐧 Linux |
-|:---:|:---:|:---:|
-| `.dmg` — Intel + Apple Silicon | `.exe` — NSIS installer | `.AppImage` |
-| ✅ Signed & Notarized | ✅ Signed | — |
+[![Latest release](https://img.shields.io/github/v/release/TigerTag-Project/TigerTag-Studio-Manager?label=Latest&color=FF6B00)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
 
-*No installation knowledge required — just download and open.*
+*Intel + Apple Silicon · Signed & Notarized on macOS · No installation knowledge required.*
 
 <br>
 
