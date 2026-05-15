@@ -9,9 +9,23 @@ Manage your spool inventory, connect your 3D printers, and keep everything in sy
 
 <br>
 
-[![Download for macOS](https://img.shields.io/badge/macOS-Download_.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
-[![Download for Windows](https://img.shields.io/badge/Windows-Download_.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
-[![Download for Linux](https://img.shields.io/badge/Linux-Download_.AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
+<a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
+  <img src="https://img.shields.io/badge/macOS-%E2%AC%87%20Download%20.dmg-000000?style=for-the-badge&logo=apple&logoColor=white" height="56" alt="Download for macOS">
+</a>
+
+<br><br>
+
+<a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
+  <img src="https://img.shields.io/badge/Windows-%E2%AC%87%20Download%20.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="56" alt="Download for Windows">
+</a>
+
+<br><br>
+
+<a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
+  <img src="https://img.shields.io/badge/Linux-%E2%AC%87%20Download%20.AppImage-E95420?style=for-the-badge&logo=linux&logoColor=white" height="56" alt="Download for Linux">
+</a>
+
+<br><br>
 
 [![Latest release](https://img.shields.io/github/v/release/TigerTag-Project/TigerTag-Studio-Manager?label=Latest&color=FF6B00)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
 
