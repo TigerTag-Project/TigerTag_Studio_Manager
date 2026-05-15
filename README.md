@@ -1,17 +1,29 @@
+<div align="center">
+
 # Tiger Studio Manager
 
-> Desktop companion for the [TigerTag](https://tigertag.io) RFID filament-tracking ecosystem.
-> Manage your spool inventory, connect your 3D printers, and keep everything in sync — across devices, across accounts, across friends.
+**Desktop companion for the [TigerTag](https://tigertag.io) RFID filament-tracking ecosystem.**<br>
+Manage your spool inventory, connect your 3D printers, and keep everything in sync — across devices, accounts, and friends.
 
-### ⬇ [Download the latest version](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
-> **macOS** (Intel + Apple Silicon) · **Windows** · **Linux** — no installation knowledge required.
+<br>
 
----
+[![Download](https://img.shields.io/github/v/release/TigerTag-Project/TigerTag-Studio-Manager?label=Download%20latest&style=for-the-badge&color=FF6B00&logo=github)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
+
+| 🍎 macOS | 🪟 Windows | 🐧 Linux |
+|:---:|:---:|:---:|
+| `.dmg` — Intel + Apple Silicon | `.exe` — NSIS installer | `.AppImage` |
+| ✅ Signed & Notarized | ✅ Signed | — |
+
+*No installation knowledge required — just download and open.*
+
+<br>
 
 [![Build & Release](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/actions/workflows/build.yml/badge.svg)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-41-blue)](https://www.electronjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-24-green)](https://nodejs.org/)
+
+</div>
 
 ---
 
