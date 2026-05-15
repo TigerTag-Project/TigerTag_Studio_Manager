@@ -10,19 +10,19 @@ Manage your spool inventory, connect your 3D printers, and keep everything in sy
 <br>
 
 <a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
-  <img src="https://img.shields.io/badge/macOS-%E2%AC%87%20Download%20.dmg-000000?style=for-the-badge&logo=apple&logoColor=white" height="56" alt="Download for macOS">
+  <img src="assets/svg/download_macos.svg" width="420" height="72" alt="Download for macOS">
 </a>
 
 <br><br>
 
 <a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
-  <img src="https://img.shields.io/badge/Windows-%E2%AC%87%20Download%20.exe-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="56" alt="Download for Windows">
+  <img src="assets/svg/download_windows.svg" width="420" height="72" alt="Download for Windows">
 </a>
 
 <br><br>
 
 <a href="https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest">
-  <img src="https://img.shields.io/badge/Linux-%E2%AC%87%20Download%20.AppImage-E95420?style=for-the-badge&logo=linux&logoColor=white" height="56" alt="Download for Linux">
+  <img src="assets/svg/download_linux.svg" width="420" height="72" alt="Download for Linux">
 </a>
 
 <br><br>
