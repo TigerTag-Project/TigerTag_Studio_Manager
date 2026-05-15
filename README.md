@@ -17,12 +17,16 @@
 
 ## What is it?
 
-Tiger Studio Manager is an Electron desktop app that bridges your physical 3D-printing filament collection with the TigerTag cloud. Scan a spool's NFC chip, see its full profile (material, color, weight, print settings), update its weight on the scale, and push filament data directly to your connected printers — all in one window.
+**[TigerTag](https://tigertag.io)** is an open RFID standard for tracking 3D-printing filament spools. Each spool carries an NFC chip with its full profile — brand, material, color, print settings — readable by any compatible app or reader. The ecosystem includes the mobile app, an open-source scale, a color sensor, and this desktop companion.
+
+Tiger Studio Manager is an Electron desktop app that bridges your physical filament collection with the TigerTag cloud. Scan a spool's NFC chip, see its full profile (material, color, weight, print settings), update its weight on the scale, and push filament data directly to your connected printers — all in one window.
 
 It works standalone (no reader needed), but unlocks its full potential with:
 - an **ACR122U NFC reader** for automatic spool identification on scan
 - a **TigerScale** ESP32 scale for live weight tracking
 - one or more **3D printers** from the 5 supported brands
+
+> 🌐 **[tigertag.io](https://tigertag.io)** — official website: buy TigerTag chips, browse the filament catalogue, manage your account.
 
 ---
 
