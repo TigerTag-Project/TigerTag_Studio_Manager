@@ -454,6 +454,7 @@
   "snapJobElapsed": "Decorrido",
   "snapJobNoActive": "Sem impressão ativa",
   "snapState_standby": "Em espera",
+  "snapState_idle": "Inativo",
   "snapState_printing": "A imprimir",
   "snapState_paused": "Em pausa",
   "snapState_complete": "Concluído",

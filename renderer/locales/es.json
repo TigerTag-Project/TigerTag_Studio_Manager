@@ -442,6 +442,7 @@
   "snapJobElapsed": "Transcurrido",
   "snapJobNoActive": "Sin impresión activa",
   "snapState_standby": "En espera",
+  "snapState_idle": "Inactivo",
   "snapState_printing": "Imprimiendo",
   "snapState_paused": "Pausado",
   "snapState_complete": "Completo",

@@ -442,6 +442,7 @@
   "snapJobElapsed": "已用时",
   "snapJobNoActive": "无打印任务",
   "snapState_standby": "待机",
+  "snapState_idle": "空闲",
   "snapState_printing": "打印中",
   "snapState_paused": "已暂停",
   "snapState_complete": "完成",

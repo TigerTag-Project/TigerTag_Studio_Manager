@@ -453,6 +453,7 @@
   "snapJobElapsed": "Czas",
   "snapJobNoActive": "Brak aktywnego druku",
   "snapState_standby": "Gotowy",
+  "snapState_idle": "Bezczynny",
   "snapState_printing": "Drukuje",
   "snapState_paused": "Wstrzymany",
   "snapState_complete": "Ukończony",
