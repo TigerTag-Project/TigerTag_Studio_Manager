@@ -2,12 +2,12 @@
 
 > Desktop application to manage your 3D printing filament inventory via NFC RFID tags and your TigerTag account.
 
-### ⬇ [Download the latest version](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/releases/latest)
+### ⬇ [Download the latest version](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/releases/latest)
 > Available for **macOS** · **Windows** · **Linux** — no installation knowledge required.
 
 ---
 
-[![Build & Release](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/actions/workflows/build.yml/badge.svg)](https://github.com/TigerTag-Project/TigerTag_Studio_Manager/actions/workflows/build.yml)
+[![Build & Release](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/actions/workflows/build.yml/badge.svg)](https://github.com/TigerTag-Project/TigerTag-Studio-Manager/actions/workflows/build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-41-blue)](https://www.electronjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-24-green)](https://nodejs.org/)
@@ -52,6 +52,25 @@
 ---
 
 ## Changelog
+
+### v1.7.0 — 2026-05-15
+
+#### DB pipeline — unified reference data layer
+- **`tigertagDbService`** is now the single source of truth for all TigerTag reference JSON files (brands, materials, aspects, types, diameters, units, versions). The renderer loads these via IPC (`window.electronAPI.db.getLookups()`) instead of direct `fetch()` calls, so both the inventory view and the live printer integrations draw from the same data.
+- **`assets/db/tigertag/`** — reference files relocated from `data/id_*.json` to `assets/db/tigertag/id_*.json` (official TigerTag naming). A `last_update.json` timestamp file is bundled alongside them so the app knows the embedded data's age from day one.
+- **GitHub mirror fallback** — `tigertagDbService` now tries the TigerTag API first; if it is unreachable it automatically falls back to the auto-synced GitHub mirror (≤ 6 h stale). Offline users still get their last cached copy from `userData/db/tigertag/`.
+- **Atomic writes with JSON validation** — every dataset is validated (non-empty array, each entry has `id`) before it overwrites the local cache file. A truncated or malformed API response is rejected; the previous good file is kept intact.
+- **First-launch seed** — on a fresh install `tigertagDbService` reads `last_update.json` bundled in `assets/db/tigertag/` and seeds the metadata store so the app skips unnecessary network downloads for data that shipped with the installer.
+
+#### Bambu Lab — filament edit sheet redesign
+- **ISO layout** — the Bambu filament edit bottom-sheet now matches the Snapmaker / FlashForge / Elegoo design: two rows only (Filament + Color), no summary bar, no close ✕ button, no horizontal separators.
+- **Auto-close on color select** — picking a color from the preset grid or the OS color picker closes the color sub-sheet automatically (150 ms delay, same behavior as other brands).
+- **Title corrected** — sheet is now labeled "Edit filament" (`snapFilEditTitle` key) instead of the previous "Change filament".
+
+#### i18n
+- Added **`snapState_idle`** key across all 9 locales (EN/FR/DE/ES/IT/ZH/PT/PT-PT/PL) — resolves the raw-key label that was showing in the Bambu Lab printer state badge.
+
+---
 
 ### v1.6.0 — 2026-05-14
 

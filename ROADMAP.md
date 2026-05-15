@@ -58,6 +58,9 @@ Grouped by domain. Versions in parentheses are the release that landed the featu
 - ✅ **Empty-spool handling** — visible in unranked, excluded from counts (v1.4.8)
 - ✅ Press-and-hold (1.2 s) for destructive rack ops (Clear all / Delete) (v1.4+)
 
+### Data layer
+- ✅ **`tigertagDbService` — unified reference data layer** — single IPC service for all TigerTag lookup tables (brands, materials, aspects, types, diameters, units, versions). Renderer loads via `window.electronAPI.db.getLookups()`; no direct `fetch()` to JSON files. API → GitHub mirror (≤6 h stale) → `userData/db/tigertag/` → `assets/db/tigertag/` fallback chain. Atomic writes with JSON validation before overwrite. First-launch metadata seeding from `assets/db/tigertag/last_update.json`. (v1.7.0)
+
 ### 3D printer integration
 - ✅ **Per-brand subcollections** under `users/{uid}/printers/{brand}/devices/{id}`
 - ✅ **5 brands wired** in the brand picker: Bambu Lab · Creality · Elegoo · FlashForge · Snapmaker
@@ -76,7 +79,7 @@ Grouped by domain. Versions in parentheses are the release that landed the featu
 - ✅ **FlashForge live integration** — HTTP polling port 8898, MJPEG camera, 5-slot matlStation grid (`Ext.` + `1A`–`1D`), click-to-edit per slot via HTTP API (v1.4.x)
 - ✅ **Creality live integration** — WebSocket port 9999, heartbeat, live temps, CFS colour grid, WebRTC camera (v1.4.15)
 - ✅ **Elegoo live integration** — MQTT port 1883, UDP discovery port 52700; job card, temp card, mono + 4-slot Canvas filament card, control card (XY circle jog pad + Z pill + X/Y home pill + fans + LED + files button), filament edit sheet (colour + material + vendor pickers), Files/History sheet, camera; surgical DOM patch on control card to eliminate MQTT-tick flash (v1.6.0)
-- ✅ **Bambu Lab live integration** — MQTTS port 8883 TLS, LAN mode; job card, temp card, AMS filament grid (Ext. + module rows), camera widget, online badge (v1.6.0)
+- ✅ **Bambu Lab live integration** — MQTTS port 8883 TLS, LAN mode; job card, temp card, AMS filament grid (Ext. + module rows), camera widget, online badge (v1.6.0); filament edit bottom-sheet redesigned ISO with Snapmaker/Elegoo/FlashForge (2 rows, auto-close on color pick, "Edit filament" title) (v1.7.0)
 
 ### Sensors & devices
 - ✅ **ACR122U NFC reader** (USB) via `nfc-pcsc` — `main.js` ↔ renderer IPC bridge
