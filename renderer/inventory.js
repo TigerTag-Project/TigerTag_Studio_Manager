@@ -496,9 +496,6 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
       if (lookups && Object.values(lookups).some(v => Array.isArray(v) && v.length > 0)) {
         Object.assign(state.db, lookups);
         ipcOk = true;
-        console.log('[loadLookups] IPC OK — brand:', state.db.brand.length, 'material:', state.db.material.length);
-      } else {
-        console.warn('[loadLookups] IPC returned empty or null:', lookups);
       }
     } catch (e) {
       console.warn('[loadLookups] IPC failed:', e);
@@ -519,24 +516,11 @@ import { elgFanStep } from './printers/elegoo/widget_control.js';
       await Promise.all(files.map(async ([f, key]) => {
         try {
           const r = await fetch(`../assets/db/tigertag/${f}`);
-          if (r.ok) {
-            state.db[key] = await r.json();
-            console.log(`[loadLookups] fetch OK — ${key}: ${state.db[key].length} entries`);
-          } else {
-            console.warn(`[loadLookups] fetch failed ${f}: HTTP ${r.status}`);
-          }
-        } catch (e) {
-          console.warn(`[loadLookups] fetch error ${f}:`, e);
-        }
+          if (r.ok) state.db[key] = await r.json();
+        } catch {}
       }));
     }
 
-    // Diagnostic: log the first brand ID so we can compare with Firestore
-    if (state.db.brand.length) {
-      console.log('[loadLookups] brand[0]:', JSON.stringify(state.db.brand[0]));
-    } else {
-      console.error('[loadLookups] state.db.brand is EMPTY after all attempts');
-    }
     try {
       const r = await fetch('../data/container_spool/spools_filament.json');
       if (r.ok) state.db.containers = await r.json();
