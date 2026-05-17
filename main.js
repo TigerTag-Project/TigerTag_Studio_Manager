@@ -89,6 +89,10 @@ let imgCacheDir;
 
 let mainWindow;
 
+// NFC state — replayed to renderer on every (re)load
+const _nfcReaders     = new Map();  // name → reader object
+const _nfcCardPresent = new Map();  // name → { uid, rawUid }
+
 // ── Convert hex UID (e.g. "1D895E7C004A80") to decimal string used by TigerTag
 function hexToDecimalUid(hex) {
   try {
@@ -97,6 +101,9 @@ function hexToDecimalUid(hex) {
     return hex;
   }
 }
+
+// ── TigerTag binary parser (isolated module) ──────────────────────────────────
+const { parseTigerTag } = require('./renderer/rfid_protocol/tigertag/parser.js');
 
 // ── Create main window
 function createWindow() {
@@ -154,9 +161,9 @@ function createWindow() {
 
 // ── NFC / RFID reader
 function initNFC() {
-  let NFC, nfc;
+  let nfc;
   try {
-    NFC = require('nfc-pcsc');
+    const { NFC } = require('nfc-pcsc');  // named export, not the module object
     nfc = new NFC();
   } catch (err) {
     console.warn('[NFC] not available:', err.message);
@@ -164,45 +171,61 @@ function initNFC() {
   }
 
   nfc.on('reader', (reader) => {
-    console.log(`[NFC] Reader connected: ${reader.name}`);
-    mainWindow?.webContents.send('reader-status', {
-      connected: true,
-      name: reader.name,
-    });
+    const rName = reader.name;
+    console.log(`[NFC] Reader connected: ${rName}`);
+    _nfcReaders.set(rName, reader);
+    mainWindow?.webContents.send('rfid-reader-update', { name: rName, connected: true });
 
     reader.on('card', (card) => {
-      const rawUid = card.uid;                    // hex string e.g. "1d895e7c004a80"
-      const uid    = hexToDecimalUid(rawUid);     // decimal e.g. "8307741719072896"
-      console.log(`[NFC] Card detected — raw: ${rawUid}  →  uid: ${uid}`);
+      const rawUid = card.uid;
+      const uid    = hexToDecimalUid(rawUid);
+      console.log(`[NFC] Card present on ${rName} — uid: ${uid}`);
+      _nfcCardPresent.set(rName, { uid, rawUid });
+      // Notify inventory for automatic spool lookup
       mainWindow?.webContents.send('rfid-uid', uid, rawUid);
+      // Notify RFID tester modal — card present, not yet read
+      mainWindow?.webContents.send('rfid-card-present', { readerName: rName, uid, rawUid });
     });
 
     reader.on('card.off', () => {
-      console.log('[NFC] Card removed');
+      console.log(`[NFC] Card removed from ${rName}`);
+      _nfcCardPresent.delete(rName);
+      mainWindow?.webContents.send('rfid-card-present', { readerName: rName, uid: null, rawUid: null });
     });
 
     reader.on('error', (err) => {
-      console.error('[NFC] Reader error:', err.message);
+      console.error(`[NFC] Reader error on ${rName}:`, err.message);
     });
 
     reader.on('end', () => {
-      console.log(`[NFC] Reader disconnected: ${reader.name}`);
-      mainWindow?.webContents.send('reader-status', {
-        connected: false,
-        name: reader.name,
-      });
+      console.log(`[NFC] Reader disconnected: ${rName}`);
+      _nfcReaders.delete(rName);
+      _nfcCardPresent.delete(rName);
+      mainWindow?.webContents.send('rfid-reader-update', { name: rName, connected: false });
     });
   });
 
   nfc.on('error', (err) => {
     console.error('[NFC] NFC error:', err.message);
-    mainWindow?.webContents.send('reader-status', {
-      connected: false,
-      name: null,
-      error: err.message,
-    });
   });
 }
+
+// On-demand card read — called by renderer "Read" button in RFID tester
+ipcMain.handle('rfid:read-now', async (_evt, readerName) => {
+  const reader = _nfcReaders.get(readerName);
+  if (!reader)                         return { ok: false, error: 'Reader not connected' };
+  const card = _nfcCardPresent.get(readerName);
+  if (!card)                           return { ok: false, error: 'No card present' };
+  try {
+    const data      = await reader.read(0, 180, 4);  // 45 pages × 4 bytes
+    const rawPagesHex = data.toString('hex');
+    const tigerTag  = parseTigerTag(data);
+    console.log('[NFC] read-now result:', tigerTag ? tigerTag.version : 'unknown format');
+    return { ok: true, uid: card.uid, rawUid: card.rawUid, rawPagesHex, tigerTag };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 
 // ── TD1S color sensor ────────────────────────────────────────────────────────
@@ -266,6 +289,13 @@ function initTD1S() {
     mainWindow.webContents.send('td1s-status', currentStatus);
     if (currentTd !== null) {
       mainWindow.webContents.send('td1s-data', { TD: currentTd, HEX: currentHex });
+    }
+    // Replay NFC reader + card state — needed when reader was already connected at startup
+    for (const name of _nfcReaders.keys()) {
+      mainWindow.webContents.send('rfid-reader-update', { name, connected: true });
+    }
+    for (const [name, card] of _nfcCardPresent.entries()) {
+      mainWindow.webContents.send('rfid-card-present', { readerName: name, uid: card.uid, rawUid: card.rawUid });
     }
   });
 
@@ -1126,6 +1156,38 @@ ipcMain.handle('db:getAllLastUpdateTimestamps', ()         => db.getAllLastUpdat
 ipcMain.handle('db:isUpdateAvailable',       ()           => db.isUpdateAvailable());
 ipcMain.handle('db:updateIfNeeded',          ()           => db.updateIfNeeded());
 ipcMain.handle('db:downloadAndSaveLatestData', ()         => db.downloadAndSaveLatestData());
+
+// ── Timelapse download ───────────────────────────────────────────────────────
+// Shows a native Save dialog then streams the video from the printer over HTTP.
+ipcMain.handle('timelapse:download', async (_evt, videoUrl, suggestedFilename) => {
+  const defaultName = suggestedFilename || 'timelapse.mp4';
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Timelapse',
+    defaultPath: path.join(app.getPath('downloads'), defaultName),
+    filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+  });
+  if (canceled || !filePath) return { ok: false, reason: 'cancelled' };
+
+  return new Promise((resolve) => {
+    const dest = fs.createWriteStream(filePath);
+    const cleanup = (err) => {
+      dest.destroy();
+      try { fs.unlinkSync(filePath); } catch (_) {}
+      resolve({ ok: false, reason: err?.message || 'error' });
+    };
+    // URL is: http://<ip>/download?X-Token=<pwd>&file_name=<encoded_path>
+    // Pass the full URL string directly — no path manipulation needed.
+    http.get(videoUrl, { timeout: 30000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        return cleanup(new Error(`HTTP ${res.statusCode}`));
+      }
+      res.pipe(dest);
+      dest.on('finish', () => { dest.close(); resolve({ ok: true, path: filePath }); });
+      dest.on('error', cleanup);
+    }).on('error', cleanup).on('timeout', function() { this.destroy(); cleanup(new Error('timeout')); });
+  });
+});
 
 // ── Elegoo MQTT bridge ───────────────────────────────────────────────────────
 // Each connected printer gets its own mqtt.Client stored in _elegooClients.

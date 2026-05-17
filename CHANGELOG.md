@@ -5,6 +5,30 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## v1.7.1 — 2026-05-17
+
+### Printer grid & table — live status and progress
+
+- **Status pills in grid cards and table** — every connected printer now shows its live state (Idle, Printing, Paused, Preparing, Complete, Error, …) directly in the grid card and table row without opening the sidecard. Offline printers show nothing; connected-but-idle printers show a muted grey pill; active jobs show the progress bar + `XX% · 1h 23m`.
+- **ISO visual style** — the state pills in cards and table use the exact same `snap-job-state snap-job-state--{state}` classes as the sidecard, scaled via `.snap-job-state--compact`. Spinning ring animation on `printing` and `preparing`, colour-coded per state (blue=printing, amber=paused/preparing, green=complete/finished, red=error/failed, grey=idle/standby/ready).
+- **Online badge pill** in grid cards now matches the sidecard pill: rounded background + coloured border (green for online, amber for connecting, grey for offline).
+- **Filename + remaining time** — when a job is active, the truncated filename appears below the progress bar and remaining time is shown alongside the percentage (`42% · 1h 23m`). BambuLab, Elegoo, and Creality expose remaining time; all brands expose the filename when printing.
+- **Cross-brand normalisation** — `_getPrinterJob` now returns a uniform `{ state, pct, isActive, filename, remainSec }` for all five brands. Creality's numeric `d.state` is normalised to `idle`/`printing`/`complete`; remaining time converted from brand-specific units (BambuLab minutes, Elegoo ms, Creality seconds).
+- **New i18n keys** across all 9 locales: `snapState_finished`, `snapState_preparing`, `snapState_failed`, `snapState_ready`.
+
+### Printer grid — Online/Offline partition fix (all brands)
+
+- **Root cause**: `ctx.onPrinterGridChange` referenced `_printerSub`, a `const` scoped inside `renderPrintersView()`. In strict mode (ES modules) this threw a silent `ReferenceError` on every RAF tick, swallowing the re-partition call — printers that connected after the initial render were stuck in the Offline section indefinitely. Fixed: `state.viewMode !== "printer-cam"`.
+- **RAF coalescing race** (all 4 brand drivers): the shared RAF flag for `statusChanged=true` (re-partition) and `statusChanged=false` (surgical job patch) could block the connected-status RAF on a fast LAN. Fixed by splitting into two independent flags (`_xxxStatusRaf` / `_xxxGridRaf`) per brand.
+
+### Camera improvements
+
+- **Cam wall card → click → sidecard** — clicking any camera wall card opens the sidecard for that printer. CSS `cursor: pointer` + `border-color` hover feedback on `.cam-wall-card`.
+- **FlashForge MJPEG multiplexer** (`cam_mux.js`) — a single `fetch()` reads the MJPEG stream and distributes JPEG frames to all registered `<img>` consumers (cam wall + sidecard simultaneously) with zero extra connections. Respects FlashForge's 1-client limit. Stream auto-stops when the last consumer unregisters.
+- **Creality camera persistence** — `_activeIp` tracking prevents redundant WebRTC restarts on WS reconnect. `#creCamContainer` persists in the DOM; `.cre-cam-hidden` toggled by CSS instead of DOM removal.
+
+---
+
 ## v1.7.0 — 2026-05-15
 
 ### DB pipeline — unified reference data layer

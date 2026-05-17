@@ -24,3 +24,8 @@
   border-radius: 0;
   object-fit: contain;
 }
+
+/* Hidden camera container — applied when the printer is offline.
+   The <video> element stays in the DOM so the WebRTC session is never
+   torn down by a panel rebuild; only the visibility changes. */
+.cre-cam-hidden { display: none; }

@@ -33,29 +33,32 @@ function _modelName(p) {
 }
 
 /**
- * Build the MJPEG URL with a per-session cache-buster.
- * A new camSession is stamped each time the side-panel opens, so the browser
- * never reuses a held-open connection from a previous view.
+ * Returns the raw MJPEG URL from the printer's /detail response.
+ * The mux controls the connection lifecycle so no cache-busting is needed.
  * Returns null if the camera URL is missing.
  */
-function _bustedUrl(conn) {
-  const url = conn?.data?.camera?.url || null;
-  if (!url) return null;
-  return conn.camSession
-    ? (url + (url.includes("?") ? "&" : "?") + "_=" + conn.camSession)
-    : url;
+function _camUrl(conn) {
+  return conn?.data?.camera?.url || null;
 }
 
 /**
- * Inner content — two branches:
- *   • healthy  → MJPEG <img> streaming live
+ * Returns the MJPEG URL for a printer (for use by the mux / inventory.js).
+ * Returns null when unavailable.
+ */
+export function ffgCamBaseUrl(p) {
+  return _camUrl(ffgGetConn(ffgKey(p)));
+}
+
+/**
+ * Inner content for the sidecard — two branches:
+ *   • healthy  → <img> whose src is driven by the MJPEG mux (no src attr here)
  *   • fallback → static hero photo + error overlay + Retry button
  *
  * The host wrapper (#ffgCamHost) is built by the caller; this helper
  * only produces what goes INSIDE so ffgRefreshCamBanner() can swap it
  * in place without rebuilding the whole panel body.
  */
-function _renderInner(p, busted) {
+function _renderInner(p) {
   const conn = ffgGetConn(ffgKey(p));
   if (conn?.camFailed) {
     const heroImgUrl = _heroUrl(p);
@@ -78,12 +81,10 @@ function _renderInner(p, busted) {
         </div>
       </div>`;
   }
+  // src is left empty — the MJPEG mux sets it via blob: URL for each frame.
   return `
-    <img class="ffg-camera-img"
-         src="${ctx.esc(busted)}"
+    <img id="ffgCamSideImg" class="ffg-camera-img"
          alt="${ctx.esc(ctx.t("ffgCameraAlt"))}"
-         loading="lazy"
-         referrerpolicy="no-referrer"
          onload="var h=this.closest('.pp-cam-loading');if(h){h.classList.remove('pp-cam-loading');h.querySelector('.pp-cam-loading-overlay')?.remove();}"/>
     <div class="pp-cam-loading-overlay">
       <span class="pp-cam-loading-dots">
@@ -108,13 +109,31 @@ export function renderFfgCamBanner(p) {
   const conn    = ffgGetConn(ffgKey(p));
   if (!conn) return "";
   const enabled = !!(conn?.data?.camera?.enabled);
-  const busted  = _bustedUrl(conn);
-  if (!busted || !enabled || conn?.status !== "connected") return "";
+  const url     = _camUrl(conn);
+  if (!url || !enabled || conn?.status !== "connected") return "";
   // pp-cam-loading removed by img onload; not added for error/fallback branch.
   const loadingCls = conn.camFailed ? "" : " pp-cam-loading";
   return `
     <div id="ffgCamHost" class="pp-cam-full ffg-cam-host${loadingCls}">
-      ${_renderInner(p, busted)}
+      ${_renderInner(p)}
+    </div>`;
+}
+
+/**
+ * Returns the camera HTML for a cam-wall card — img has data-ffg-cam-key so
+ * inventory.js can register it with the mux after host.innerHTML.
+ * Returns "" when the printer is offline or camera is disabled.
+ */
+export function renderFfgCamWallBanner(p) {
+  const conn    = ffgGetConn(ffgKey(p));
+  if (!conn) return "";
+  const enabled = !!(conn?.data?.camera?.enabled);
+  const url     = _camUrl(conn);
+  if (!url || !enabled || conn?.status !== "connected") return "";
+  return `
+    <div class="pp-cam-full ffg-cam-host">
+      <img class="ffg-camera-img" data-ffg-cam-key="${ctx.esc(ffgKey(p))}"
+           alt="${ctx.esc(ctx.t("ffgCameraAlt"))}"/>
     </div>`;
 }
 
@@ -130,14 +149,13 @@ export function ffgRefreshCamBanner() {
   if (!host) return;
   const conn    = ffgGetConn(ffgKey(activePrinter));
   const enabled = !!(conn?.data?.camera?.enabled);
-  const busted  = _bustedUrl(conn);
-  if (!busted || !enabled || conn?.status !== "connected") {
+  const url     = _camUrl(conn);
+  if (!url || !enabled || conn?.status !== "connected") {
     host.style.display = "none";
     return;
   }
   host.style.display = "";
-  // Re-add loading state while the new MJPEG connection is establishing.
   if (!conn.camFailed) host.classList.add("pp-cam-loading");
   else                 host.classList.remove("pp-cam-loading");
-  host.innerHTML = _renderInner(activePrinter, busted);
+  host.innerHTML = _renderInner(activePrinter);
 }

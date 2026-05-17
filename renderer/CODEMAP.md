@@ -135,9 +135,13 @@ L…            Add-printer flow (mDNS → port-scan → Add by IP → manual pr
 | 5104-5122 | **Scales** subscription (TigerScale heartbeat, 90 s online threshold) | `subscribeScales` |
 | 5123-5215 | **3D printers** subscription — per-brand subcollections (`users/{uid}/printers/{brand}/devices`) | `subscribePrinters` |
 | 5216-5224 | Brand metadata (label + accent + connection hint) | |
-| 5225-5361 | Render 3D printers in main panel | `renderPrintersView` |
-| 5362-5462 | Printer drag & drop reordering (writes `sortIndex`) | |
-| 5463-5532 | **Printer detail side panel** — open/close lifecycle, `renderCamBanner(p)` dispatch to per-brand `widget_camera.js` | `openPrinterDetail`, `closePrinterDetail`, `refreshOpenPrinterDetail`, `renderCamBanner` |
+| 7055-7100 | **Job status helpers** — `_getPrinterJob` returns `{ state, pct, isActive, filename, remainSec }` for all connected printers; `_fmtRemain`, `_truncFilename` | `_getPrinterJob`, `_fmtRemain`, `_truncFilename` |
+| 7101-7146 | **Surgical grid patch** — `_patchGridJobs` updates `.printer-card-job` in-place without replacing the card; `_jobCardHtml` renders ISO state pill + bar | `_patchGridJobs`, `_jobCardHtml` |
+| 7147-7342 | **Grid view** — `renderPrintersView`: auto-connect all brands, online/offline partition, `_makeCard` with ISO status pill + job block, drag-drop wiring | `renderPrintersView`, `_makeCard` |
+| 7346-7474 | **Table view** — `_renderPrinterTable`: sortable columns, same ISO state pill in job cell, row click → sidecard | `_renderPrinterTable` |
+| 7475-7568 | **Cam wall view** — `_renderPrinterCam`: card click → `openPrinterDetail`, MJPEG mux register for FlashForge | `_renderPrinterCam` |
+| 7569-7672 | Printer drag & drop reordering (writes `sortIndex`) | `wirePrinterDnd` |
+| 7673-7850 | **Printer detail side panel** — open/close lifecycle, `renderCamBanner(p)` dispatch to per-brand `widget_camera.js` | `openPrinterDetail`, `closePrinterDetail`, `refreshOpenPrinterDetail`, `renderCamBanner` |
 
 ---
 
@@ -349,6 +353,7 @@ Most common navigation tasks → start here:
 - **CSS**: split into 9 themed files under `renderer/css/` (`00-base.css` → `70-detail-misc.css`, plus `55-creality.css`). When this file references a UI section, the corresponding styles live in the matching CSS module.
 - **Per-brand camera widgets**: each printer folder has a `widget_camera.js` that owns all camera HTML + lifecycle for that brand. `inventory.js` calls `renderCamBanner(p)` which dispatches to the right widget — it never builds camera HTML inline. To add a new brand: create `printers/<brand>/widget_camera.js`, export `render<Brand>CamBanner(p)`, add a `case` in `renderCamBanner`. CSS goes in a matching `renderer/css/5X-<brand>.css`.
   - `printers/snapmaker/widget_camera.js` → `renderSnapCamBanner` — iframe Crowsnest WebRTC (port 80)
-  - `printers/creality/widget_camera.js` → `renderCreCamBanner`, `startCreCam`, `stopCreCam` — direct RTCPeerConnection + `<video>` (port 8000); CSS in `55-creality.css`
-  - `printers/flashforge/widget_camera.js` → `renderFfgCamBanner`, `ffgRefreshCamBanner` — MJPEG `<img>` with error/retry (port 8898)
+  - `printers/creality/widget_camera.js` → `renderCreCamBanner`, `startCreCam`, `stopCreCam` — direct RTCPeerConnection + `<video>` (port 8000); `_activeIp` guard prevents restart on WS reconnect; CSS in `55-creality.css`
+  - `printers/flashforge/widget_camera.js` → `renderFfgCamBanner`, `renderFfgCamWallBanner`, `ffgRefreshCamBanner`, `ffgCamBaseUrl` — MJPEG sidecard/cam-wall banners (no src on `<img>` — mux provides frames)
+  - `printers/flashforge/cam_mux.js` → `ffgMuxStart`, `ffgMuxStop`, `ffgMuxStopAll`, `ffgMuxRestart`, `ffgMuxRegister`, `ffgMuxUnregister` — single `fetch()` MJPEG multiplexer; distributes JPEG blob URLs to all `<img>` consumers; auto-stops when last consumer unregisters
 - **Line numbers will drift** as the file changes. If a range looks wrong, grep for the anchor function name rather than trusting the L-number.

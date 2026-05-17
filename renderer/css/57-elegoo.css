@@ -177,6 +177,114 @@
   background: var(--primary-hover);
 }
 
+/* Timelapse download button — sits left of the print button in history rows.
+   Uses the same shape as .elg-fs-print-btn but with a neutral tint. */
+.elg-fs-dl-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background .1s, border-color .1s, color .1s;
+  opacity: 0;
+  pointer-events: none;
+}
+.cre-file-row:hover .elg-fs-dl-btn,
+.elg-fs-dl-btn--always {
+  opacity: 1;
+  pointer-events: auto;
+}
+.elg-fs-dl-btn .icon {
+  background-color: var(--muted);
+  height: 13px;
+  aspect-ratio: 1 / 1;
+  -webkit-mask-image: url('../../assets/svg/icons/icon_download.svg');
+          mask-image: url('../../assets/svg/icons/icon_download.svg');
+  -webkit-mask-size: contain;
+          mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+          mask-position: center;
+  transition: background-color .1s;
+}
+.elg-fs-dl-btn:hover {
+  background: rgba(99, 179, 237, .15);
+  border-color: #63b3ed;
+  color: #63b3ed;
+}
+.elg-fs-dl-btn:hover .icon {
+  background-color: #63b3ed;
+}
+.elg-fs-dl-btn:active {
+  background: rgba(99, 179, 237, .25);
+}
+
+/* ── Job card — name row (filename + pause/stop buttons on same line) ──────── *
+ * Buttons are taken OUT of flow (position:absolute) so they never push the
+ * name or create overflow. The name reserves padding-right equal to the
+ * buttons' footprint so text doesn't slide under them.
+ * ─────────────────────────────────────────────────────────────────────────── */
+.elg-job-name-row {
+  position: relative;   /* stacking context for absolute buttons */
+  min-width: 0;
+  min-height: 32px;     /* at least as tall as the buttons (32 px) */
+  display: flex;
+  align-items: center;
+}
+/* When buttons are present, reserve space on the right so text doesn't
+   slide under them: 2 × 32px + 8px gap + 2px breathing room = 74px. */
+.elg-job-name-row--with-btns .snap-job-name {
+  padding-right: 74px;
+}
+/* Buttons float at the vertical centre of the row, flush with the right edge */
+.elg-job-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-top: 0;         /* cancel the 10px from .cre-actions */
+}
+
+/* ── Temp pills — inline edit (click to set target) ──────────────────────── */
+.snap-temp--editable {
+  cursor: pointer;
+  transition: background .12s;
+}
+.snap-temp--editable:hover {
+  background: var(--surface-2);
+}
+/* Number input that replaces .snap-temp-val on click */
+.snap-temp-input {
+  width: 52px;
+  padding: 1px 4px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--mono);
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  /* Remove browser spin arrows — we want compact width */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.snap-temp-input::-webkit-outer-spin-button,
+.snap-temp-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Elegoo Control card (.elg-ctrl)
    widget_control.js — jog pad / fans / LED / print speed

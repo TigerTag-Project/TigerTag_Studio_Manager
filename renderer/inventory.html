@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="css/57-elegoo.css" />
 <link rel="stylesheet" href="printers/bambulab/bambulab.css" />
 <link rel="stylesheet" href="css/60-modals.css" />
+<link rel="stylesheet" href="rfid_protocol/tigertag/modal.css" />
 <link rel="stylesheet" href="css/70-detail-misc.css" />
 <link rel="stylesheet" href="IoT/tigerscale/tigerscale.css" />
 <link rel="stylesheet" href="IoT/td1s/td1s.css" />
@@ -183,11 +184,18 @@
            "Add product" button is right-aligned on the same row so all
            inventory-level actions cluster on one line. -->
       <div class="inv-view-row">
-        <div class="view-toggle">
-          <button id="btnViewTable" class="active" data-i18n="btnViewTable">☰ Table</button>
-          <button id="btnViewGrid" data-i18n="btnViewGrid">⊞ Grid</button>
-          <button id="btnViewRack"><span class="icon icon-package icon-13"></span><span data-i18n="btnViewRack">Storage</span></button>
-          <button id="btnViewPrinter"><span class="icon icon-printer icon-13"></span><span data-i18n="btnViewPrinter">Printers</span></button>
+        <div class="view-toggle-groups">
+          <div class="view-toggle">
+            <button id="btnViewTable" class="active" data-i18n="btnViewTable">☰ Table</button>
+            <button id="btnViewGrid" data-i18n="btnViewGrid">⊞ Grid</button>
+            <button id="btnViewRack"><span class="icon icon-package icon-13"></span><span data-i18n="btnViewRack">Storage</span></button>
+          </div>
+          <span class="vtg-sep" aria-hidden="true"></span>
+          <div class="view-toggle vtg-printers">
+            <button id="btnViewPrinter"><span class="icon icon-printer icon-13"></span><span>Grid</span></button>
+            <button id="btnViewPrinterTable"><span class="icon icon-list icon-13"></span><span>Table</span></button>
+            <button id="btnViewCam"><span class="icon icon-eye-on icon-13"></span><span>Cam</span></button>
+          </div>
         </div>
         <button id="btnAddProduct" class="inv-add-btn" type="button">
           <span class="icon icon-plus icon-13"></span>
@@ -312,6 +320,7 @@
         <div class="stg-row-actions stg-row-actions--col">
           <button class="ghost sm" id="btnDebug" data-i18n="debugOpenBtn">⌥ Open debug panel</button>
           <button class="ghost sm" id="btnTD1S"><span class="td1s-dev-icon"></span>⌥ Open TD1S panel</button>
+          <button class="ghost sm" id="btnRfidTest">⌥ Open RFID tester</button>
           <button class="ghost sm" id="btnReportProblem" data-i18n="errReportBtn">⚑ Report a problem</button>
         </div>
       </div>
@@ -368,16 +377,32 @@
     <button class="panel-action" id="printerConnBtn" title="Connect" aria-label="Connect">
       <span class="icon icon-plug icon-16"></span>
     </button>
+    <button class="panel-action hidden" id="printerFluidBtn" title="Open Fluidd interface" aria-label="Open Fluidd interface">
+      <span class="icon icon-fluidd"></span>
+    </button>
     <button class="panel-action" id="printerEditBtn" title="Edit printer settings" aria-label="Edit printer settings">
       <span class="icon icon-settings icon-16"></span>
     </button>
     <!-- Close button removed: panel closes on backdrop click + Escape key. -->
   </div>
-  <!-- Snapmaker WebRTC camera lives here — outside printerPanelBody so
-       innerHTML rebuilds never destroy the live <iframe>. Cleared for all
-       non-Snapmaker brands by renderPrinterDetail(). -->
-  <div id="ppPersistentCam"></div>
-  <div class="panel-body" id="printerPanelBody"></div>
+  <!-- pp-scroll wraps camera + body so both scroll together.
+       #ppPersistentCam stays outside printerPanelBody so innerHTML
+       rebuilds never destroy the live <iframe>. -->
+  <div class="pp-scroll">
+    <div id="ppPersistentCam"></div>
+    <div class="panel-body" id="printerPanelBody"></div>
+  </div>
+  <!-- Snapmaker file sheet — scoped inside printer panel -->
+  <div class="snap-file-sheet-backdrop" id="snapFileSheetBackdrop"></div>
+  <div class="snap-file-sheet" id="snapFileSheet">
+    <div class="snap-file-sheet-handle"></div>
+    <div class="snap-file-sheet-header">
+      <span class="snap-file-sheet-title">Local Files</span>
+      <button class="panel-close snap-file-sheet-refresh" id="snapFileSheetRefresh" title="Refresh">↺</button>
+      <button class="panel-close" id="snapFileSheetClose">✕</button>
+    </div>
+    <div class="snap-file-sheet-body" id="snapFileSheetBody"></div>
+  </div>
 </div>
 
 <!-- Snapmaker filament edit — bottom sheet that slides up from the
@@ -673,6 +698,7 @@
     <button class="elg-fs-tab" data-elg-fs-tab="history">History</button>
     <button class="elg-fs-tab" data-elg-fs-tab="local">Local</button>
     <button class="elg-fs-tab" data-elg-fs-tab="usb">USB</button>
+    <button class="elg-fs-tab" data-elg-fs-tab="timelapse" data-i18n="elgFsTimelapse">Timelapse</button>
   </div>
   <div class="sfe-body sfe-body--files" id="elgFileSheetBody"></div>
 </aside>
@@ -829,48 +855,57 @@
 </aside>
 
 <!-- Add printer — step 1: brand picker -->
-<div class="modal-overlay" id="printerBrandPickerOverlay">
-  <div class="modal-card pba-card">
-    <div class="pba-header">
-      <div class="pba-header-text">
-        <div class="pba-title" data-i18n="printersSettingsTitle">Printers Settings</div>
-        <div class="pba-sub" data-i18n="printerAddPickSub">Choose the manufacturer of your 3D printer</div>
-      </div>
-      <button class="modal-close" id="printerBrandPickerClose">✕</button>
+<!-- Printer brand picker — side panel -->
+<div class="panel-overlay" id="printerBrandPickerOverlay"></div>
+<div class="detail-panel pba-panel" id="printerBrandPickerPanel">
+  <div class="pba-header">
+    <div class="pba-header-text">
+      <div class="pba-title" data-i18n="printersSettingsTitle">Printers Settings</div>
+      <div class="pba-sub" data-i18n="printerAddPickSub">Choose the manufacturer of your 3D printer</div>
     </div>
-    <div class="pba-brands" id="printerBrandPickerList"></div>
+    <button class="panel-close" id="printerBrandPickerClose">✕</button>
   </div>
+  <div class="pba-brands" id="printerBrandPickerList"></div>
 </div>
 
-
-<div class="modal-overlay" id="printerAddOverlay">
-  <div class="modal-card pba-card">
-    <div class="pba-header">
-      <div class="pba-header-text">
-        <div class="pba-title" data-i18n="printersSettingsTitle">Printers Settings</div>
-        <div class="pba-sub" id="printerAddSub"></div>
-      </div>
-      <button class="modal-close" id="printerAddClose">✕</button>
+<!-- Printer add / edit form — side panel -->
+<div class="panel-overlay" id="printerAddOverlay"></div>
+<div class="detail-panel pba-panel" id="printerAddPanel">
+  <div class="pba-header">
+    <div class="pba-header-text">
+      <div class="pba-title" data-i18n="printersSettingsTitle">Printers Settings</div>
+      <div class="pba-sub" id="printerAddSub"></div>
     </div>
-    <div class="pba-body" id="printerAddBody"></div>
-    <div class="pba-footer">
-      <button class="adf-btn adf-btn--secondary" id="printerAddBack">
-        <span class="icon icon-chevron-l icon-13"></span>
-        <span data-i18n="printerAddBack">Back</span>
-      </button>
-      <!-- Delete (edit mode only) — same hold-to-confirm pattern as the
-           rack delete button. Hidden by default; openPrinterAddForm
-           reveals it when editPrinter is set. -->
-      <button class="adf-btn adf-btn--danger adf-btn--icon hidden" id="printerAddDelete"
-              title="" aria-label="Delete">
-        <span class="hold-progress"></span>
-        <span class="icon icon-trash icon-13"></span>
-      </button>
-      <button class="adf-btn adf-btn--primary" id="printerAddSave">
-        <span class="icon icon-plus icon-13"></span>
-        <span class="label" data-i18n="printerAddSave">Add printer</span>
-        <span class="spinner"></span>
-      </button>
+    <button class="panel-close" id="printerAddClose">✕</button>
+  </div>
+  <div class="pba-body" id="printerAddBody"></div>
+  <div class="pba-footer">
+    <button class="adf-btn adf-btn--secondary" id="printerAddBack">
+      <span class="icon icon-chevron-l icon-13"></span>
+      <span data-i18n="printerAddBack">Back</span>
+    </button>
+    <!-- Delete (edit mode only) — hold-to-confirm. Hidden by default. -->
+    <button class="adf-btn adf-btn--danger adf-btn--icon hidden" id="printerAddDelete"
+            title="" aria-label="Delete">
+      <span class="hold-progress"></span>
+      <span class="icon icon-trash icon-13"></span>
+    </button>
+    <button class="adf-btn adf-btn--primary" id="printerAddSave">
+      <span class="icon icon-plus icon-13"></span>
+      <span class="label" data-i18n="printerAddSave">Add printer</span>
+      <span class="spinner"></span>
+    </button>
+  </div>
+  <!-- Tutorial image bottom-sheet — scoped inside the panel -->
+  <div class="tuto-sheet-backdrop" id="tutoSheetBackdrop"></div>
+  <div class="tuto-sheet" id="tutoSheet">
+    <div class="tuto-sheet-handle"></div>
+    <div class="tuto-sheet-header">
+      <span class="tuto-sheet-title" id="tutoSheetTitle"></span>
+      <button class="panel-close" id="tutoSheetClose">✕</button>
+    </div>
+    <div class="tuto-sheet-body">
+      <img class="tuto-sheet-img" id="tutoSheetImg" src="" alt="" />
     </div>
   </div>
 </div>
@@ -1106,6 +1141,18 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- RFID Tag Tester Modal -->
+<div class="modal-overlay" id="rfidTestOverlay">
+  <div class="modal-card rfid-test-card">
+    <div class="modal-header">
+      <span class="modal-title">RFID Tag Tester</span>
+      <button class="panel-close" id="rfidTestClose">✕</button>
+    </div>
+    <!-- One column per reader — populated dynamically by JS -->
+    <div class="rfid-columns" id="rfidColumns"></div>
   </div>
 </div>
 
@@ -2054,6 +2101,7 @@
     </div>
   </div>
 </div>
+
 
 <script src="lib/firebase/firebase-app-compat.js"></script>
 <script src="lib/firebase/firebase-auth-compat.js"></script>

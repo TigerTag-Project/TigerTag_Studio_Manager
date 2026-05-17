@@ -11,7 +11,13 @@ import { ctx } from '../context.js';
 import { registerBrand, brands } from '../registry.js';
 import { meta, schema, helper } from './settings.js';
 import { renderSnapJobCard, renderSnapTempCard, renderSnapFilamentCard } from './cards.js';
-import { schemaWidget } from '../modal-helpers.js';
+import { renderSnapControlCard, patchSnapControlCard } from './widget_control.js';
+import {
+  modelPickerHtml,
+  wireModelPicker,
+  wirePasswordEyes,
+  prefillFields,
+} from '../modal-helpers.js';
 
 const $ = id => document.getElementById(id);
 
@@ -155,8 +161,21 @@ export function snapConnect(printer) {
       currentLayer: 0,
       totalLayer: 0,
       printPreviewUrl: null,  // slicer thumbnail (set by snapFetchMetadata)
-      printEstimated: null    // estimated_time in seconds (from metadata)
-    }
+      printEstimated: null,   // estimated_time in seconds (from metadata)
+      // Control card
+      posX: null, posY: null, posZ: null,
+      homedAxes: '',
+      fanSpeed:    0,   // main cooling fan (print head), 0–1 float (Klipper `fan.speed`)
+      fanAuxSpeed: 0,   // assist cooling fan (side), 0–1 float (Klipper `fan_generic cavity_fan.speed`)
+      speedFactor: 100, // print speed override %, from gcode_move.speed_factor
+      ledOn: false,     // caselight state, from output_pin caselight.value
+      activeExtruder: '',  // active toolhead extruder name (e.g. "extruder3")
+      // Physical filament-in-nozzle state per extruder (index 0–3).
+      // null = unknown (no sensor found), true = loaded, false = not loaded.
+      filamentLoaded: [null, null, null, null],
+    },
+    _filSensorNames: null, // sorted filament_switch_sensor names discovered via objects.list
+    _ctrlStep: 10,         // jog step size in mm, persisted per-conn
   };
   _snapConns.set(key, conn);
   snapOpenSocket(conn);
@@ -201,11 +220,16 @@ function snapOpenSocket(conn) {
         print_stats: null,
         virtual_sdcard: null,
         display_status: null,
-        extruder:  ["temperature", "target"],
-        extruder1: ["temperature", "target"],
-        extruder2: ["temperature", "target"],
-        extruder3: ["temperature", "target"],
-        heater_bed:["temperature", "target"]
+        extruder:   ["temperature", "target"],
+        extruder1:  ["temperature", "target"],
+        extruder2:  ["temperature", "target"],
+        extruder3:  ["temperature", "target"],
+        heater_bed: ["temperature", "target"],
+        toolhead:            ["position", "homed_axes", "extruder"],
+        fan:                 ["speed"],
+        "fan_generic cavity_fan": ["speed"],
+        gcode_move:          ["speed_factor"],
+        "led cavity_led":    ["color_data"]
       }}
     });
     // Initial snapshot — `subscribe` returns the current state synchronously
@@ -216,9 +240,15 @@ function snapOpenSocket(conn) {
       params: { objects: {
         print_stats: null, virtual_sdcard: null, display_status: null,
         extruder: null, extruder1: null, extruder2: null, extruder3: null,
-        heater_bed: null
+        heater_bed: null, toolhead: null, fan: null,
+        "fan_generic cavity_fan": null, gcode_move: null,
+        "led cavity_led": null
       }}
     });
+    // Discover all available Klipper objects so we can find filament sensors.
+    // Response handled below (id === 9001).
+    sendLogged({ jsonrpc: "2.0", id: 9001, method: "printer.objects.list", params: {} });
+
     // Status changed (connecting → connected) — the hero camera depends
     // on this, so we ask for a full re-render not just the live block.
     snapNotifyChange(conn, /*statusChanged*/ true);
@@ -231,6 +261,46 @@ function snapOpenSocket(conn) {
     snapLogPush(conn, "←", ev.data);
 
     let obj; try { obj = JSON.parse(ev.data); } catch { return; }
+
+    // ── objects.list response → discover filament sensors ─────────────────
+    if (obj.id === 9001 && Array.isArray(obj.result?.objects)) {
+      const allObjs = obj.result.objects;
+      // Collect all filament sensor objects (switch + motion) in sorted order
+      const sensorNames = allObjs
+        .filter(n => n.startsWith("filament_switch_sensor ") || n.startsWith("filament_motion_sensor "))
+        .sort();
+      if (sensorNames.length > 0) {
+        conn._filSensorNames = sensorNames;
+        const sensorObjs = {};
+        sensorNames.forEach(n => { sensorObjs[n] = ["filament_detected"]; });
+        // IMPORTANT: Moonraker replaces the entire subscription on each
+        // printer.objects.subscribe call — it does NOT accumulate. So we must
+        // merge the sensor objects with the original temperature + print objects
+        // into one combined re-subscription, otherwise temps stop updating.
+        const combined = {
+          print_task_config: null,
+          print_stats:       null,
+          virtual_sdcard:    null,
+          display_status:    null,
+          extruder:   ["temperature", "target"],
+          extruder1:  ["temperature", "target"],
+          extruder2:  ["temperature", "target"],
+          extruder3:  ["temperature", "target"],
+          heater_bed: ["temperature", "target"],
+          toolhead:            ["position", "homed_axes", "extruder"],
+          fan:                 ["speed"],
+          "fan_generic cavity_fan": ["speed"],
+          gcode_move:          ["speed_factor"],
+          "led cavity_led":    ["color_data"],
+          ...sensorObjs,
+        };
+        // Re-subscribe with the full combined set
+        sendLogged({ jsonrpc: "2.0", id: 9002, method: "printer.objects.subscribe", params: { objects: combined } });
+        // Immediate snapshot of sensor state only (lighter query)
+        sendLogged({ jsonrpc: "2.0", id: 9003, method: "printer.objects.query",     params: { objects: sensorObjs } });
+      }
+    }
+
     let status = null;
     if (obj.result && obj.result.status) status = obj.result.status;
     else if ((obj.method === "notify_status_update" || obj.method === "notify_status_changed")
@@ -323,6 +393,58 @@ function snapMergeStatus(conn, status) {
     }
   }
 
+  // Toolhead position + homed axes
+  const th = status.toolhead;
+  if (th && typeof th === "object") {
+    if (Array.isArray(th.position) && th.position.length >= 3) {
+      d.posX = th.position[0]; d.posY = th.position[1]; d.posZ = th.position[2];
+    }
+    if (typeof th.homed_axes === "string") d.homedAxes = th.homed_axes;
+    if (typeof th.extruder === "string") d.activeExtruder = th.extruder;
+  }
+
+  // Main cooling fan — print head (Klipper `fan` object — speed is 0–1 float)
+  const fanObj = status.fan;
+  if (fanObj && typeof fanObj === "object" && typeof fanObj.speed === "number") {
+    d.fanSpeed = fanObj.speed;
+  }
+
+  // Assist cooling fan — side cavity (Klipper `fan_generic cavity_fan`)
+  const fanCavity = status["fan_generic cavity_fan"];
+  if (fanCavity && typeof fanCavity === "object" && typeof fanCavity.speed === "number") {
+    d.fanAuxSpeed = fanCavity.speed;
+  }
+
+  // Print speed factor (gcode_move.speed_factor is 0–1 float → multiply × 100 for %)
+  const gm = status.gcode_move;
+  if (gm && typeof gm === "object" && typeof gm.speed_factor === "number") {
+    d.speedFactor = Math.round(gm.speed_factor * 100);
+  }
+
+  // Cavity LED (Klipper `led` object — color_data is [[R,G,B,W]] floats 0–1)
+  const ledObj = status["led cavity_led"];
+  if (ledObj && Array.isArray(ledObj.color_data?.[0])) {
+    d.ledOn = ledObj.color_data[0].some(v => v > 0);
+  }
+
+  // Filament sensors — discovered dynamically via printer.objects.list (id 9001).
+  // Snapmaker U1 naming: "filament_motion_sensor e{n}_filament" where n = extruder index 0–3.
+  // We extract the extruder index from the sensor name so the mapping is always correct
+  // regardless of the order sensors appear in the list or status payload.
+  if (conn._filSensorNames) {
+    conn._filSensorNames.forEach(sensorName => {
+      const sensor = status[sensorName];
+      if (!sensor || typeof sensor !== "object") return;
+      if (typeof sensor.filament_detected !== "boolean") return;
+      // Extract extruder index: "filament_motion_sensor e{n}_filament" → n
+      const m = sensorName.match(/\be(\d+)_filament\b/i);
+      const idx = m ? parseInt(m[1], 10) : null;
+      if (idx !== null && idx >= 0 && idx < 4) {
+        d.filamentLoaded[idx] = sensor.filament_detected;
+      }
+    });
+  }
+
   // Print job state
   const ps = status.print_stats;
   if (ps && typeof ps === "object") {
@@ -358,12 +480,19 @@ function snapMergeStatus(conn, status) {
 //     ctx.onFullRender() — needed because the hero camera iframe is
 //     conditional on the connection being open.
 let _snapRenderRaf = null;
+let _snapGridRaf   = null; // data updates  → onGridJobsChange
+let _snapStatusRaf = null; // status changes → onPrinterGridChange (separate to avoid coalescing with data RAF)
 let _snapRenderStatusFlag = false;
 function snapNotifyChange(conn, statusChanged = false) {
+  if (statusChanged) {
+    if (!_snapStatusRaf) _snapStatusRaf = requestAnimationFrame(() => { _snapStatusRaf = null; ctx.onPrinterGridChange(); });
+    return;
+  }
+  // Live data: surgical job-block patch only — never replaces card DOM.
+  if (!_snapGridRaf) _snapGridRaf = requestAnimationFrame(() => { _snapGridRaf = null; ctx.onGridJobsChange(); });
   const activePrinter = ctx.getActivePrinter();
   if (!activePrinter) return;
   if (snapKey(activePrinter) !== conn.key) return;
-  if (statusChanged) _snapRenderStatusFlag = true;
   if (_snapRenderRaf) return; // coalesce bursts
   _snapRenderRaf = requestAnimationFrame(() => {
     _snapRenderRaf = null;
@@ -372,9 +501,26 @@ function snapNotifyChange(conn, statusChanged = false) {
     if (fullRerender) {
       ctx.onFullRender();
     } else {
-      // Live data block
+      // Live data block — surgical patch to preserve inline editing state
       const liveHost = $("snapLive");
-      if (liveHost) liveHost.innerHTML = renderSnapmakerLiveInner(activePrinter);
+      if (liveHost) {
+        const conn    = _snapConns.get(snapKey(activePrinter));
+        const b       = brands.get('snapmaker');
+        const jobEl   = $("snapJobBlock");
+        const ctrlEl  = $("snapCtrlBlock");
+        const tempEl  = $("snapTempBlock");
+        const filEl   = $("snapFilBlock");
+        const editing = !!document.querySelector("[data-snap-set-temp][data-editing='1']");
+        if (conn && b && jobEl && ctrlEl && tempEl && filEl) {
+          if (!_snapJobPointerDown) jobEl.innerHTML = b.renderJobCard(activePrinter, conn);
+          patchSnapControlCard(ctrlEl, conn);
+          if (!editing) tempEl.innerHTML = b.renderTempCard(conn);
+          // Skip filament re-render when user is in load/unload selection mode
+          if (!conn._filSelectMode) filEl.innerHTML = b.renderFilamentCard(activePrinter, conn);
+        } else {
+          liveHost.innerHTML = renderSnapmakerLiveInner(activePrinter);
+        }
+      }
       // Request-log block — the log no longer has a nested scroll
       // (the panel body scrolls instead), so a plain innerHTML swap
       // is enough. Older entries stay visible above; new ones append
@@ -1071,9 +1217,10 @@ export function renderSnapmakerLiveInner(p) {
     </div>`;
   const b = brands.get('snapmaker');
   return `
-    ${b.renderJobCard(p, conn)}
-    ${b.renderTempCard(conn)}
-    ${b.renderFilamentCard(p, conn)}`;
+    <div id="snapJobBlock">${b.renderJobCard(p, conn)}</div>
+    <div id="snapCtrlBlock">${renderSnapControlCard(p, conn)}</div>
+    <div id="snapTempBlock">${b.renderTempCard(conn)}</div>
+    <div id="snapFilBlock">${b.renderFilamentCard(p, conn)}</div>`;
 }
 
 // ── Custom JSON sender ────────────────────────────────────────────────────
@@ -1169,6 +1316,418 @@ export function renderSnapmakerLogInner(p) {
   return `<div class="snap-log">${rows}</div>`;
 }
 
+// ── Snapmaker U1 settings widget ─────────────────────────────────────────────
+// Custom renderer: form fields (no section headers) + two expandable setup steps.
+
+const PAXX_FIRMWARE_URL  = 'https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/releases/latest';
+const PAXX_FIRMWARE_BIN  = 'https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/releases/download/v1.3.0-paxx12-16/U1_extended_1.3.0-paxx12-16_upgrade.bin';
+const PAXX_EXPLAINER_URL = 'https://www.youtube.com/watch?v=-JMjEUDZJzQ';
+const PAXX_COFFEE_URL    = 'https://buymeacoffee.com/paxx12';
+
+function _snapRenderSettingsWidget(printer, bodyEl, ctx) {
+  const { models, defaultModel, isEdit, prefill, t, esc, printerImageUrl } = ctx;
+
+  // ── Form fields — no "Identity" / "Connection" headers ──────────────────
+  const formSection = `
+    <section class="pba-section">
+      ${modelPickerHtml(models, defaultModel, { t, esc, printerImageUrl })}
+      <label class="pba-field">
+        <span class="pba-field-label">${esc(t('printerLblName'))} <span class="pba-field-req">*</span></span>
+        <input type="text" class="pba-input" name="printerName"
+               placeholder="${esc(t('printerAddNamePh'))}" required />
+      </label>
+      <label class="pba-field">
+        <span class="pba-field-label">${esc(t('printerLblIP'))} <span class="pba-field-req">*</span></span>
+        <input type="text" class="pba-input pba-input--mono" name="ip"
+               placeholder="192.168.1.53"
+               autocomplete="off" autocapitalize="off" spellcheck="false" required />
+        <span class="pba-field-hint">${esc(t('printerHintSnapIP'))}</span>
+      </label>
+    </section>`;
+
+  const PAXX_RFID_DOCS_URL = 'https://snapmakeru1-extended-firmware.pages.dev/rfid_support#alternative-detection-systems';
+
+  // ── Wizard carousel (3 steps) ─────────────────────────────────────────────
+  const wizardHtml = `
+    <div class="snap-wizard" id="snapWizard">
+
+      <!-- Top bar: nav + dots -->
+      <div class="snap-wizard-nav">
+        <button class="snap-wizard-btn snap-wizard-btn--prev" id="snapWizPrev" disabled>← Previous</button>
+        <div class="snap-wizard-dots">
+          <span class="snap-wizard-dot snap-wizard-dot--active" data-wdot="0"></span>
+          <span class="snap-wizard-dot" data-wdot="1"></span>
+          <span class="snap-wizard-dot" data-wdot="2"></span>
+          <span class="snap-wizard-dot" data-wdot="3"></span>
+        </div>
+        <button class="snap-wizard-btn snap-wizard-btn--next" id="snapWizNext">Next →</button>
+      </div>
+
+      <!-- Slides -->
+      <div class="snap-wizard-track" id="snapWizTrack">
+
+        <!-- Step 1 — Firmware -->
+        <div class="snap-wizard-slide snap-wizard-slide--active" data-slide="0">
+          <div class="snap-wizard-slide-head">
+            <span class="pba-step-num">1</span>
+            <div class="pba-step-titles">
+              <span class="pba-step-title">Recommended firmware</span>
+              <span class="pba-step-sub">Paxx U1 Extended Firmware</span>
+            </div>
+          </div>
+          <p class="pba-step-desc">
+            For the best experience with Tiger Studio on the Snapmaker U1, install the
+            community‑maintained <strong>Paxx U1 Extended Firmware</strong>. It unlocks
+            native filament RFID chip reading, extended AMS slot support, and additional
+            print‑control features not available in the stock firmware.
+          </p>
+          <div class="pba-step-ctas">
+            <a class="pba-step-cta" data-open-external="${esc(PAXX_FIRMWARE_BIN)}">
+              <span class="pba-step-cta-icon pba-step-cta-icon--download"></span>
+              Download v1.3.0-paxx12-16.bin
+            </a>
+            <a class="pba-step-cta pba-step-cta--secondary" data-open-external="${esc(PAXX_FIRMWARE_URL)}">
+              <span class="pba-step-cta-icon pba-step-cta-icon--github"></span>
+              View latest release ↗
+            </a>
+            <a class="pba-step-cta pba-step-cta--secondary" data-open-external="${esc(PAXX_EXPLAINER_URL)}">
+              <span class="pba-step-cta-icon pba-step-cta-icon--youtube"></span>
+              Watch explainer v1.3.0
+            </a>
+            <a class="pba-bmc-link" data-open-external="${esc(PAXX_COFFEE_URL)}" title="Support Paxx on Buy Me a Coffee">
+              <img src="../../../assets/svg/logos/logo_buymeacoffee.png" alt="Buy Me a Coffee" />
+            </a>
+          </div>
+        </div>
+
+        <!-- Step 2 — Install firmware -->
+        <div class="snap-wizard-slide" data-slide="1">
+          <div class="snap-wizard-slide-head">
+            <span class="pba-step-num">2</span>
+            <div class="pba-step-titles">
+              <span class="pba-step-title">Install the firmware</span>
+              <span class="pba-step-sub">USB local update</span>
+            </div>
+          </div>
+          <ol class="pba-step-list">
+            <li>Put the <strong>.bin</strong> file on a <strong>FAT32</strong> formatted USB drive.</li>
+            <li>On the printer: <strong>Settings → About → Firmware Version → Local Update</strong></li>
+            <li>Select the <strong>.bin</strong> and confirm.</li>
+          </ol>
+        </div>
+
+        <!-- Step 3 — OpenRFID -->
+        <div class="snap-wizard-slide" data-slide="2">
+          <div class="snap-wizard-slide-head">
+            <span class="pba-step-num">3</span>
+            <div class="pba-step-titles">
+              <span class="pba-step-title">Enable TigerTag reading</span>
+              <span class="pba-step-sub">Select OpenRFID in Filament Detection</span>
+            </div>
+          </div>
+          <p class="pba-step-desc">
+            In the firmware config page, open <strong>Filament Detection ↗</strong>
+            and select <strong>OpenRFID</strong>.
+          </p>
+          <div class="pba-step-ctas">
+            <button class="pba-step-cta pba-step-cta--secondary pba-tuto-trigger"
+                    data-tuto-src="../assets/img/tuto/snapmaker/Sanp_Tuto_OpenRFID.png"
+                    data-tuto-title="Filament Detection → OpenRFID">
+              <span class="pba-step-cta-icon pba-step-cta-icon--img"></span>
+              Show screenshot ↗
+            </button>
+            <a class="pba-step-cta" data-firmware-config-cta>
+              <span class="pba-step-cta-icon pba-step-cta-icon--link"></span>
+              Open firmware config ↗
+            </a>
+            <a class="pba-step-cta pba-step-cta--secondary" data-open-external="${esc(PAXX_RFID_DOCS_URL)}">
+              <span class="pba-step-cta-icon pba-step-cta-icon--link"></span>
+              Documentation ↗
+            </a>
+          </div>
+        </div>
+
+        <!-- Step 4 — openrfid_user.cfg -->
+        <div class="snap-wizard-slide" data-slide="3">
+          <div class="snap-wizard-slide-head">
+            <span class="pba-step-num">4</span>
+            <div class="pba-step-titles">
+              <span class="pba-step-title">Configure openrfid_user.cfg</span>
+              <span class="pba-step-sub">Add [tigertag_tag_processor]</span>
+            </div>
+          </div>
+          <p class="pba-step-desc">
+            Add the following section to your <strong>openrfid_user.cfg</strong> file
+            — or let TigerTag Studio do it automatically:
+          </p>
+          <pre class="pba-step-code">[tigertag_tag_processor]</pre>
+          <div class="snap-cfg-status" id="snapCfgStatus"></div>
+        </div>
+
+      </div><!-- /track -->
+
+    </div>`;
+
+  bodyEl.innerHTML = formSection + wizardHtml
+    + `<div class="pba-error" id="printerAddError" hidden></div>`;
+
+  // ── Wire standard controls ───────────────────────────────────────────────
+  wireModelPicker(bodyEl, models, { esc, printerImageUrl });
+  wirePasswordEyes(bodyEl, t);
+
+  // ── Wire static external links ───────────────────────────────────────────
+  bodyEl.querySelectorAll('[data-open-external]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      window.electronAPI?.openExternal(el.dataset.openExternal);
+    });
+  });
+
+  // ── Wire Step 2 firmware-config CTA — reads IP from the form at click time ─
+  bodyEl.querySelector('[data-firmware-config-cta]')?.addEventListener('click', e => {
+    e.preventDefault();
+    const currentIp = bodyEl.querySelector('input[name="ip"]')?.value?.trim()
+                   || (isEdit ? printer?.ip : null);
+    if (currentIp) {
+      window.electronAPI?.openExternal(`http://${currentIp}/firmware-config/`);
+    } else {
+      bodyEl.querySelector('input[name="ip"]')?.focus();
+    }
+  });
+
+  // ── Wire wizard navigation + Step 3 cfg check ───────────────────────────
+  const SNAP_CFG_SECTION = '[tigertag_tag_processor]';
+  {
+    const wizEl   = bodyEl.querySelector('#snapWizard');
+    const slides  = wizEl?.querySelectorAll('.snap-wizard-slide');
+    const dots    = wizEl?.querySelectorAll('[data-wdot]');
+    const prevBtn = wizEl?.querySelector('#snapWizPrev');
+    const nextBtn = wizEl?.querySelector('#snapWizNext');
+    const TOTAL   = 4;
+    let current   = 0;
+    let cfgChecked = false;
+
+    const getIp = () =>
+      bodyEl.querySelector('input[name="ip"]')?.value?.trim()
+      || (isEdit ? printer?.ip : null);
+
+    const setCfgStatus = html => {
+      const el = bodyEl.querySelector('#snapCfgStatus');
+      if (el) el.innerHTML = html;
+    };
+
+    const goTo = (idx, dir = 1) => {
+      if (!slides) return;
+      const track = wizEl.querySelector('#snapWizTrack');
+      if (track) track.dataset.dir = dir > 0 ? 'fwd' : 'bwd';
+      slides.forEach((s, i) => s.classList.toggle('snap-wizard-slide--active', i === idx));
+      dots?.forEach((d, i) => d.classList.toggle('snap-wizard-dot--active', i === idx));
+      if (prevBtn) prevBtn.disabled = idx === 0;
+      if (nextBtn) {
+        nextBtn.disabled    = idx === TOTAL - 1;
+        nextBtn.textContent = idx === TOTAL - 1 ? 'Done ✓' : 'Next →';
+      }
+      current = idx;
+      if (idx === 3 && !cfgChecked) { cfgChecked = true; runCfgCheck(); }
+    };
+
+    prevBtn?.addEventListener('click', () => { if (current > 0)         goTo(current - 1, -1); });
+    nextBtn?.addEventListener('click', () => { if (current < TOTAL - 1) goTo(current + 1,  1); });
+    dots?.forEach((d, i) => d.addEventListener('click', () => goTo(i, i > current ? 1 : -1)));
+
+    // ── Step 3 cfg check logic ─────────────────────────────────────────────
+    const runCfgCheck = async () => {
+      const ip = getIp();
+      if (!ip) {
+        setCfgStatus(`<span class="snap-cfg-warn">↑ Enter the printer IP first</span>`);
+        return;
+      }
+      setCfgStatus(`<span class="snap-cfg-checking">Checking openrfid_user.cfg…</span>`);
+
+      const CFG_PATH = 'extended/openrfid_user.cfg';
+
+      // Helper: upload (create or overwrite) openrfid_user.cfg
+      const uploadCfg = async (content) => {
+        const blob = new Blob([content], { type: 'text/plain' });
+        const form = new FormData();
+        form.append('file', blob, 'openrfid_user.cfg');
+        form.append('root', 'config');
+        form.append('path', 'extended');
+        const upRes = await fetch(`http://${ip}:7125/server/files/upload`, {
+          method: 'POST', body: form
+        });
+        if (!upRes.ok) throw new Error(`Upload HTTP ${upRes.status}`);
+      };
+
+      // Helper: show "Added" state + Restart button
+      const showAddedState = () => {
+        setCfgStatus(`
+          <span class="snap-cfg-ok">✓ Added — restart firmware to apply</span>
+          <button class="pba-step-cta pba-step-cta--secondary" id="snapCfgRestartBtn">
+            Restart firmware
+          </button>`);
+        bodyEl.querySelector('#snapCfgRestartBtn')?.addEventListener('click', async () => {
+          const restartBtn = bodyEl.querySelector('#snapCfgRestartBtn');
+          if (restartBtn) { restartBtn.disabled = true; restartBtn.textContent = 'Restarting…'; }
+          try {
+            await fetch(`http://${ip}:7125/printer/gcode/script`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ script: 'FIRMWARE_RESTART' })
+            });
+            setCfgStatus(`<span class="snap-cfg-ok">✓ Firmware restarting…</span>`);
+          } catch (err) {
+            setCfgStatus(`<span class="snap-cfg-err">Restart failed: ${esc(err.message)}</span>`);
+          }
+        });
+      };
+
+      // Helper: show "Add" button with a given base content to append to
+      const showAddBtn = (existingContent) => {
+        setCfgStatus(`
+          <button class="pba-step-cta snap-cfg-add-btn" id="snapCfgAddBtn">
+            Add to openrfid_user.cfg automatically
+          </button>`);
+        bodyEl.querySelector('#snapCfgAddBtn')?.addEventListener('click', async () => {
+          const btn = bodyEl.querySelector('#snapCfgAddBtn');
+          if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+          try {
+            const newContent = existingContent.trimEnd() + '\n\n' + SNAP_CFG_SECTION + '\n';
+            await uploadCfg(newContent);
+            showAddedState();
+          } catch (err) {
+            setCfgStatus(`<span class="snap-cfg-err">Save failed: ${esc(err.message)}</span>`);
+          }
+        });
+      };
+
+      try {
+        const res = await fetch(`http://${ip}:7125/server/files/config/${CFG_PATH}`);
+
+        if (res.status === 404) {
+          // File doesn't exist yet — offer to create it
+          showAddBtn('');
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const text = await res.text();
+        if (text.includes(SNAP_CFG_SECTION)) {
+          setCfgStatus(`<span class="snap-cfg-ok">✓ Already configured</span>`);
+        } else {
+          showAddBtn(text);
+        }
+      } catch (err) {
+        setCfgStatus(`<span class="snap-cfg-err">Cannot reach printer: ${esc(err.message)}</span>`);
+      }
+    }; // end runCfgCheck
+  }
+
+  // ── Pre-fill ─────────────────────────────────────────────────────────────
+  if (isEdit && printer) {
+    const data = { printerName: printer.printerName };
+    schema.sections.forEach(sec =>
+      sec.fields.forEach(f => { data[f.key] = printer[f.key]; })
+    );
+    prefillFields(bodyEl, data);
+  } else if (prefill) {
+    const data = {};
+    if (prefill.printerName) data.printerName = prefill.printerName;
+    if (prefill.ip)          data.ip          = prefill.ip;
+    prefillFields(bodyEl, data);
+  }
+}
+
+// ── Print control (REST) ──────────────────────────────────────────────────
+
+export async function snapPrintControl(conn, action) {
+  // action: "pause" | "resume" | "cancel"
+  try {
+    await fetch(`http://${conn.ip}:7125/printer/print/${action}`, { method: "POST" });
+  } catch (e) {
+    console.warn(`[snap] printControl ${action} failed:`, e?.message);
+  }
+}
+
+// ── File sheet ────────────────────────────────────────────────────────────
+
+let _snapFileSheetKey = null;
+
+export function openSnapFileSheet(printer) {
+  _snapFileSheetKey = snapKey(printer);
+  const conn = _snapConns.get(_snapFileSheetKey);
+  document.getElementById("snapFileSheet")?.classList.add("open");
+  document.getElementById("snapFileSheetBackdrop")?.classList.add("open");
+  if (conn) _snapFetchFiles(conn);
+}
+
+export function closeSnapFileSheet() {
+  _snapFileSheetKey = null;
+  document.getElementById("snapFileSheet")?.classList.remove("open");
+  document.getElementById("snapFileSheetBackdrop")?.classList.remove("open");
+}
+
+async function _snapFetchFiles(conn) {
+  const bodyEl = document.getElementById("snapFileSheetBody");
+  if (!bodyEl) return;
+  bodyEl.innerHTML = `<div class="snap-files-empty">Loading…</div>`;
+  try {
+    const r    = await fetch(`http://${conn.ip}:7125/server/files/list?root=gcodes`);
+    const data = await r.json();
+    conn._snapFiles = (data.result || []).sort((a, b) => b.modified - a.modified);
+    _snapRenderFileList(conn);
+  } catch (e) {
+    const bodyEl2 = document.getElementById("snapFileSheetBody");
+    if (bodyEl2) bodyEl2.innerHTML = `<div class="snap-files-empty">Error: ${String(e?.message || e)}</div>`;
+  }
+}
+
+function _snapRenderFileList(conn) {
+  const bodyEl = document.getElementById("snapFileSheetBody");
+  if (!bodyEl) return;
+  const files = conn._snapFiles || [];
+  if (!files.length) { bodyEl.innerHTML = `<div class="snap-files-empty">No files</div>`; return; }
+  const activeRel = conn.data.printFilename ? snapFilenameRel(conn.data.printFilename) : null;
+  const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  bodyEl.innerHTML = `<div class="snap-files">${files.map(f => {
+    const name      = f.path.split("/").pop();
+    const shortName = name.replace(/\.gcode$/i, "");
+    const isActive  = !!(activeRel && f.path === activeRel);
+    const sizeMB    = (f.size / (1024 * 1024)).toFixed(1) + " MB";
+    const date      = new Date(f.modified * 1000).toLocaleDateString();
+    return `
+      <div class="snap-file-row${isActive ? " snap-file-row--active" : ""}">
+        <div class="snap-file-info">
+          <span class="snap-file-name" title="${esc(name)}">${esc(shortName)}</span>
+          <span class="snap-file-meta">${esc(sizeMB)} · ${esc(date)}</span>
+        </div>
+        <button class="snap-file-btn snap-file-btn--print"
+                data-snap-file-print="${esc(f.path)}"
+                ${isActive ? "disabled" : ""}
+                aria-label="Print ${esc(name)}">
+          <span class="icon icon-play icon-13"></span>
+        </button>
+      </div>`;
+  }).join("")}</div>`;
+}
+
+// Wire close/refresh buttons at module level (runs once when module loads)
+document.getElementById("snapFileSheetClose")?.addEventListener("click", closeSnapFileSheet);
+document.getElementById("snapFileSheetBackdrop")?.addEventListener("click", closeSnapFileSheet);
+document.getElementById("snapFileSheetRefresh")?.addEventListener("click", () => {
+  const conn = _snapFileSheetKey ? _snapConns.get(_snapFileSheetKey) : null;
+  if (conn) _snapFetchFiles(conn);
+});
+
+// ── Job block pointer lock ───────────────────────────────────────────────────
+// Prevents the RAF loop from destroying pause/stop buttons mid-click.
+let _snapJobPointerDown = false;
+document.addEventListener("pointerdown", e => {
+  if (document.getElementById("snapJobBlock")?.contains(e.target)) _snapJobPointerDown = true;
+});
+document.addEventListener("pointerup",     () => { _snapJobPointerDown = false; });
+document.addEventListener("pointercancel", () => { _snapJobPointerDown = false; });
+
 // ── Self-registration ─────────────────────────────────────────────────────
 
 registerBrand('snapmaker', {
@@ -1176,7 +1735,7 @@ registerBrand('snapmaker', {
   renderJobCard:        renderSnapJobCard,
   renderTempCard:       renderSnapTempCard,
   renderFilamentCard:   renderSnapFilamentCard,
-  renderSettingsWidget: schemaWidget(schema),
+  renderSettingsWidget: _snapRenderSettingsWidget,
 });
 
 // ── Additional exports (for inventory.js to import) ──────────────────────

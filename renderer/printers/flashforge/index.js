@@ -10,6 +10,7 @@ import { registerBrand, brands } from '../registry.js';
 import { meta, schema, helper } from './settings.js';
 import { renderFfgJobCard, renderFfgTempCard, renderFfgFilamentCard } from './cards.js';
 import { schemaWidget } from '../modal-helpers.js';
+import { ffgMuxStopAll } from './cam_mux.js';
 
 const $ = id => document.getElementById(id);
 
@@ -42,12 +43,7 @@ export function ffgGetConn(key) { return _ffgConns.get(key) ?? null; }
 // FIN'd → printer frees the slot. We also clear cached URLs from the
 // attribute so even a quick reopen-with-same-URL forces a new GET.
 export function ffgTearDownCamera() {
-  document.querySelectorAll(".ffg-camera-img").forEach(img => {
-    try {
-      img.src = "about:blank";
-      img.removeAttribute("src");
-    } catch (_) {}
-  });
+  ffgMuxStopAll();
 }
 
 // ── Online helpers ────────────────────────────────────────────────────────
@@ -672,12 +668,18 @@ function ffgMergeStatus(conn, resp) {
 // Mirror of snapNotifyChange — full re-render on status change so the
 // hero camera + badge can swap, otherwise just the data block.
 let _ffgRenderRaf = null;
+let _ffgGridRaf   = null; // data updates  → onGridJobsChange
+let _ffgStatusRaf = null; // status changes → onPrinterGridChange (separate to avoid coalescing with data RAF)
 let _ffgRenderStatusFlag = false;
 function ffgNotifyChange(conn, statusChanged = false) {
+  if (statusChanged) {
+    if (!_ffgStatusRaf) _ffgStatusRaf = requestAnimationFrame(() => { _ffgStatusRaf = null; ctx.onPrinterGridChange(); });
+    return;
+  }
+  if (!_ffgGridRaf) _ffgGridRaf = requestAnimationFrame(() => { _ffgGridRaf = null; ctx.onGridJobsChange(); });
   const activePrinter = ctx.getActivePrinter();
   if (!activePrinter) return;
   if (ffgKey(activePrinter) !== conn.key) return;
-  if (statusChanged) _ffgRenderStatusFlag = true;
   if (_ffgRenderRaf) return;
   _ffgRenderRaf = requestAnimationFrame(() => {
     _ffgRenderRaf = null;

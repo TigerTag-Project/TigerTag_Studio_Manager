@@ -19,6 +19,8 @@ import { creGetConn, creKey } from './index.js';
 
 // Active RTCPeerConnection — module-level singleton (one camera at a time).
 let _pc = null;
+// IP address of the current session — used to skip redundant restarts.
+let _activeIp = null;
 
 /**
  * Returns the camera banner HTML for a Creality printer,
@@ -52,8 +54,10 @@ export function renderCreCamBanner(p) {
  * @param {string} ip — printer IP address
  */
 export async function startCreCam(ip) {
-  // Always stop any previous session first.
+  // Already streaming for this IP — avoid tearing down a live stream.
+  if (_pc && _activeIp === ip) return;
   stopCreCam();
+  _activeIp = ip;
 
   const videoEl = document.getElementById("creCamVideo");
   if (!videoEl) return;
@@ -110,6 +114,7 @@ export async function startCreCam(ip) {
  * Safe to call multiple times.
  */
 export function stopCreCam() {
+  _activeIp = null;
   if (_pc) {
     try { _pc.close(); } catch {}
     _pc = null;

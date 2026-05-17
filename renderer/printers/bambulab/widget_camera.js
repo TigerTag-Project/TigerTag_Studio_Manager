@@ -1,7 +1,7 @@
 /**
  * printers/bambulab/widget_camera.js — Bambu Lab camera banner widget.
  *
- * All models use the same <img id="bblCamImg"> element updated by IPC.
+ * All models use a <img data-bbl-key="…"> element updated by IPC.
  *  • IDs 1–4  (A1, A1 Mini, P1P, P1S) → JPEG TCP port 6000 (TLS).
  *  • IDs 5+   (X1C, X1E, P2S, H2x)   → RTSP port 322 via ffmpeg.
  * Both transports emit frames on the 'bambulab:cam-frame' IPC channel.
@@ -13,7 +13,8 @@ import { bambuGetConn, bambuKey } from './index.js';
  * Returns the camera banner HTML for a Bambu Lab printer.
  * Returns "" when not yet connected (hero photo shows instead).
  *
- * All models use the same <img id="bblCamImg"> element.
+ * Each model gets a <img data-bbl-key="…"> element (no id — supports multiple
+ * Bambu printers in the cam wall simultaneously).
  * Frames arrive via IPC 'bambulab:cam-frame' regardless of transport:
  *   • JPEG TCP  — A1 / A1 Mini / P1P / P1S (model IDs 1–4, port 6000 TLS)
  *   • RTSP/ffmpeg — X1C / X1E / P2S / H2x  (model IDs 5+,  port 322 TLS)
@@ -37,7 +38,7 @@ export function renderBambuCamBanner(p) {
   const key = bambuKey(p);
   return `
     <div class="pp-cam-full bbl-cam-jpeg${loading ? " pp-cam-loading" : ""}">
-      <img id="bblCamImg" class="bbl-camera-img"
+      <img class="bbl-camera-img"
            data-bbl-key="${ctx.esc(key)}"
            src="${ctx.esc(imgSrc)}"
            alt="Bambu Lab camera"

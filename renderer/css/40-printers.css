@@ -205,6 +205,41 @@
     font-size: 12px; color: var(--muted);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* Job status strip in grid card */
+  .printer-card-job {
+    margin: 6px 0 2px;
+  }
+  .printer-card-job--idle {
+    margin: 4px 0 2px;
+  }
+  .printer-card-job-bar {
+    height: 4px; background: var(--border); border-radius: 2px;
+    overflow: hidden; margin-bottom: 6px;
+  }
+  .printer-card-job-bar span {
+    display: block; height: 100%; background: var(--primary);
+    border-radius: 2px; transition: width .4s;
+  }
+  .printer-card-job-info {
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  }
+  .printer-card-job-right {
+    font-size: 11px; color: var(--muted); font-weight: 500; flex-shrink: 0;
+  }
+  .printer-card-job-file {
+    margin-top: 3px; font-size: 10px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Compact modifier — scales the snap-job-state pill down for card/table contexts */
+  .snap-job-state--compact {
+    font-size: 11px;
+    padding: 3px 10px;
+  }
+  .snap-job-state--compact::before {
+    width: 7px; height: 7px;
+    margin-right: 5px;
+  }
+
   .printer-card-foot {
     margin-top: 4px;
     display: flex; justify-content: space-between; align-items: center;
@@ -315,25 +350,45 @@
     box-shadow: 0 0 0 3px rgba(245, 158, 11, .18);
     animation: snap-pulse 0.8s ease-in-out infinite;
   }
-  /* Card variant — sits between the model line and the foot row */
-  .printer-online--card { margin-top: 2px; }
-  /* Side-card variant — sits inside the panel-title next to the pills,
-     so it has to match the pill sizing (10 px font, no margin). */
+  /* Card variant — same pill look as the sidecard, slightly smaller */
+  .printer-online--card {
+    font-size: 10px;
+    margin-top: 4px;
+    padding: 2px 9px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .printer-online--card.is-online {
+    background: rgba(34, 197, 94, .14);
+    border-color: rgba(34, 197, 94, .3);
+  }
+  .printer-online--card.is-offline {
+    background: var(--surface-2);
+  }
+  .printer-online--card.is-checking {
+    background: rgba(245, 158, 11, .14);
+    border-color: rgba(245, 158, 11, .3);
+  }
+  /* Side-card variant — inside the panel-title next to the pills */
   .printer-online--side {
     font-size: 10px;
     margin: 0;
     padding: 2px 9px;
     background: var(--surface-2);
     border-radius: 999px;
+    border: 1px solid var(--border);
   }
   .printer-online--side.is-online {
     background: rgba(34, 197, 94, .14);
+    border-color: rgba(34, 197, 94, .3);
   }
   .printer-online--side.is-offline {
     background: var(--surface-2);
   }
   .printer-online--side.is-checking {
     background: rgba(245, 158, 11, .14);
+    border-color: rgba(245, 158, 11, .3);
   }
 
   /* "Add a printer" card — sits at the end of the grid as a permanent
@@ -377,12 +432,19 @@
   }
 
   /* ── Add printer modals (brand picker + form) ───────────────────────── */
+  /* Legacy modal-card wrapper — kept for any remaining modal use */
   .pba-card {
     width: min(440px, calc(100vw - 32px));
     max-height: 85vh;
     padding: 0;
     display: flex; flex-direction: column;
     overflow: hidden;
+  }
+
+  /* Side-panel variant — replaces the modal-card for brand picker + add/edit form */
+  #printerBrandPickerPanel,
+  #printerAddPanel {
+    width: min(460px, 92vw);
   }
   /* Snapmaker scan side-panel — width MUST be set with an ID selector
      (not just .snap-scan-panel) to override the base `.detail-panel`
@@ -421,6 +483,7 @@
     display: flex; align-items: flex-start; justify-content: space-between;
     gap: 12px;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
   .pba-title {
     font-size: 16px; font-weight: 600; color: var(--text);
@@ -476,6 +539,8 @@
   .pba-brand:hover .pba-brand-chev { background: var(--primary); }
 
   .pba-body {
+    flex: 1;
+    min-height: 0; /* allows flex child to shrink below content height and scroll */
     padding: 16px 22px;
     display: flex; flex-direction: column; gap: 12px;
     overflow-y: auto;
@@ -532,6 +597,7 @@
     padding: 12px 18px 18px;
     border-top: 1px solid var(--border);
     display: flex; justify-content: space-between; gap: 10px;
+    flex-shrink: 0;
   }
   .pba-footer .adf-btn--primary { flex: 1; }
 
@@ -1531,10 +1597,20 @@
 
   /* ── Printer detail panel (slide-in from right) ──────────────────────── */
   #printerPanel { width: min(440px, 92vw); }
+
+  /* Scroll wrapper: camera + body scroll together as one unit */
+  .pp-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
   #printerPanelBody {
     padding: 0 0 24px;
     display: flex; flex-direction: column;
-    overflow-y: auto;
+    flex: 1;
+    /* overflow handled by .pp-scroll */
   }
 
   /* Hero — printer photo (or fallback when camera is off). The
@@ -1818,3 +1894,268 @@
   .pp-raw-copy.pp-copy.pp-copy--ok { color: #fff; }
   .pp-raw-copy.pp-copy.pp-copy--ok .icon { background: #fff; }
 
+
+/* ── Printer setup steps (Snapmaker U1 — expandable cards) ──────────────── */
+
+/* <details> card */
+.pba-step {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 8px;
+  background: var(--surface, #141414);
+}
+.pba-step + .pba-step { margin-top: 6px; }
+
+/* Summary row — always visible */
+.pba-step-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none; /* hide default marker */
+}
+.pba-step-header::-webkit-details-marker { display: none; }
+.pba-step-header:hover { background: rgba(255,255,255,.03); }
+
+/* Numbered badge */
+.pba-step-num {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--primary, #386ecf);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Title + subtitle stacked */
+.pba-step-titles {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 1px;
+  min-width: 0;
+}
+.pba-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pba-step-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Chevron — rotates 90° when open */
+.pba-step-chev {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  background: var(--muted);
+  -webkit-mask-image: url('../../assets/svg/icons/icon_chevron_right.svg');
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  transition: transform .2s ease;
+}
+details[open] .pba-step-chev { transform: rotate(90deg); }
+
+/* Expanded body */
+.pba-step-body {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border, #2a2a2a);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Description paragraph */
+.pba-step-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+.pba-step-desc strong { color: var(--text); font-weight: 600; }
+
+/* Ordered instruction list */
+.pba-step-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pba-step-list strong { color: var(--text); font-weight: 600; }
+
+/* Inline code inside step body */
+.pba-step-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  background: var(--surface-2, #1e1e1e);
+  border: 1px solid var(--border, #2a2a2a);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Call-to-action button */
+.pba-step-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--primary, #386ecf);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  align-self: flex-start;
+  transition: opacity .15s;
+}
+.pba-step-cta:hover { opacity: .85; }
+.pba-step-cta:active { opacity: .7; }
+
+/* Secondary (outline) variant */
+.pba-step-cta--secondary {
+  background: transparent;
+  color: var(--primary, #386ecf);
+  border: 1px solid var(--primary, #386ecf);
+}
+.pba-step-cta--secondary .pba-step-cta-icon {
+  background-color: var(--primary, #386ecf);
+}
+.pba-step-cta--secondary:hover { background: rgba(56, 110, 207, .08); opacity: 1; }
+.pba-step-cta--secondary:active { background: rgba(56, 110, 207, .15); opacity: 1; }
+
+/* Container when two CTAs sit side by side */
+.pba-step-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Icon inside CTA button — white mask on colored background */
+.pba-step-cta-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  background-color: #fff;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
+.pba-step-cta-icon--github {
+  -webkit-mask-image: url('../../assets/svg/icons/icon_github.svg');
+}
+.pba-step-cta-icon--youtube {
+  -webkit-mask-image: url('../../assets/svg/icons/icon_youtube.svg');
+}
+.pba-step-cta-icon--link {
+  -webkit-mask-image: url('../../assets/svg/icons/icon_link.svg');
+}
+.pba-step-cta-icon--download {
+  aspect-ratio: 1;
+  -webkit-mask-image: url('../../assets/svg/icons/icon_download.svg');
+}
+.pba-step-cta-icon--fluid {
+  aspect-ratio: 446.6 / 512; /* logo_fluidd.svg viewBox="32.7 0 446.6 512" */
+  -webkit-mask-image: url('../../assets/svg/logos/logo_fluidd.svg');
+}
+
+.pba-step-cta-icon--img {
+  aspect-ratio: 1;
+  -webkit-mask-image: url('../../assets/svg/icons/icon_eye_on.svg');
+}
+
+/* Buy Me a Coffee — standalone logo link, no button wrapper */
+.pba-bmc-link {
+  display: inline-block;
+  cursor: pointer;
+  transition: opacity .15s;
+  align-self: flex-start;
+}
+.pba-bmc-link:hover  { opacity: .85; }
+.pba-bmc-link:active { opacity: .7; }
+.pba-bmc-link img {
+  height: 36px;
+  width: auto;
+  display: block;
+}
+
+/* ── Printer table sub-view ─────────────────────────────────────────────── */
+.pt-wrap { overflow-x: auto; padding: 4px 0 16px; }
+.pt-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pt-head { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.pt-th { padding: 8px 12px; text-align: left; font-size: 12px; font-weight: 600;
+         color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.pt-th--sort { cursor: pointer; user-select: none; }
+.pt-th--sort:hover { color: var(--text); }
+.pt-th--sort::after { content: " ⇅"; opacity: .25; font-size: 10px; }
+.pt-th--sort.sort-asc::after  { content: " ▲"; opacity: 1; color: var(--primary); }
+.pt-th--sort.sort-desc::after { content: " ▼"; opacity: 1; color: var(--primary); }
+.pt-td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.pt-td--ip code { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.pt-td--name { font-weight: 500; }
+.pt-row:hover { background: var(--surface-2); }
+.pt-row:active { background: var(--surface-2); }
+.pt-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+          background: var(--neutral); margin-right: 5px; vertical-align: middle; }
+.pt-dot--on { background: var(--success); }
+.pt-th--thumb { width: 56px; padding: 8px 8px 8px 12px; }
+.pt-td--thumb { width: 56px; padding: 6px 8px 6px 12px; }
+.pt-thumb { display: block; width: 44px; height: 44px; object-fit: contain;
+            border-radius: 4px; mix-blend-mode: multiply; }
+/* Job column */
+.pt-td--job { min-width: 140px; }
+.pt-job-bar { height: 4px; background: var(--border); border-radius: 2px;
+              overflow: hidden; margin-bottom: 4px; }
+.pt-job-bar span { display: block; height: 100%; background: var(--primary);
+                   border-radius: 2px; transition: width .4s; }
+.pt-job-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pt-job-pct   { font-size: 11px; color: var(--muted); }
+.pt-job-file  { font-size: 10px; color: var(--muted); margin-top: 2px;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.pt-job-idle  { color: var(--muted); font-size: 12px; }
+
+/* ── Printer cam wall ────────────────────────────────────────────────────── */
+.cam-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px; padding: 8px 0 16px; }
+.cam-wall-card { background: var(--surface); border: 1px solid var(--border);
+                 border-radius: var(--radius); overflow: hidden;
+                 cursor: pointer; transition: border-color .15s; }
+.cam-wall-card:hover { border-color: var(--accent, #6366f1); }
+.cam-wall-card-head { display: flex; align-items: center; gap: 8px;
+                      padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.cam-wall-card-name { font-weight: 500; font-size: 13px; color: var(--text); }
+.cam-wall-card .pp-cam-full { border-radius: 0; }
+.cam-wall-card .snap-camera-frame,
+.cam-wall-card .cre-cam-video,
+.cam-wall-card img[src*="8898"] { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
+
+/* Connecting placeholder — shown while the brand module establishes the connection */
+.cam-wall-card--connecting { opacity: .75; }
+.cam-wall-connecting {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; aspect-ratio: 16/9;
+  background: var(--surface-2);
+  color: var(--muted); font-size: 13px;
+}
+.cam-wall-connecting .inv-loading-spin {
+  width: 22px; height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}

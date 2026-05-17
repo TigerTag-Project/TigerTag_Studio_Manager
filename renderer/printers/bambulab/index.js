@@ -253,10 +253,10 @@ if (typeof window !== "undefined" && window.bambulab) {
     const firstFrame = !conn.data.lastCamFrame;
     conn.data.lastCamFrame = b64;
     // Surgical DOM update — only touch the img that belongs to THIS printer.
-    // Multiple Bambu printers can stream simultaneously; using a bare
-    // getElementById would let the faster stream overwrite the wrong panel.
-    const img = $("bblCamImg");
-    if (!img || img.dataset.bblKey !== key) return;
+    // Multiple Bambu printers can stream simultaneously (cam wall); query by
+    // data-bbl-key so each printer's img is found regardless of DOM order.
+    const img = document.querySelector(`[data-bbl-key="${CSS.escape(key)}"]`);
+    if (!img) return;
     img.src = `data:image/jpeg;base64,${b64}`;
     // On the very first frame for this panel, remove the loading overlay.
     if (firstFrame) {
@@ -400,14 +400,20 @@ function _bblMerge(conn, msg) {
 
 // ── rAF-coalesced re-renders ───────────────────────────────────────────────
 
-let _raf = null;
+let _raf     = null;
+let _bblGridRaf   = null; // data updates  → onGridJobsChange
+let _bblStatusRaf = null; // status changes → onPrinterGridChange (separate to avoid coalescing with data RAF)
 let _rafStatus = false;
 
 function _bblNotify(conn, statusChanged = false) {
+  if (statusChanged) {
+    if (!_bblStatusRaf) _bblStatusRaf = requestAnimationFrame(() => { _bblStatusRaf = null; ctx.onPrinterGridChange(); });
+    return;
+  }
+  if (!_bblGridRaf) _bblGridRaf = requestAnimationFrame(() => { _bblGridRaf = null; ctx.onGridJobsChange(); });
   const active = ctx.getActivePrinter();
   if (!active) return;
   if (bambuKey(active) !== conn.key) return;
-  if (statusChanged) _rafStatus = true;
   if (_raf) return; // coalesce bursts
   _raf = requestAnimationFrame(() => {
     _raf = null;

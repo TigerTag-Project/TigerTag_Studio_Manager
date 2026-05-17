@@ -1024,7 +1024,40 @@ Après envoi, attendre 500ms puis ré-interroger `print_task_config` pour confir
 }
 ```
 
-### 12.6 Récapitulatif des commandes
+### 12.6 Load / Unload filament
+
+Découvert par inspection live du firmware (`GET /printer/objects/list` + lecture de `fluidd.cfg`).
+
+**État chargé — lecture** : objet `filament_motion_sensor e{n}_filament` (n = 0–3).
+```json
+{ "filament_detected": true }   // filament physiquement présent dans le mécanisme d'entraînement
+{ "filament_detected": false }  // extrudeur vide
+```
+
+S'abonner via `printer.objects.subscribe` avec les 4 sensors :
+```json
+{
+  "filament_motion_sensor e0_filament": ["filament_detected"],
+  "filament_motion_sensor e1_filament": ["filament_detected"],
+  "filament_motion_sensor e2_filament": ["filament_detected"],
+  "filament_motion_sensor e3_filament": ["filament_detected"]
+}
+```
+
+**Charger (MANUAL_FEEDING)** : macro Snapmaker, prend `EXTRUDER` 0-based.
+```
+MANUAL_FEEDING EXTRUDER=1
+```
+La macro résout internement le module CFS (`left`/`right`) et le canal via `_FILAMENT_FEED_VARIABLE`.
+
+**Décharger (INNER_FILAMENT_UNLOAD)** : macro Snapmaker sans param EXTRUDER — toolchange requis avant.
+```
+T1
+INNER_FILAMENT_UNLOAD TEMP=250
+```
+Params optionnels : `NOZZLE_DIAMETER` (défaut 0.4), `SOFT` (défaut 0). La macro déplace la tête à la position de purge, chauffe, rétracte et refroidit.
+
+### 12.7 Récapitulatif des commandes
 
 | Action | Méthode | Protocole |
 |--------|---------|-----------|
@@ -1033,6 +1066,9 @@ Après envoi, attendre 500ms puis ré-interroger `print_task_config` pour confir
 | Annulation | `printer.print.cancel` | JSON-RPC |
 | Autohome | `{"method":"set","params":{"autohome":"XYZ"}}` | Propriétaire |
 | Push filament | `printer.gcode.script` + `SET_PRINT_FILAMENT_CONFIG` | JSON-RPC + G-Code |
+| Load filament E{n} | `printer.gcode.script` + `MANUAL_FEEDING EXTRUDER={n}` | JSON-RPC + G-Code |
+| Unload filament E{n} | `printer.gcode.script` + `T{n}\nINNER_FILAMENT_UNLOAD TEMP=250` | JSON-RPC + G-Code |
+| État chargé E{n} | `filament_motion_sensor e{n}_filament.filament_detected` | Subscribe Moonraker |
 | Modifier matériau CFS | `{"method":"set","params":{"modifyMaterial":{...}}}` | Propriétaire |
 | Lire modules CFS | `{"method":"get","params":{"boxsInfo":1}}` | Propriétaire |
 

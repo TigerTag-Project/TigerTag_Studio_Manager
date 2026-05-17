@@ -41,6 +41,8 @@ export const ctx = {
   onFullRender:          () => {},   // calls renderPrinterDetail()
   onPrinterStatusChange: () => {},   // calls refreshOpenPrinterDetail() if available
   onPrintersViewChange:  () => {},   // calls renderPrintersView()
+  onPrinterGridChange:   () => {},   // renderPrintersView() only when NOT in cam view
+  onGridJobsChange:      () => {},   // surgical patch of job blocks in grid cards
   // Hold-to-confirm helper — bound to setupHoldToConfirm() in inventory.js.
   // Brand modules call this after injecting dynamic buttons into the DOM.
   setupHoldToConfirm: () => {},
@@ -54,4 +56,9 @@ export const ctx = {
   // Re-applies data-i18n translations across the whole document.
   // Call after dynamically injecting elements that carry data-i18n attributes.
   applyTranslations:   () => {},
+
+  // Creality camera — wired by inventory.js to avoid circular imports between
+  // creality/index.js and creality/widget_camera.js.
+  creCamStart: _ip => {},
+  creCamStop:  ()  => {},
 };

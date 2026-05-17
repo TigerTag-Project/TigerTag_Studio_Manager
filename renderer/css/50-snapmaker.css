@@ -153,9 +153,11 @@
   }
   @keyframes snap-state-spin { to { transform: rotate(360deg); } }
 
-  /* Standby / Complete / Cancelled — neutral grey since nothing's running. */
+  /* Neutral / idle states — nothing running */
   .snap-job-state--standby,
-  .snap-job-state--cancelled {
+  .snap-job-state--cancelled,
+  .snap-job-state--idle,
+  .snap-job-state--ready {
     background: var(--surface-2);
     color: var(--muted);
     border-color: var(--border);
@@ -172,20 +174,35 @@
     color: #b45309;
     border-color: rgba(245,158,11,.3);
   }
-  .snap-job-state--complete {
+  .snap-job-state--complete,
+  .snap-job-state--finished {
     background: rgba(34,197,94,.15);
     color: #15803d;
     border-color: rgba(34,197,94,.3);
   }
-  .snap-job-state--error {
+  .snap-job-state--error,
+  .snap-job-state--failed {
     background: rgba(239,68,68,.12);
     color: #b91c1c;
     border-color: rgba(239,68,68,.3);
   }
-  .snap-job-state--heating {
+  .snap-job-state--heating,
+  .snap-job-state--preparing {
     background: rgba(249,115,22,.12);
     color: #c2410c;
     border-color: rgba(249,115,22,.3);
+  }
+  /* Preparing/heating — same spinner as printing */
+  .snap-job-state--preparing::before {
+    content: "";
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    animation: snap-state-spin .7s linear infinite;
+    margin-right: 6px;
+    flex-shrink: 0;
   }
   .snap-job-layers {
     font-size: 14px; font-weight: 700;
@@ -208,6 +225,67 @@
     color: var(--text);
     margin: 0 0 8px;
     letter-spacing: -.01em;
+  }
+  /* Header row with title + action buttons */
+  .snap-block-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .snap-block-hdr .snap-block-title { margin: 0; }
+  .snap-fil-actions { display: flex; gap: 4px; }
+  .snap-fil-act-btn {
+    padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 12px;
+    font-weight: 500; cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  .snap-fil-act-btn:hover { background: var(--surface-3, var(--surface-2)); border-color: var(--primary); color: var(--primary); }
+  .snap-fil-act-btn--cancel { color: var(--muted); }
+  .snap-fil-act-btn--cancel:hover { color: var(--text); border-color: var(--border); }
+
+  /* Selection mode — extruder squares become clickable checkboxes */
+  .snap-fil--selectable { cursor: pointer; position: relative; }
+  .snap-fil--selectable:hover .snap-fil-square { filter: brightness(1.08); transform: translateY(-2px); }
+  .snap-fil-sel-check {
+    position: absolute; top: 3px; right: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .12s, background .12s;
+  }
+  .snap-fil-sel-check--on {
+    border-color: var(--primary); background: var(--primary);
+  }
+  .snap-fil-sel-check--on .icon { color: #fff; }
+  .snap-fil--checked .snap-fil-square { box-shadow: 0 0 0 3px var(--primary); }
+  /* Disabled slots (invalid for current mode) */
+  .snap-fil--disabled { cursor: not-allowed; pointer-events: none; }
+  .snap-fil--disabled .snap-fil-square { opacity: .35; }
+  .snap-fil-sel-reason {
+    display: inline-block; margin-top: 3px;
+    font-size: 10px; font-weight: 600; line-height: 1;
+    padding: 2px 5px; border-radius: 4px;
+    background: color-mix(in srgb, var(--muted) 12%, transparent);
+    color: var(--muted);
+  }
+  .snap-fil-sel-reason--loaded {
+    background: color-mix(in srgb, #22c55e 15%, transparent);
+    color: #16a34a;
+  }
+  .snap-fil-sel-empty { font-size: 12px; color: var(--muted); padding: 8px 4px; margin: 0; }
+  /* Confirm footer */
+  .snap-fil-sel-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .snap-fil-confirm-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 16px; border-radius: 8px; border: none;
+    background: var(--primary); color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: opacity .12s;
+  }
+  .snap-fil-confirm-btn:disabled { opacity: .4; cursor: default; }
+  .snap-fil-confirm-btn:not(:disabled):hover { opacity: .88; }
+  .snap-fil-sel-count {
+    min-width: 18px; height: 18px; border-radius: 9px;
+    background: rgba(255,255,255,.25); font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; padding: 0 4px;
   }
 
   /* ── Temperature row — compact pills "26/0°C" with small icon ───── */
@@ -239,6 +317,38 @@
   }
   .snap-temp--heating { color: #ef4444; }
   .snap-temp--heating .snap-temp-val { color: #b91c1c; }
+
+  /* Editable pills */
+  .snap-temp--editable {
+    cursor: pointer;
+    border-radius: 8px;
+    transition: color .15s, background .15s;
+  }
+  .snap-temp--editable:hover { background: rgba(56,110,207,.08); }
+  .snap-temp--editing        { background: rgba(56,110,207,.12); }
+
+  .snap-temp-label {
+    font-size: 9px; font-weight: 700; letter-spacing: .04em;
+    color: var(--muted);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  /* Inline number input shown when editing a target temp */
+  .snap-temp-set-input {
+    width: 44px;
+    background: var(--surface);
+    border: 1.5px solid var(--primary, #386ecf);
+    border-radius: 4px;
+    font-size: 11px; font-weight: 700;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-align: center;
+    color: var(--text);
+    outline: none;
+    padding: 2px 3px;
+  }
+  .snap-temp-set-input::-webkit-inner-spin-button,
+  .snap-temp-set-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
   /* ── Filament grid — flex row so all squares share the available
      width evenly. With 4 active extruders we get 4 squares on one
@@ -360,6 +470,14 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     line-height: 1.2;
   }
+  /* Loaded / No-filament badge shown below sub-type in normal card view */
+  .snap-fil-loaded {
+    display: inline-block; margin-top: 3px;
+    font-size: 10px; font-weight: 600; line-height: 1;
+    padding: 2px 5px; border-radius: 4px;
+  }
+  .snap-fil-loaded--yes { background: color-mix(in srgb, #22c55e 15%, transparent); color: #16a34a; }
+  .snap-fil-loaded--no  { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
 
   /* Creality filament layout:
      row 1 = EXT + CFS-module-1 slots side by side,
@@ -777,6 +895,8 @@
   .snap-fil--editable:hover .snap-fil-square { transform: translateY(-2px); filter: brightness(1.05); }
   /* Slots vides : lift autorisé mais brightness désactivé — le hachage et le contour restent intacts */
   .snap-fil--editable:hover .snap-fil-square--empty { filter: none; }
+  /* Active toolhead (Snapmaker only — multi-head system) — green border */
+  #snapLive .snap-fil--active { outline: 2px solid #22c55e; outline-offset: 2px; border-radius: 10px; }
 
   /* Bottom-sheet — anchors to the right side of the screen behind the
      printer side card (same width + right alignment). Slides up from the
@@ -1599,3 +1719,247 @@
     margin-left: 6px;
   }
 
+/* Info column: let it fill remaining space instead of overflowing */
+.snap-block .elg-jog-info-col {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Snapmaker control card — position display, same style as .elg-ctrl-pos */
+.snap-ctrl-pos {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.snap-ctrl-pos b { color: var(--text); font-weight: 700; margin-left: 2px; }
+
+/* ── Setup wizard (carousel) ─────────────────────────────────────────────── */
+.snap-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+/* Dots */
+.snap-wizard-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+}
+.snap-wizard-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  cursor: pointer;
+  transition: width 0.2s, border-radius 0.2s, background 0.2s;
+}
+.snap-wizard-dot--active {
+  width: 20px;
+  border-radius: 3px;
+  background: var(--accent, #3b82f6);
+}
+
+/* Track + slides */
+.snap-wizard-track {
+  overflow: hidden;
+  min-height: 180px;
+}
+.snap-wizard-slide {
+  display: none;
+}
+.snap-wizard-slide--active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: snap-wiz-in 0.22s ease;
+}
+.snap-wizard-track[data-dir="bwd"] .snap-wizard-slide--active {
+  animation-name: snap-wiz-in-bwd;
+}
+@keyframes snap-wiz-in {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes snap-wiz-in-bwd {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Slide header: step number + title */
+.snap-wizard-slide-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Nav row (top) */
+.snap-wizard-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.snap-wizard-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.snap-wizard-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.snap-wizard-btn--next {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+.snap-wizard-btn--next:not(:disabled):hover { opacity: .85; }
+
+/* ── Step 3 cfg status ───────────────────────────────────────────────────── */
+.snap-cfg-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.snap-cfg-ok       { font-size: 12px; font-weight: 600; color: var(--green, #22c55e); }
+.snap-cfg-err      { font-size: 12px; color: var(--red,  #ef4444); }
+.snap-cfg-warn     { font-size: 12px; color: var(--orange, #f97316); }
+.snap-cfg-checking { font-size: 12px; color: var(--muted); font-style: italic; }
+
+/* ── Active extruder highlight ───────────────────────────────────────────── */
+.snap-temp--active {
+  border-color: var(--primary) !important;
+  background: rgba(56,110,207,.08);
+  box-shadow: 0 0 0 2px rgba(56,110,207,.15);
+}
+
+/* ── Job name row (name + files button side by side) ─────────────────────── */
+.snap-job-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.snap-job-name-row .snap-job-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── File sheet ──────────────────────────────────────────────────────────── */
+.snap-file-sheet-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 200;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+  border-radius: inherit;
+}
+.snap-file-sheet-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.snap-file-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: 85%;
+  background: var(--surface);
+  border-top-left-radius: 18px; border-top-right-radius: 18px;
+  box-shadow: 0 -4px 32px rgba(0,0,0,.18);
+  z-index: 201;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.snap-file-sheet.open { transform: translateY(0); }
+
+.snap-file-sheet-handle {
+  width: 40px; height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
+.snap-file-sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.snap-file-sheet-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  flex: 1;
+}
+.snap-file-sheet-refresh {
+  font-size: 16px; color: var(--muted);
+  margin-right: 4px;
+}
+.snap-file-sheet-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0 24px;
+}
+
+/* File rows */
+.snap-files { display: flex; flex-direction: column; }
+.snap-files-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.snap-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+.snap-file-row:hover { background: var(--surface-2); }
+.snap-file-row--active { background: rgba(56,110,207,.06); }
+.snap-file-info {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.snap-file-name {
+  font-size: 12px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.snap-file-meta {
+  font-size: 11px; color: var(--muted);
+}
+.snap-file-btn--print {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .12s;
+}
+.snap-file-btn--print:hover { background: rgba(56,110,207,.12); border-color: var(--primary); }
+.snap-file-btn--print .icon { background-color: var(--primary); }
+.snap-file-btn--print:disabled { opacity: .4; cursor: default; }
+
+
+/* Fluidd logo icon — panel-action header button (Snapmaker only) */
+.icon-fluidd {
+  height: 16px;
+  aspect-ratio: 446.6 / 512; /* viewBox="32.7 0 446.6 512" */
+  -webkit-mask-image: url('../../assets/svg/logos/logo_fluidd.svg');
+  mask-image: url('../../assets/svg/logos/logo_fluidd.svg');
+}

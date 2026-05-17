@@ -40,9 +40,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRfid: (callback) =>
     ipcRenderer.on('rfid-uid', (_, uid, rawHex) => callback(uid, rawHex)),
 
-  // Called when reader connects/disconnects — callback({ connected, name, error? })
+  // Called when reader connects/disconnects — callback({ name, connected })
   onReaderStatus: (callback) =>
     ipcRenderer.on('reader-status', (_, status) => callback(status)),
+
+  // Called when a reader connects/disconnects (new unified event)
+  onRfidReaderUpdate: (callback) =>
+    ipcRenderer.on('rfid-reader-update', (_, data) => callback(data)),
+
+  // Called when a card appears/disappears on a reader — callback({ readerName, uid, rawUid })
+  onRfidCardPresent: (callback) =>
+    ipcRenderer.on('rfid-card-present', (_, data) => callback(data)),
+
+  // On-demand read: returns { ok, uid, rawUid, rawPagesHex, tigerTag } | { ok:false, error }
+  readRfidNow: (readerName) =>
+    ipcRenderer.invoke('rfid:read-now', readerName),
 
   // Called when an app update is available or ready to install
   onUpdateStatus: (callback) =>
@@ -79,6 +91,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo:      () => ipcRenderer.invoke('app:info'),
   // Open a URL in the default system application (e.g. VLC for rtsp://).
   openExternal: (url) => ipcRenderer.send('shell:open-external', url),
+  // Show native Save dialog and stream a timelapse video from the printer to disk.
+  downloadTimelapse: (url, filename) => ipcRenderer.invoke('timelapse:download', url, filename),
 
   // Absolute path to renderer/ dir — used to build file:// preload paths
   // for <webview> elements (e.g. Creality camera preload script).

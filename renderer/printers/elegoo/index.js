@@ -154,6 +154,19 @@ let _elgRenderRaf     = null;
 let _elgCardRaf       = null;
 let _elgRenderStatusFlag = false;
 
+// Bind hold-to-confirm on print-control buttons after each DOM render.
+// Pause  (1021) — 1 s hold
+// Resume (1023) — 0.8 s hold  (NOT 1022 — see PROTOCOL.md §15.3)
+// Cancel (1022) — 1.5 s hold  (NOT 1023 — see PROTOCOL.md §15.4)
+function _elegooBindPrintBtns(printer, conn) {
+  const pauseBtn  = document.querySelector("[data-elg-print-action='pause']");
+  const resumeBtn = document.querySelector("[data-elg-print-action='resume']");
+  const cancelBtn = document.querySelector("[data-elg-print-action='cancel']");
+  if (pauseBtn)  ctx.setupHoldToConfirm(pauseBtn,  1000, () => _elgPublish(conn, 1021, {}));
+  if (resumeBtn) ctx.setupHoldToConfirm(resumeBtn,   800, () => _elgPublish(conn, 1023, {}));
+  if (cancelBtn) ctx.setupHoldToConfirm(cancelBtn,  1500, () => _elgPublish(conn, 1022, {}));
+}
+
 function elgNotifyChange(conn, statusChanged = false) {
   // Always refresh the printer cards grid when connection status changes
   // (Online / Connecting / Offline badge). Independent of which printer is open.
@@ -187,12 +200,17 @@ function elgNotifyChange(conn, statusChanged = false) {
           // Patch chirurgical — seules les valeurs changent, pas la structure
           const b = brands.get('elegoo');
           jobEl.innerHTML  = b.renderJobCard(activePrinter, conn);
+          _elegooBindPrintBtns(activePrinter, conn);
           patchElegooControlCard(ctrlEl, conn);
-          tempEl.innerHTML = b.renderTempCard(conn);
+          // Skip temp re-render while the user is editing a target value inline.
+          if (!document.querySelector("[data-elg-set-temp][data-editing='1']")) {
+            tempEl.innerHTML = b.renderTempCard(conn);
+          }
           filEl.innerHTML  = b.renderFilamentCard(activePrinter, conn);
         } else {
           // Premiers render ou structure absente → innerHTML complet
           liveHost.innerHTML = renderElegooLiveInner(activePrinter);
+          _elegooBindPrintBtns(activePrinter, conn);
         }
       }
       const logHost = $('elgLog');
@@ -351,6 +369,28 @@ export function elegooSendCmd(key, method, params = {}) {
   return true;
 }
 
+/**
+ * Build the full HTTP URL for a timelapse video and dispatch the download event.
+ * Live observation: time_lapse_video_url is already "video/….mp4" — no 1051 needed.
+ *
+ * @param {object} printer   — printer record from state.printers
+ * @param {string} videoPath — time_lapse_video_url field from the 1036 history item
+ */
+export function elegooTimelapseDl(printer, videoPath) {
+  const conn = _elegooConns.get(elegooKey(printer));
+  if (!conn || !videoPath) return;
+  // Port 80, libhv endpoint /download?X-Token=<mqtt_password>&file_name=<encoded_path>
+  // Confirmed via tcpdump: slicer uses GET /download on port 80, NOT port 8080 (camera).
+  const password = conn.printer.mqttPassword || conn.printer.password || '123456';
+  const fullUrl = `http://${conn.ip}/download?X-Token=${encodeURIComponent(password)}&file_name=${encodeURIComponent(videoPath)}`;
+  // Clean filename: strip the .gcode{timestamp} part → "Foo_0.2_3m43s.mp4"
+  const rawName = videoPath.split('/').pop();
+  const filename = rawName.replace(/\.gcode\d+\.mp4$/i, '.mp4') || rawName;
+  document.dispatchEvent(new CustomEvent('elg:timelapse-ready', {
+    detail: { url: fullUrl, filename },
+  }));
+}
+
 // ── Message routing by method ─────────────────────────────────────────────
 
 function _routeMessage(conn, topic, data) {
@@ -425,7 +465,17 @@ function _mergeStatus(conn, data) {
       let pct = Number(ps.progress);
       if (pct > 1.0001) pct /= 100;
       d.printProgress = Math.max(0, Math.min(1, pct));
+    } else if (ps.print_duration !== undefined) {
+      // 1005 responses omit progress — compute from elapsed / (elapsed + remaining)
+      const elapsed   = Number(ps.print_duration)     || 0;
+      const remaining = Number(ps.remaining_time_sec)  || 0;
+      d.printProgress = (elapsed + remaining) > 0
+        ? Math.max(0, Math.min(1, elapsed / (elapsed + remaining)))
+        : 0;
     }
+    // Store bed-mesh flag; force progress=0 while leveling (no actual printing yet)
+    if (ps.bed_mesh_detect !== undefined) d.bedMeshDetect = !!ps.bed_mesh_detect;
+    if (d.bedMeshDetect && !(d.printLayerCur > 0)) d.printProgress = 0;
     if (ps.current_layer     !== undefined) d.printLayerCur   = Math.round(Number(ps.current_layer));
     if (ps.filename          !== undefined) {
       d.printFilename = String(ps.filename || '') || null;
@@ -435,7 +485,17 @@ function _mergeStatus(conn, data) {
         if (cached) d.printLayerTotal = cached;
       }
     }
-    if (ps.uuid              !== undefined) d.printUuid       = String(ps.uuid        || '') || null;
+    if (ps.uuid !== undefined) {
+      const newUuid = String(ps.uuid || '') || null;
+      // New job UUID → progress from the previous job is stale, reset immediately.
+      if (newUuid && newUuid !== d.printUuid) {
+        d.printProgress    = 0;
+        d.printLayerCur    = 0;
+        d.printLayerTotal  = null;
+        d.printRemainingMs = null;
+      }
+      d.printUuid = newUuid;
+    }
     if (ps.remaining_time_sec !== undefined) d.printRemainingMs = Number(ps.remaining_time_sec) * 1000;
     if (ps.total_duration    !== undefined) d.printDuration   = Number(ps.total_duration);
   }
@@ -457,10 +517,12 @@ function _mergeStatus(conn, data) {
       else if (machStatus === 14) d.printState = 'error';
       else if (machStatus === 3)  d.printState = 'printing';   // finishing sequence still active
       else if (machStatus === 2) {
-        // sub_status refines the active state
-        if      (machSubStatus === 2901) d.printState = 'heating';
-        else if (machSubStatus === 1066) d.printState = 'printing';
-        else                             d.printState = 'printing';
+        // sub_status refines the active state (PROTOCOL.md §7.2)
+        if      (machSubStatus === 2901 || machSubStatus === 2902) d.printState = 'heating';   // nozzle/bed chauffage
+        else if (machSubStatus === 2801 || machSubStatus === 2802) d.printState = 'heating';   // bed leveling
+        else if (machSubStatus === 1405)                           d.printState = 'preparing'; // init impression
+        else if (machSubStatus === 1066)                           d.printState = 'printing';
+        else                                                       d.printState = 'printing';
       }
     }
     // exception_status — convert to error state
@@ -771,7 +833,7 @@ export function elegooConnect(printer) {
     status: 'connecting',
     data: {
       nozzleTemp: null, nozzleTarget: null, bedTemp: null, bedTarget: null, chamberTemp: null,
-      printState: null, printProgress: 0,
+      printState: null, printProgress: 0, bedMeshDetect: false,
       printLayerCur: 0, printLayerTotal: null,
       printFilename: null, printUuid: null, printRemainingMs: null,
       printDuration: null, lastException: [],
@@ -1296,12 +1358,59 @@ function _elgHistoryHtml(conn) {
             </span>
           </div>
         </div>
+        ${(item.time_lapse_video_status === 1 && item.time_lapse_video_url) ? `
+        <button type="button"
+                class="elg-fs-dl-btn"
+                data-elg-hist-dl="${esc(String(item.time_lapse_video_url))}"
+                title="${esc(t('elgTimelapseDl') || 'Télécharger le timelapse')}">
+          <span class="icon icon-download icon-13"></span>
+        </button>` : ''}
         <button type="button"
                 class="elg-fs-print-btn"
                 data-elg-file-print="${esc(rawName)}"
                 data-elg-file-storage="local"
                 title="${esc(t('elgFilePrint') || 'Print')}">
           ▶
+        </button>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function _elgTimelapseHtml(conn) {
+  const esc = ctx.esc;
+  const t   = ctx.t;
+  const d   = conn.data;
+  if (d.historyLoading && !d.history.length) {
+    return `<div class="cre-files-empty">${esc(t('elgFilesLoading') || 'Loading…')}</div>`;
+  }
+  const items = d.history.filter(item => item.time_lapse_video_status > 0 && item.time_lapse_video_url);
+  if (!items.length) {
+    return `<div class="cre-files-empty">${esc(t('elgTimelapseEmpty') || 'No timelapse videos')}</div>`;
+  }
+  return `<div class="cre-files">${items.map(item => {
+    const rawName   = String(item.task_name || '');
+    const cleanName = rawName.replace(/\.gcode$/i, '');
+    const dur       = _elgFmtDuration((item.end_time || 0) - (item.begin_time || 0));
+    const date      = _elgFmtDate(item.begin_time);
+    const thumb     = conn._historyThumbs.get(rawName);
+    const thumbHtml = thumb
+      ? `<div class="cre-file-thumb" style="background-image:url('${thumb}');background-size:cover;background-position:center"></div>`
+      : `<div class="cre-file-thumb cre-file-thumb--placeholder"><span class="icon icon-printer icon-16"></span></div>`;
+    return `
+      <div class="cre-file-row">
+        ${thumbHtml}
+        <div class="cre-file-info">
+          <span class="cre-file-name" title="${esc(rawName)}">${esc(cleanName)}</span>
+          <div class="cre-file-pills">
+            ${dur  ? `<span class="cre-file-pill cre-file-pill--dim">${esc(dur)}</span>` : ''}
+            ${date ? `<span class="cre-file-pill cre-file-pill--dim">${esc(date)}</span>` : ''}
+          </div>
+        </div>
+        <button type="button"
+                class="elg-fs-dl-btn elg-fs-dl-btn--always"
+                data-elg-hist-dl="${esc(String(item.time_lapse_video_url))}"
+                title="${esc(t('elgTimelapseDl') || 'Download timelapse')}">
+          <span class="icon icon-download icon-13"></span>
         </button>
       </div>`;
   }).join('')}</div>`;
@@ -1370,8 +1479,10 @@ function _elgUpdateFileSheet(conn) {
   // Render the right content
   if (tab === 'history') {
     body.innerHTML = _elgHistoryHtml(conn);
-    const loading = !!conn.data.historyLoading;
-    if (refresh) refresh.classList.toggle('cre-file-refresh--loading', loading);
+    if (refresh) refresh.classList.toggle('cre-file-refresh--loading', !!conn.data.historyLoading);
+  } else if (tab === 'timelapse') {
+    body.innerHTML = _elgTimelapseHtml(conn);
+    if (refresh) refresh.classList.toggle('cre-file-refresh--loading', !!conn.data.historyLoading);
   } else {
     body.innerHTML = _elgFileListHtml(conn, tab);
     const loading = tab === 'local' ? conn._localLoading : conn._usbLoading;
@@ -1398,11 +1509,10 @@ export function openElegooFileSheet(printer) {
   // Default to history tab on first open
   if (!conn._activeFileTab) conn._activeFileTab = 'history';
 
-  // Fetch history if not yet loaded
-  if (!conn.data.history.length) {
-    conn.data.historyLoading = true;
-    _elgPublish(conn, 1036, {});
-  }
+  // Always re-fetch history so the Timelapse tab stays up-to-date.
+  // Only show "loading" spinner if we have no cached data yet.
+  if (!conn.data.history.length) conn.data.historyLoading = true;
+  _elgPublish(conn, 1036, {});
 
   // Always (re)load file lists when opening the sheet
   _elgLoadFileLists(conn);
@@ -1448,7 +1558,7 @@ document.getElementById('elgFileSheetRefresh')?.addEventListener('click', () => 
   const conn = _elegooConns.get(_elgFileSheetKey);
   if (!conn) return;
   const tab = conn._activeFileTab || 'history';
-  if (tab === 'history') {
+  if (tab === 'history' || tab === 'timelapse') {
     conn.data.historyLoading = true;
     _elgPublish(conn, 1036, {});
   } else {
